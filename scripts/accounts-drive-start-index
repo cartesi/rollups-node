@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# (c) Cartesi and individual authors (see AUTHORS)
+# SPDX-License-Identifier: Apache-2.0 (see LICENSE)
+
+set -euo pipefail
+
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+	echo "Usage: $0 <stored-machine-config.json> [accounts-drive-start-index]" >&2
+	exit 1
+fi
+
+# The withdrawal fixture uses 32-byte accounts and geometry 17/0: a 4Mi range.
+# Before deployment there is no registered withdrawal config to read yet.
+jq -er --arg override "${2:-}" '
+	[.config | (.flash_drive[]?, .nvram[]?)] as $ranges |
+	(if $override == "" then
+		[$ranges[] | select(.length == 4194304)] |
+		if length == 1 then (.[0].start / 4194304 | floor)
+		else error("expected one accounts range; set ACCOUNTS_DRIVE_START_INDEX") end
+	else ($override | tonumber) end) as $index |
+	if ($index | type) != "number" or $index < 0 or $index != ($index | floor) then
+		error("accounts-drive start index must be a nonnegative integer")
+	elif ([$ranges[] | select(.start == ($index * 4194304) and .length >= 4194304)] | length) != 1 then
+		error("expected one accounts range at the configured address with length at least 4Mi")
+	else $index end
+' "$1"

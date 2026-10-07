@@ -80,6 +80,8 @@ services:
       make invalid-outputs-root-dapps
       echo "Building erc20-withdrawal-dapp machine snapshot..."
       make erc20-withdrawal-dapp
+      echo "Building erc20-withdrawal-nvram-dapp machine snapshot..."
+      make erc20-withdrawal-nvram-dapp
       echo "Copying to shared volume..."
       cp -r applications/echo-dapp /dapps/echo-dapp
       cp -r applications/reject-loop-dapp /dapps/reject-loop-dapp
@@ -91,6 +93,7 @@ services:
       cp -r applications/invalid-outputs-root-length-dapp /dapps/invalid-outputs-root-length-dapp
       cp -r applications/invalid-template-outputs-root-dapp /dapps/invalid-template-outputs-root-dapp
       cp -r applications/erc20-withdrawal-dapp /dapps/erc20-withdrawal-dapp
+      cp -r applications/erc20-withdrawal-nvram-dapp /dapps/erc20-withdrawal-nvram-dapp
       echo "DApp images built successfully."
       '
     volumes:
@@ -157,6 +160,7 @@ services:
       CARTESI_TEST_INVALID_OUTPUTS_ROOT_LENGTH_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/invalid-outputs-root-length-dapp
       CARTESI_TEST_INVALID_TEMPLATE_OUTPUTS_ROOT_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/invalid-template-outputs-root-dapp
       CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/erc20-withdrawal-dapp
+      CARTESI_TEST_ERC20_WITHDRAWAL_NVRAM_DAPP_PATH: /var/lib/cartesi-rollups-node/dapps/erc20-withdrawal-nvram-dapp
       CARTESI_TEST_NODE_LOG_FILE: /var/lib/cartesi-rollups-node/logs/node.log
       CARTESI_INSPECT_URL: http://localhost:10012/
       # test/integration/localstack_integration_test.go

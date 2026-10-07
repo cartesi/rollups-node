@@ -121,9 +121,10 @@ RUN go install gotest.tools/gotestsum@v${GOTESTSUM_VERSION}
 ENV PATH="${GOPATH}/bin:${PATH}"
 ENV GOLANGCI_LINT_CACHE=${GOCACHE}/golangci-lint
 
-# Create directories owned by cartesi for Docker named volume pre-population.
+# Install helper-test dependencies and create directories owned by cartesi.
 # When a named volume is first mounted here, Docker copies this ownership.
 USER root
+RUN apt-get update && apt-get install -y --no-install-recommends jq
 RUN mkdir -p /dapps && chown cartesi:cartesi /dapps
 RUN mkdir -p /var/lib/cartesi-rollups-node/logs && chown cartesi:cartesi /var/lib/cartesi-rollups-node/logs
 USER cartesi

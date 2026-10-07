@@ -1,7 +1,8 @@
 cat >/usr/local/bin/erc20-withdrawal-dapp <<'EOF'
 #!/usr/bin/env bash
 
-ACCOUNT_DRIVE=/dev/pmem1
+FLASH_ACCOUNT_DRIVE=/dev/pmem1
+ACCOUNTS_DRIVE_KIND="${ACCOUNTS_DRIVE_KIND:-flash_drive}"
 ACCOUNT_SIZE=32
 MAX_ACCOUNTS=131072
 ZERO_RECORD=0000000000000000000000000000000000000000000000000000000000000000
@@ -67,11 +68,19 @@ hex_to_text() {
 }
 
 read_record() {
-  dd if="$ACCOUNT_DRIVE" bs="$ACCOUNT_SIZE" skip="$1" count=1 2>/dev/null | xxd -p -c "$ACCOUNT_SIZE"
+  if [[ "$ACCOUNTS_DRIVE_KIND" == "nvram" ]]; then
+    readmmap accounts "$(($1 * ACCOUNT_SIZE))" "$ACCOUNT_SIZE" | xxd -p -c "$ACCOUNT_SIZE"
+  else
+    dd if="$FLASH_ACCOUNT_DRIVE" bs="$ACCOUNT_SIZE" skip="$1" count=1 2>/dev/null | xxd -p -c "$ACCOUNT_SIZE"
+  fi
 }
 
 write_record() {
-  printf '%s' "$2" | xxd -r -p | dd of="$ACCOUNT_DRIVE" bs="$ACCOUNT_SIZE" seek="$1" count=1 conv=notrunc 2>/dev/null
+  if [[ "$ACCOUNTS_DRIVE_KIND" == "nvram" ]]; then
+    printf '%s' "$2" | xxd -r -p | writemmap accounts "$(($1 * ACCOUNT_SIZE))" "$ACCOUNT_SIZE"
+  else
+    printf '%s' "$2" | xxd -r -p | dd of="$FLASH_ACCOUNT_DRIVE" bs="$ACCOUNT_SIZE" seek="$1" count=1 conv=notrunc 2>/dev/null
+  fi
 }
 
 zero_record() {

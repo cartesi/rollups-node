@@ -50,9 +50,10 @@ const (
 	defaultDevnetTestUsdcAddress                = "0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81"
 	defaultDevnetWithdrawalOutputBuilderAddress = "0xB4D253c7a110241561B3eD6d632846dF7d4e9Af7"
 
+	accountsDriveLog2AccountSize      = uint8(5)
 	accountsDriveLog2MaxNumOfAccounts = uint8(17)
 	accountsDriveLog2LeavesPerAccount = uint8(0)
-	accountsDriveLog2Size             = uint8(22)
+	accountsDriveLog2Size             = accountsDriveLog2AccountSize + accountsDriveLog2MaxNumOfAccounts + accountsDriveLog2LeavesPerAccount
 	accountsDriveSize                 = uint64(1) << accountsDriveLog2Size
 
 	machineToolBinary = "cartesi-rollups-machine-tool"
@@ -64,6 +65,13 @@ const (
 	withdrawalConsensusAuthority withdrawalConsensus = "authority"
 	withdrawalConsensusQuorum    withdrawalConsensus = "quorum"
 	withdrawalConsensusPRT       withdrawalConsensus = "prt"
+)
+
+type accountsDriveKind string
+
+const (
+	accountsDriveFlash accountsDriveKind = "flash_drive"
+	accountsDriveNVRAM accountsDriveKind = "nvram"
 )
 
 type WithdrawalLifecycleSuite struct {
@@ -113,16 +121,20 @@ func (s *WithdrawalLifecycleSuite) TearDownTest() {
 }
 
 func (s *WithdrawalLifecycleSuite) TestAuthorityPostForeclosureWithdrawalLifecycle() {
-	s.runWithdrawalLifecycle(withdrawalConsensusAuthority)
+	s.runWithdrawalLifecycle(withdrawalConsensusAuthority, accountsDriveFlash)
+}
+
+func (s *WithdrawalLifecycleSuite) TestAuthorityNVRAMPostForeclosureWithdrawalLifecycle() {
+	s.runWithdrawalLifecycle(withdrawalConsensusAuthority, accountsDriveNVRAM)
 }
 
 func (s *WithdrawalLifecycleSuite) TestQuorumPostForeclosureWithdrawalLifecycle() {
-	s.runWithdrawalLifecycle(withdrawalConsensusQuorum)
+	s.runWithdrawalLifecycle(withdrawalConsensusQuorum, accountsDriveFlash)
 }
 
 func (s *WithdrawalLifecycleSuite) TestPRTPostForeclosureWithdrawalLifecycle() {
 	s.SetExpectedLogs(s.T(), prtBlockOutOfRangeAllowlist)
-	s.runWithdrawalLifecycle(withdrawalConsensusPRT)
+	s.runWithdrawalLifecycle(withdrawalConsensusPRT, accountsDriveFlash)
 }
 
 type withdrawalAppDeployment struct {
@@ -130,20 +142,23 @@ type withdrawalAppDeployment struct {
 	appAddress       common.Address
 	consensusAddress common.Address
 	quorum           *iquorum.IQuorum
-	driveStartIndex  uint64
+	withdrawalConfig model.WithdrawalConfig
 }
 
-func (s *WithdrawalLifecycleSuite) runWithdrawalLifecycle(consensus withdrawalConsensus) {
+func (s *WithdrawalLifecycleSuite) runWithdrawalLifecycle(consensus withdrawalConsensus, driveKind accountsDriveKind) {
 	r := s.Require()
-	defer timed(s.T(), fmt.Sprintf("full %s withdrawal lifecycle", consensus))()
+	defer timed(s.T(), fmt.Sprintf("full %s %s withdrawal lifecycle", consensus, driveKind))()
 
 	dappPath := envOrDefault("CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH", "applications/erc20-withdrawal-dapp")
+	if driveKind == accountsDriveNVRAM {
+		dappPath = envOrDefault("CARTESI_TEST_ERC20_WITHDRAWAL_NVRAM_DAPP_PATH", "applications/erc20-withdrawal-nvram-dapp")
+	}
 	portalAddr := devnetAddress(s.T(), "CARTESI_DEVNET_ERC20_PORTAL_ADDRESS", defaultDevnetERC20PortalAddress)
 	tokenAddr := devnetAddress(s.T(), "CARTESI_DEVNET_TEST_USDC_ADDRESS", defaultDevnetTestUsdcAddress)
 	userAddr := mnemonicAddress(s.T(), withdrawalUserIndex)
 	initialUserBalance := s.tokenBalance(tokenAddr, userAddr)
 
-	s.T().Logf("--- Setup: %s ERC-20 withdrawal lifecycle ---", consensus)
+	s.T().Logf("--- Setup: %s %s ERC-20 withdrawal lifecycle ---", consensus, driveKind)
 	s.T().Logf("    dapp=%s", dappPath)
 	s.T().Logf("    user mnemonic[%d]=%s", withdrawalUserIndex, userAddr.Hex())
 
@@ -153,6 +168,7 @@ func (s *WithdrawalLifecycleSuite) runWithdrawalLifecycle(consensus withdrawalCo
 
 	deployment := s.deployWithdrawalApp(consensus, dappPath)
 	s.appName = deployment.appName
+	requireAccountsDriveRange(s.T(), dappPath, driveKind, deployment.withdrawalConfig)
 	if consensus != withdrawalConsensusPRT {
 		s.waitForIConsensusInputCursor(deployment.appName)
 	}
@@ -191,7 +207,7 @@ func (s *WithdrawalLifecycleSuite) runWithdrawalLifecycle(consensus withdrawalCo
 	r.NoError(waitForApplicationForeclosed(forecloseCtx, s.T(), deployment.appName), "node did not record foreclosure")
 	forecloseCancel()
 
-	driveProof, withdrawProof, accountIndex := s.generateWithdrawalProofs(deployment, dappPath, finalEpoch)
+	driveProof, withdrawProof, accountIndex := s.generateWithdrawalProofs(deployment, dappPath, driveKind, finalEpoch)
 	_, err = runCLI(s.ctx, "prove-drive-root", deployment.appName, "--proof-file", driveProof, "--yes")
 	r.NoError(err, "prove accounts-drive root")
 	s.waitForAccountsDriveProved(deployment.appName)
@@ -272,6 +288,12 @@ func (s *WithdrawalLifecycleSuite) deployWithdrawalApp(
 		r.FailNowf("unknown consensus", "unknown consensus %s", consensus)
 	}
 
+	withdrawalConfig, err := ethutil.GetApplicationWithdrawalConfig(s.ctx, s.client, common.HexToAddress(appAddrStr))
+	r.NoError(err, "read deployed application withdrawal config")
+	r.Equal(driveStartIndex, withdrawalConfig.AccountsDriveStartIndex, "deployed config must match the fixture accounts address")
+	r.Equal(accountsDriveLog2MaxNumOfAccounts, withdrawalConfig.Log2MaxNumOfAccounts)
+	r.Equal(accountsDriveLog2LeavesPerAccount, withdrawalConfig.Log2LeavesPerAccount)
+
 	_, err = runCLI(s.ctx, "app", "execution-parameters", "set",
 		appName, "snapshot_policy", string(model.SnapshotPolicy_EveryEpoch))
 	r.NoError(err, "set snapshot policy")
@@ -283,7 +305,7 @@ func (s *WithdrawalLifecycleSuite) deployWithdrawalApp(
 		appAddress:       common.HexToAddress(appAddrStr),
 		consensusAddress: common.HexToAddress(consensusAddrStr),
 		quorum:           quorumBinding,
-		driveStartIndex:  driveStartIndex,
+		withdrawalConfig: model.WithdrawalConfig(withdrawalConfig),
 	}
 }
 
@@ -561,6 +583,7 @@ func (s *WithdrawalLifecycleSuite) waitForVoucherOutput(appName string, inputInd
 func (s *WithdrawalLifecycleSuite) generateWithdrawalProofs(
 	deployment withdrawalAppDeployment,
 	dappPath string,
+	driveKind accountsDriveKind,
 	finalEpoch *model.Epoch,
 ) (string, string, string) {
 	r := s.Require()
@@ -582,15 +605,17 @@ func (s *WithdrawalLifecycleSuite) generateWithdrawalProofs(
 	r.NoError(json.Unmarshal([]byte(replayOut), &replaySummary), "parse machine replay summary")
 	r.Equal(strings.ToLower(finalEpoch.MachineHash.Hex()), strings.ToLower(replaySummary.MachineRoot),
 		"replayed machine root must match finalized epoch machine hash")
+	requireAccountsDriveRange(s.T(), snapshotPath, driveKind, deployment.withdrawalConfig)
 
 	driveProofPath := filepath.Join(tmp, "drive-root-proof.json")
 	withdrawProofPath := filepath.Join(tmp, "withdraw-proof.json")
+	withdrawalConfig := deployment.withdrawalConfig
 	proveOut := runMachineTool(s.ctx, s.T(),
 		"prove", "accounts-drive",
 		"--snapshot", snapshotPath,
-		"--accounts-drive-start-index", strconv.FormatUint(deployment.driveStartIndex, 10),
-		"--log2-max-num-of-accounts", strconv.Itoa(int(accountsDriveLog2MaxNumOfAccounts)),
-		"--log2-leaves-per-account", strconv.Itoa(int(accountsDriveLog2LeavesPerAccount)),
+		"--accounts-drive-start-index", strconv.FormatUint(withdrawalConfig.AccountsDriveStartIndex, 10),
+		"--log2-max-num-of-accounts", strconv.Itoa(int(withdrawalConfig.Log2MaxNumOfAccounts)),
+		"--log2-leaves-per-account", strconv.Itoa(int(withdrawalConfig.Log2LeavesPerAccount)),
 		"--account", mnemonicAddress(s.T(), withdrawalUserIndex).Hex(),
 		"--out-drive-root-proof", driveProofPath,
 		"--out-withdraw-proof", withdrawProofPath,
@@ -699,27 +724,148 @@ func withdrawalConfigForAccountsDrive(t testing.TB, guardianIndex uint32, accoun
 		accountsDriveStartIndex, builder.Hex()))
 }
 
+func TestAccountsDriveStartIndex_MemoryRanges_ReturnsStartIndex(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		config  string
+		wantErr string
+	}{
+		{
+			name:   "flash drive without nvram field",
+			config: `{"config":{"flash_drive":[{"start":16777216,"length":4194304}]}}`,
+		},
+		{
+			name:   "nvram without flash drive field",
+			config: `{"config":{"nvram":[{"start":16777216,"length":4194304}]}}`,
+		},
+		{
+			name:   "nvram with empty flash drive list",
+			config: `{"config":{"flash_drive":[],"nvram":[{"start":16777216,"length":4194304}]}}`,
+		},
+		{
+			name: "nvram with unrelated flash drive",
+			config: `{"config":{
+				"flash_drive":[{"start":33554432,"length":8388608}],
+				"nvram":[{"start":16777216,"length":4194304}]
+			}}`,
+		},
+		{
+			name: "ambiguous flash and nvram accounts candidates",
+			config: `{"config":{
+				"flash_drive":[{"start":33554432,"length":4194304}],
+				"nvram":[{"start":16777216,"length":4194304}]
+			}}`,
+			wantErr: "expected exactly one accounts-sized range, found 2",
+		},
+		{
+			name: "ambiguous nvram accounts candidates",
+			config: `{"config":{"nvram":[
+				{"start":16777216,"length":4194304},
+				{"start":33554432,"length":4194304}
+			]}}`,
+			wantErr: "expected exactly one accounts-sized range, found 2",
+		},
+		{
+			name:    "missing accounts candidate",
+			config:  `{"config":{"flash_drive":[],"nvram":[]}}`,
+			wantErr: "expected exactly one accounts-sized range, found 0",
+		},
+		{
+			name:    "misaligned nvram accounts candidate",
+			config:  `{"config":{"nvram":[{"start":4096,"length":4194304}]}}`,
+			wantErr: "accounts drive start must be aligned to drive size",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			template := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(template, "config.json"), []byte(tt.config), 0600))
+
+			if tt.wantErr != "" {
+				cfg := readWithdrawalMachineConfig(t, template)
+				_, err := accountsDriveStartIndexFromConfig(cfg)
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.Equal(t, uint64(4), accountsDriveStartIndex(t, template))
+		})
+	}
+}
+
+type withdrawalMemoryRange struct {
+	Start  uint64 `json:"start"`
+	Length uint64 `json:"length"`
+}
+
+type withdrawalMachineConfig struct {
+	Config struct {
+		FlashDrive []withdrawalMemoryRange `json:"flash_drive"`
+		NVRAM      []withdrawalMemoryRange `json:"nvram"`
+	} `json:"config"`
+}
+
+func readWithdrawalMachineConfig(t testing.TB, machinePath string) withdrawalMachineConfig {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(machinePath, "config.json"))
+	require.NoError(t, err, "read ERC-20 withdrawal machine config")
+	var cfg withdrawalMachineConfig
+	require.NoError(t, json.Unmarshal(raw, &cfg), "parse ERC-20 withdrawal machine config")
+	return cfg
+}
+
 func accountsDriveStartIndex(t testing.TB, templatePath string) uint64 {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(templatePath, "config.json")) //nolint:gosec
-	require.NoError(t, err, "read ERC-20 withdrawal template config")
-	var cfg struct {
-		Config struct {
-			FlashDrive []struct {
-				Start  uint64 `json:"start"`
-				Length uint64 `json:"length"`
-			} `json:"flash_drive"`
-		} `json:"config"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &cfg), "parse ERC-20 withdrawal template config")
-	for _, drive := range cfg.Config.FlashDrive {
-		if drive.Length == accountsDriveSize {
-			require.Zero(t, drive.Start%accountsDriveSize, "accounts drive start must be aligned to drive size")
-			return drive.Start >> accountsDriveLog2Size
+	index, err := accountsDriveStartIndexFromConfig(readWithdrawalMachineConfig(t, templatePath))
+	require.NoError(t, err, "identify accounts drive before deployment")
+	return index
+}
+
+func accountsDriveStartIndexFromConfig(cfg withdrawalMachineConfig) (uint64, error) {
+	var start uint64
+	var matches int
+	for _, drives := range [][]withdrawalMemoryRange{cfg.Config.FlashDrive, cfg.Config.NVRAM} {
+		for _, drive := range drives {
+			if drive.Length == accountsDriveSize {
+				start = drive.Start
+				matches++
+			}
 		}
 	}
-	require.FailNow(t, "accounts-drive flash drive not found in machine template")
-	return 0
+	if matches != 1 {
+		return 0, fmt.Errorf("expected exactly one accounts-sized range, found %d", matches)
+	}
+	if start%accountsDriveSize != 0 {
+		return 0, errors.New("accounts drive start must be aligned to drive size")
+	}
+	return start >> accountsDriveLog2Size, nil
+}
+
+func requireAccountsDriveRange(t testing.TB, machinePath string, kind accountsDriveKind, wc model.WithdrawalConfig) {
+	t.Helper()
+	cfg := readWithdrawalMachineConfig(t, machinePath)
+	var ranges []withdrawalMemoryRange
+	switch kind {
+	case accountsDriveFlash:
+		ranges = cfg.Config.FlashDrive
+	case accountsDriveNVRAM:
+		ranges = cfg.Config.NVRAM
+	default:
+		require.FailNowf(t, "unknown accounts drive kind", "unknown kind %s", kind)
+	}
+	log2DriveSize := accountsDriveLog2AccountSize + wc.Log2MaxNumOfAccounts + wc.Log2LeavesPerAccount
+	driveSize := uint64(1) << log2DriveSize
+	driveStart := wc.AccountsDriveStartIndex << log2DriveSize
+	var matches int
+	for _, memoryRange := range ranges {
+		if memoryRange.Start == driveStart && memoryRange.Length >= driveSize {
+			matches++
+		}
+	}
+	require.Equal(t, 1, matches, "%s must contain the configured accounts range in %s at 0x%x", machinePath, kind, driveStart)
 }
 
 func devnetAddress(t testing.TB, key, fallback string) common.Address {

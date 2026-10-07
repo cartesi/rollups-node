@@ -102,9 +102,17 @@ ensure_artifacts() {
 	mkdir -p "$ARTIFACTS"
 }
 
-drive_start_index() {
+withdrawal_config() {
 	need jq
-	jq -r '.config.flash_drive[] | select(.length == 4194304) | (.start / 4194304 | floor)' "$DAPP/config.json"
+	[ -x "$CLI" ] || die "$CLI is not executable; build it with make first"
+	"$CLI" app list | jq -ce --arg app "$APP" '
+		[.[] | select(
+			.name == $app or
+			(.iapplication_address | ascii_downcase) == ($app | ascii_downcase)
+		)] |
+		if length != 1 then error("expected exactly one registered application")
+		else .[0].withdrawal_config end
+	'
 }
 
 snapshot_path() {
@@ -339,17 +347,21 @@ cmd_prove() {
 	ensure_artifacts
 	[ -x "$MACHINE_TOOL" ] || die "$MACHINE_TOOL is not executable; build it with make first"
 	need jq
-	local epoch snapshot account summary
+	local epoch snapshot account summary config drive_start_index log2_max_accounts log2_leaves
 	epoch="$1"
 	snapshot="$(snapshot_path "$epoch")"
 	account="$(wallet)"
 	summary="$ARTIFACTS/prove-epoch-$epoch.json"
 	[ -d "$snapshot" ] || die "$snapshot not found; run './scripts/withdrawal-lifecycle replay $epoch'"
+	config="$(withdrawal_config)"
+	drive_start_index="$(printf '%s\n' "$config" | jq -er '.accounts_drive_start_index')"
+	log2_max_accounts="$(printf '%s\n' "$config" | jq -er '.log2_max_num_of_accounts')"
+	log2_leaves="$(printf '%s\n' "$config" | jq -er '.log2_leaves_per_account')"
 	"$MACHINE_TOOL" prove accounts-drive \
 		--snapshot "$snapshot" \
-		--accounts-drive-start-index "$(drive_start_index)" \
-		--log2-max-num-of-accounts 17 \
-		--log2-leaves-per-account 0 \
+		--accounts-drive-start-index "$drive_start_index" \
+		--log2-max-num-of-accounts "$log2_max_accounts" \
+		--log2-leaves-per-account "$log2_leaves" \
 		--account "$account" \
 		--out-drive-root-proof "$(drive_proof_path)" \
 		--out-withdraw-proof "$(withdraw_proof_path)" > "$summary"

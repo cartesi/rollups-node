@@ -326,15 +326,18 @@ func runProveAccountsDrive(ctx context.Context, opts proveAccountsDriveOptions) 
 	return json.NewEncoder(os.Stdout).Encode(summary)
 }
 
+type storedDriveConfig struct {
+	BackingStore struct {
+		DataFilename string `json:"data_filename"`
+	} `json:"backing_store"`
+	Length uint64 `json:"length"`
+	Start  uint64 `json:"start"`
+}
+
 type storedMachineConfig struct {
 	Config struct {
-		FlashDrive []struct {
-			BackingStore struct {
-				DataFilename string `json:"data_filename"`
-			} `json:"backing_store"`
-			Length uint64 `json:"length"`
-			Start  uint64 `json:"start"`
-		} `json:"flash_drive"`
+		FlashDrive []storedDriveConfig `json:"flash_drive"`
+		NVRAM      []storedDriveConfig `json:"nvram"`
 	} `json:"config"`
 }
 
@@ -347,9 +350,11 @@ func findStoredDrive(snapshot string, start uint64, length uint64) (string, erro
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return "", fmt.Errorf("parse stored machine config: %w", err)
 	}
-	for _, drive := range cfg.Config.FlashDrive {
-		if drive.Start == start && drive.Length >= length {
-			return filepath.Join(snapshot, strings.TrimPrefix(drive.BackingStore.DataFilename, "./")), nil
+	for _, drives := range [][]storedDriveConfig{cfg.Config.FlashDrive, cfg.Config.NVRAM} {
+		for _, drive := range drives {
+			if drive.Start == start && drive.Length >= length {
+				return filepath.Join(snapshot, strings.TrimPrefix(drive.BackingStore.DataFilename, "./")), nil
+			}
 		}
 	}
 	return "", fmt.Errorf("accounts drive not found in stored machine: start=0x%x length=0x%x", start, length)

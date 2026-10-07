@@ -378,6 +378,8 @@ invalid-outputs-root-dapps: applications/invalid-outputs-root-dapp applications/
 
 erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## ERC-20 withdrawal test dapp
 
+erc20-withdrawal-nvram-dapp: applications/erc20-withdrawal-nvram-dapp ## ERC-20 withdrawal test dapp with NVRAM accounts
+
 applications/reject-loop-dapp: ## Create reject-loop-dapp test application
 	@echo "Creating reject-loop-dapp test application"
 	@mkdir -p applications
@@ -422,6 +424,19 @@ applications/erc20-withdrawal-dapp: test/dapps/erc20-withdrawal/install.sh ## Cr
 		--append-init-file=test/dapps/erc20-withdrawal/install.sh \
 		--store=applications/erc20-withdrawal-dapp --final-hash -- /usr/local/bin/erc20-withdrawal-dapp
 
+applications/erc20-withdrawal-nvram-dapp: test/dapps/erc20-withdrawal/install.sh ## Create ERC-20 withdrawal NVRAM test application
+	@echo "Creating ERC-20 withdrawal NVRAM test application"
+	@mkdir -p applications
+	@PORTAL=$${CARTESI_DEVNET_ERC20_PORTAL_ADDRESS:-0x3332DE61a8BB9aC84893b2f552Fe81C9a6dC5419}; \
+	TOKEN=$${CARTESI_DEVNET_TEST_USDC_ADDRESS:-0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81}; \
+	cartesi-machine --ram-length=128Mi \
+		--nvram=label:accounts,length:4Mi,user:dapp \
+		--env=ACCOUNTS_DRIVE_KIND=nvram \
+		--env=TRUSTED_ERC20_PORTAL=$$PORTAL \
+		--env=TRUSTED_ERC20_TOKEN=$$TOKEN \
+		--append-init-file=test/dapps/erc20-withdrawal/install.sh \
+		--store=applications/erc20-withdrawal-nvram-dapp --final-hash -- /usr/local/bin/erc20-withdrawal-dapp
+
 deploy-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
 	@./cartesi-rollups-cli deploy application echo-dapp applications/echo-dapp/
@@ -443,8 +458,8 @@ deploy-erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## Deploy ERC-2
 	APP=$${APP:-erc20-withdrawal-dapp}; \
 	GUARDIAN=$${GUARDIAN:-0x70997970C51812dc3A010C7d01b50e0d17dc79C8}; \
 	BUILDER=$${CARTESI_DEVNET_WITHDRAWAL_OUTPUT_BUILDER_ADDRESS:-0xB4D253c7a110241561B3eD6d632846dF7d4e9Af7}; \
-	DRIVE_START_INDEX=$$(jq -r '.config.flash_drive[] | select(.length == 4194304) | (.start / 4194304 | floor)' \
-		applications/erc20-withdrawal-dapp/config.json); \
+	DRIVE_START_INDEX=$$(bash scripts/accounts-drive-start-index \
+		applications/erc20-withdrawal-dapp/config.json "$${ACCOUNTS_DRIVE_START_INDEX:-}"); \
 	WITHDRAWAL_CONFIG=$$(jq -cn \
 		--arg guardian "$$GUARDIAN" \
 		--arg builder "$$BUILDER" \
@@ -641,7 +656,7 @@ INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
 INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt|PrtPassiveDisputeObserver|PrtRecoveryFixtureConfig|SparseDisputeCommitment(MatchesDenseTrees|CanonicalGeometry|RejectsOutOfRangeRequests)|PassiveObserver(CleanupPreservesRestoreOrder|Config(PreservesOriginalAndUnrelatedFields|RejectsMissingFieldsAndInvalidJSON)))$$
 INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim)$$
 INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess)$$
-INTEGRATION_SHARD_withdrawal := ^Test(WithdrawalLifecycle|RefundLifecycle)$$
+INTEGRATION_SHARD_withdrawal := ^Test(WithdrawalLifecycle|RefundLifecycle|AccountsDriveStartIndex_MemoryRanges_ReturnsStartIndex)$$
 INTEGRATION_SHARD_awskms     := ^TestLocalStackAWSIntegration$$
 
 # -----------------------------------------------------------------------------
@@ -772,7 +787,7 @@ test-with-compose: ## Run all tests using docker compose with auto-shutdown
 	@$(MAKE) unit-test-with-compose
 	@$(MAKE) integration-test-with-compose
 
-integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp halt-loop-dapp mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps erc20-withdrawal-dapp ## Run integration tests on the host (NODE_TOPOLOGY=, SHARD=; requires: make start && eval $$(make env); CLEAN_STALE_LOCAL_NODE=true to stop test-port listeners)
+integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp halt-loop-dapp mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps erc20-withdrawal-dapp erc20-withdrawal-nvram-dapp ## Run integration tests on the host (NODE_TOPOLOGY=, SHARD=; requires: make start && eval $$(make env); CLEAN_STALE_LOCAL_NODE=true to stop test-port listeners)
 	@set -e; first=1; for t in $(TOPOLOGIES_SELECTED); do \
 		if [ "$$first" = 1 ]; then first=0; else echo "=== resetting dev DB + devnet between topologies ==="; $(MAKE) restart; fi; \
 		$(MAKE) _local-topology-$$t; \
@@ -815,6 +830,7 @@ _local-topology-%:
 		export CARTESI_TEST_INVALID_OUTPUTS_ROOT_LENGTH_DAPP_PATH=$(CURDIR)/applications/invalid-outputs-root-length-dapp; \
 		export CARTESI_TEST_INVALID_TEMPLATE_OUTPUTS_ROOT_DAPP_PATH=$(CURDIR)/applications/invalid-template-outputs-root-dapp; \
 		export CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH=$(CURDIR)/applications/erc20-withdrawal-dapp; \
+		export CARTESI_TEST_ERC20_WITHDRAWAL_NVRAM_DAPP_PATH=$(CURDIR)/applications/erc20-withdrawal-nvram-dapp; \
 		NODE_TOPOLOGY='$*' TEST_PATTERN="$$pattern" $(MAKE) integration-test
 
 deploy-load-test-apps: applications/echo-dapp ## Deploy 3 echo-dapp instances for load testing
@@ -896,6 +912,6 @@ build-debian-package: install
 	devnet image tester-image debian-packager run-with-compose shutdown-compose \
 	start start-devnet start-postgres stop stop-devnet stop-postgres restart restart-devnet restart-postgres \
 	install copy-debian-package build-debian-package \
-	mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps \
+	mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps erc20-withdrawal-dapp erc20-withdrawal-nvram-dapp \
 	deploy-erc20-withdrawal-dapp fund-wallet withdraw-wallet \
 	env help version
