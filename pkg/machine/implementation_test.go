@@ -152,6 +152,60 @@ func (s *ImplementationSuite) TestStateProof() {
 	machine.backend.(*MockBackend).AssertExpectations(s.T())
 }
 
+func (s *ImplementationSuite) TestGetProof() {
+	require := s.Require()
+	ctx := context.Background()
+
+	// Test successful delegation to the backend
+	mockBackend := NewMockBackend()
+	expected := MemoryProof{
+		Log2RootSize:   64,
+		Log2TargetSize: 13,
+		RootHash:       randomFakeHash(),
+		TargetAddress:  0x10000,
+		TargetHash:     randomFakeHash(),
+		Siblings:       []Hash{randomFakeHash(), randomFakeHash()},
+	}
+	mockBackend.On("GetProof", uint64(0x10000), int32(13), int32(64),
+		mock.AnythingOfType("time.Duration")).Return(expected, nil)
+
+	machine := &machineImpl{
+		backend: mockBackend,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			LoadDeadline: time.Second * 5,
+		},
+	}
+
+	proof, err := machine.GetProof(ctx, 0x10000, 13, 64)
+	require.NoError(err)
+	require.Equal(expected, *proof)
+	mockBackend.AssertExpectations(s.T())
+
+	// Test with backend error
+	mockBackend2 := NewMockBackend()
+	mockBackend2.On("GetProof", mock.Anything, mock.Anything, mock.Anything,
+		mock.AnythingOfType("time.Duration")).Return(MemoryProof{}, errors.New("proof failed"))
+	machine2 := &machineImpl{
+		backend: mockBackend2,
+		logger:  s.logger,
+		params: model.ExecutionParameters{
+			LoadDeadline: time.Second * 5,
+		},
+	}
+	_, err = machine2.GetProof(ctx, 0x10000, 13, 64)
+	require.Error(err)
+	require.ErrorIs(err, ErrMachineInternal)
+	require.Contains(err.Error(), "could not get the machine memory proof")
+	mockBackend2.AssertExpectations(s.T())
+
+	// Test with canceled context
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = machine.GetProof(canceledCtx, 0x10000, 13, 64)
+	require.ErrorIs(err, ErrCanceled)
+}
+
 func (s *ImplementationSuite) TestValidateAcceptedState() {
 	for _, test := range []struct {
 		name   string
