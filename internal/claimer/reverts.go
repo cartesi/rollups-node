@@ -205,9 +205,8 @@ func (s *Service) handleSubmitClaimRevert(
 		}
 		stateErr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"The configured signer %s is not the Authority owner %s for consensus %s. "+
-				"The configured and latest block views agree. Check CARTESI_AUTH_* against the Authority owner before re-enabling. "+
-				"Original submission error: %v",
-			ownerMismatch.signer, ownerMismatch.configuredOwner, app.IConsensusAddress, ownerMismatch.submissionErr)
+				"The configured and latest block views agree. Check CARTESI_AUTH_* against the Authority owner before re-enabling.",
+			ownerMismatch.signer, ownerMismatch.configuredOwner, app.IConsensusAddress)
 		return submitClaimAppHalted, stateErr
 	}
 	return submitClaimUnknown, nil

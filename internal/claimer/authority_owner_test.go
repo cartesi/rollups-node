@@ -30,7 +30,8 @@ import (
 func TestAuthoritySubmissionOwnerDiagnosis(t *testing.T) {
 	signer := common.HexToAddress("0x1")
 	other := common.HexToAddress("0x2")
-	revert := &rpcDataError{code: 3, msg: "execution reverted: original failure", data: "0xdeadbeef"}
+	const reflectedSecret = "PROVIDER_REFLECTED_ENDPOINT_SECRET"
+	revert := &rpcDataError{code: 3, msg: "execution reverted: " + reflectedSecret, data: "0xdeadbeef"}
 	transportErr := errors.New("RPC transport failed")
 	noDataErr := &rpcDataError{code: 3, msg: "submission reverted without data"}
 
@@ -93,8 +94,7 @@ func TestAuthoritySubmissionOwnerDiagnosis(t *testing.T) {
 				repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
 					mock.MatchedBy(func(reason *string) bool {
 						return reason != nil && strings.Contains(*reason, signer.String()) &&
-							strings.Contains(*reason, other.String()) && strings.Contains(*reason, "CARTESI_AUTH_*") &&
-							strings.Contains(*reason, test.submissionErr.Error())
+							strings.Contains(*reason, other.String()) && strings.Contains(*reason, "CARTESI_AUTH_*")
 					})).Return(nil).Once()
 			}
 			outcome, statusErr := s.handleSubmitClaimRevert(t.Context(), err, app, epoch)
@@ -102,6 +102,12 @@ func TestAuthoritySubmissionOwnerDiagnosis(t *testing.T) {
 			require.Equal(t, test.wantOutcome, outcome)
 			if test.wantOutcome == submitClaimAppHalted {
 				require.Equal(t, model.ApplicationStatus_Failed, app.Status)
+				require.NotContains(t, *app.Reason, test.submissionErr.Error())
+				require.NotContains(t, *app.Reason, reflectedSecret)
+				publicApplication, marshalErr := json.Marshal(app)
+				require.NoError(t, marshalErr)
+				require.NotContains(t, string(publicApplication), reflectedSecret)
+				require.Contains(t, string(publicApplication), "CARTESI_AUTH_*")
 			} else {
 				require.Equal(t, model.ApplicationStatus_OK, app.Status)
 				repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)

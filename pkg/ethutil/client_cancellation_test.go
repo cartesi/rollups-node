@@ -37,9 +37,9 @@ func TestHTTPFailureLogLevel(t *testing.T) {
 		{name: "mixed deadline", err: errors.Join(context.Canceled, context.DeadlineExceeded), level: slog.LevelError},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			const endpoint = "https://rpc.example.test/secret-key"
+			const endpoint = "https://rpc.example.test"
 			var logs bytes.Buffer
-			logger := newRedactedLogger(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})), endpoint)
+			logger := &retryLeveledLogger{logger: slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
 			logger.Error("request failed", "url", endpoint, "error", &url.Error{Op: "Post", URL: endpoint, Err: test.err})
 			require.Contains(t, logs.String(), `"level":"`+test.level.String()+`"`)
 			require.Equal(t, 1, strings.Count(logs.String(), `"msg":"request failed"`))

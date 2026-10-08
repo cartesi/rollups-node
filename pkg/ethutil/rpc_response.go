@@ -6,9 +6,11 @@ package ethutil
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+
+	"github.com/cartesi/rollups-node/internal/httpclient"
 )
 
 // nullErrorTransport removes a null "error" member from JSON-RPC responses.
@@ -27,7 +29,14 @@ func (t nullErrorTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
-		return nil, fmt.Errorf("read rpc response: %w", err)
+		endpoint := (&url.URL{Scheme: req.URL.Scheme, Host: req.URL.Host}).String()
+		return nil, httpclient.Diagnostic(req.Context(), err, "read RPC response", endpoint)
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if err := validateRPCEnvelope(body); err != nil {
+			endpoint := (&url.URL{Scheme: req.URL.Scheme, Host: req.URL.Host}).String()
+			return nil, httpclient.Diagnostic(req.Context(), err, "decode RPC response", endpoint)
+		}
 	}
 	if fixed, changed := dropNullError(body); changed {
 		body = fixed
@@ -36,6 +45,24 @@ func (t nullErrorTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	return resp, nil
+}
+
+// Validate the first JSON value and the same outer field types as go-ethereum
+// before its decoder can expose malformed provider input in a diagnostic.
+// Error, Result, ID and Params have no envelope type constraints and are skipped:
+// successful consensus input is neither decoded nor rewritten.
+func validateRPCEnvelope(body []byte) error {
+	type envelope struct {
+		Version string `json:"jsonrpc"`
+		Method  string `json:"method"`
+	}
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		var batch []envelope
+		return json.NewDecoder(bytes.NewReader(body)).Decode(&batch)
+	}
+	var message envelope
+	return json.NewDecoder(bytes.NewReader(body)).Decode(&message)
 }
 
 var errorMemberName = []byte(`"error"`)

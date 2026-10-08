@@ -570,6 +570,7 @@ type ClaimerConfig struct {
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
+	// Redirects are not followed; use the final endpoint URL.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -783,6 +784,7 @@ type EvmreaderConfig struct {
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
+	// Redirects are not followed; use the final endpoint URL.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -1082,6 +1084,7 @@ type NodeConfig struct {
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
+	// Redirects are not followed; use the final endpoint URL.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -1483,6 +1486,7 @@ type PrtConfig struct {
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
+	// Redirects are not followed; use the final endpoint URL.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
