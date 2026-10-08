@@ -191,8 +191,9 @@ used-by = ["evmreader", "claimer", "node", "prt"]
 [blockchain.CARTESI_BLOCKCHAIN_HTTP_ENDPOINT]
 file = true
 go-type = "URL"
+http = true
 description = """
-HTTP endpoint for the blockchain RPC provider."""
+HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider."""
 used-by = ["evmreader", "claimer", "node", "prt"]
 
 [blockchain.CARTESI_BLOCKCHAIN_HTTP_AUTHORIZATION]
@@ -579,16 +580,18 @@ used-by = ["advancer", "node"]
 
 [http.CARTESI_JSONRPC_API_URL]
 default = "http://localhost:10011/rpc"
-go-type = "string"
+go-type = "URL"
+http = true
 description = """
-URL for the JSON-RPC API."""
+HTTP(S) URL with a DNS name or IP address for the JSON-RPC API."""
 used-by = ["cli"]
 
 [http.CARTESI_INSPECT_URL]
 default = "http://localhost:10012"
-go-type = "string"
+go-type = "URL"
+http = true
 description = """
-URL of the inspect service."""
+HTTP(S) URL with a DNS name or IP address for the inspect service."""
 used-by = ["cli"]
 
 #

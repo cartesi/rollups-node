@@ -28,6 +28,9 @@ type Env struct {
 	// Configuration also has a "_FILE" variant that should be searched
 	File bool `toml:"file"`
 
+	// HTTP restricts a URL to an HTTP(S) endpoint with a hostname.
+	HTTP bool `toml:"http"`
+
 	// List of services that use this environment variable.
 	// Possible values: "advancer", "claimer", "cli", "evm-reader", "jsonrpc-api", "node", "validator"
 	UsedBy []string `toml:"used-by"`
@@ -41,6 +44,9 @@ func (e *Env) validate() {
 	}
 	if e.Description == "" {
 		panic("missing description for " + e.Name)
+	}
+	if e.HTTP && e.GoType != "URL" {
+		panic("HTTP validation requires URL type for " + e.Name)
 	}
 	if e.Default != nil {
 		var err error

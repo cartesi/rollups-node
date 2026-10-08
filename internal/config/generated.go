@@ -8,7 +8,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -570,7 +569,7 @@ type ClaimerConfig struct {
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
-	// HTTP endpoint for the blockchain RPC provider.
+	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -783,7 +782,7 @@ type EvmreaderConfig struct {
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
-	// HTTP endpoint for the blockchain RPC provider.
+	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -1082,7 +1081,7 @@ type NodeConfig struct {
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
-	// HTTP endpoint for the blockchain RPC provider.
+	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -1483,7 +1482,7 @@ type PrtConfig struct {
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
-	// HTTP endpoint for the blockchain RPC provider.
+	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -1906,7 +1905,7 @@ func GetAuthMnemonic() (RedactedString, error) {
 	s := viper.GetString(AUTH_MNEMONIC)
 	if s == "" {
 		filename := viper.GetString(AUTH_MNEMONIC_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_MNEMONIC_FILE, err)
 		}
@@ -1940,7 +1939,7 @@ func GetAuthPrivateKey() (RedactedString, error) {
 	s := viper.GetString(AUTH_PRIVATE_KEY)
 	if s == "" {
 		filename := viper.GetString(AUTH_PRIVATE_KEY_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_PRIVATE_KEY_FILE, err)
 		}
@@ -1974,7 +1973,7 @@ func GetBlockchainHttpAuthorization() (RedactedString, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_AUTHORIZATION_FILE, err)
 		}
@@ -1995,14 +1994,14 @@ func GetBlockchainHttpEndpoint() (URL, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_ENDPOINT_FILE, err)
 		}
 		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
-		v, err := toURL(s)
+		v, err := toHTTPURL(s)
 		if err != nil {
 			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_ENDPOINT, err)
 		}
@@ -2120,7 +2119,7 @@ func GetDatabaseConnection() (URL, error) {
 	s := viper.GetString(DATABASE_CONNECTION)
 	if s == "" {
 		filename := viper.GetString(DATABASE_CONNECTION_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_CONNECTION_FILE, err)
 		}
@@ -2267,16 +2266,16 @@ func GetInspectMaxInflight() (uint64, error) {
 }
 
 // GetInspectUrl returns the value for the environment variable CARTESI_INSPECT_URL.
-func GetInspectUrl() (string, error) {
+func GetInspectUrl() (URL, error) {
 	s := viper.GetString(INSPECT_URL)
 	if s != "" {
-		v, err := toString(s)
+		v, err := toHTTPURL(s)
 		if err != nil {
 			return v, fmt.Errorf("failed to parse %s: %w", INSPECT_URL, err)
 		}
 		return v, nil
 	}
-	return notDefinedstring(), fmt.Errorf("%s: %w", INSPECT_URL, ErrNotDefined)
+	return notDefinedURL(), fmt.Errorf("%s: %w", INSPECT_URL, ErrNotDefined)
 }
 
 // GetJsonrpcApiAddress returns the value for the environment variable CARTESI_JSONRPC_API_ADDRESS.
@@ -2293,16 +2292,16 @@ func GetJsonrpcApiAddress() (string, error) {
 }
 
 // GetJsonrpcApiUrl returns the value for the environment variable CARTESI_JSONRPC_API_URL.
-func GetJsonrpcApiUrl() (string, error) {
+func GetJsonrpcApiUrl() (URL, error) {
 	s := viper.GetString(JSONRPC_API_URL)
 	if s != "" {
-		v, err := toString(s)
+		v, err := toHTTPURL(s)
 		if err != nil {
 			return v, fmt.Errorf("failed to parse %s: %w", JSONRPC_API_URL, err)
 		}
 		return v, nil
 	}
-	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_API_URL, ErrNotDefined)
+	return notDefinedURL(), fmt.Errorf("%s: %w", JSONRPC_API_URL, ErrNotDefined)
 }
 
 // GetJsonrpcCorsAllowedOrigins returns the value for the environment variable CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS.
@@ -2531,7 +2530,7 @@ func GetPrtAuthMnemonic() (RedactedString, error) {
 	s := viper.GetString(PRT_AUTH_MNEMONIC)
 	if s == "" {
 		filename := viper.GetString(PRT_AUTH_MNEMONIC_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_MNEMONIC_FILE, err)
 		}
@@ -2565,7 +2564,7 @@ func GetPrtAuthPrivateKey() (RedactedString, error) {
 	s := viper.GetString(PRT_AUTH_PRIVATE_KEY)
 	if s == "" {
 		filename := viper.GetString(PRT_AUTH_PRIVATE_KEY_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_PRIVATE_KEY_FILE, err)
 		}

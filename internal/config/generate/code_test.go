@@ -53,4 +53,6 @@ func TestDeclaredDefaultsValidateFlagConversions(t *testing.T) {
 		env := Env{Name: "CARTESI_TEST", GoType: tc.kind, Default: &tc.value, Description: testDescription}
 		require.Panics(t, env.validate)
 	}
+	env := Env{Name: "CARTESI_TEST", GoType: "string", HTTP: true, Description: testDescription}
+	require.Panics(t, env.validate)
 }

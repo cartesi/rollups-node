@@ -96,7 +96,7 @@ func run(cmd *cobra.Command, args []string) {
 	url, err := config.GetInspectUrl()
 	cobra.CheckErr(err)
 
-	client, err := inspectclient.NewClient(url)
+	client, err := inspectclient.NewClient(url.Raw())
 	cobra.CheckErr(err)
 
 	payload, err := resolvePayload(args)
