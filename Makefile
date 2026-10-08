@@ -64,7 +64,7 @@ GO_ARTIFACTS := $(addprefix cartesi-rollups-,node cli evm-reader advancer valida
 # These artifacts embed the machine runtime and therefore require libcartesi.
 # Keep this list explicit: every other artifact is built with CGO_ENABLED=0, so
 # the normal build fails if a C dependency leaks into a pure service or tool.
-MACHINE_GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-advancer
+MACHINE_GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-advancer cartesi-rollups-machine-tool
 PURE_GO_ARTIFACTS := $(filter-out $(MACHINE_GO_ARTIFACTS),$(GO_ARTIFACTS))
 
 # fixme(vfusco): path on all oses

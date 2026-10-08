@@ -394,6 +394,9 @@ type MockMachine struct {
 	StateProofReturn *StateProof
 	StateProofError  error
 
+	GetProofReturn *MemoryProof
+	GetProofError  error
+
 	CompletionStatusReturn CompletionStatus
 	AdvanceOutputsReturn   []Output
 	AdvanceReportsReturn   []Report
@@ -421,6 +424,10 @@ func (m *MockMachine) Hash(_ context.Context) (Hash, error) {
 
 func (m *MockMachine) StateProof(_ context.Context) (*StateProof, error) {
 	return m.StateProofReturn, m.StateProofError
+}
+
+func (m *MockMachine) GetProof(_ context.Context, _ uint64, _, _ int32) (*MemoryProof, error) {
+	return m.GetProofReturn, m.GetProofError
 }
 
 func (m *MockMachine) Advance(_ context.Context, _ []byte, _ Hash, _ bool) (*AdvanceResponse, error) {

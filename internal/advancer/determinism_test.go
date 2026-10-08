@@ -746,6 +746,21 @@ func (m *determinismRuntime) Hash(ctx context.Context) (machine.Hash, error) {
 	return m.state.machineHash, nil
 }
 
+func (m *determinismRuntime) GetProof(ctx context.Context, address uint64, log2TargetSize, log2RootSize int32) (*machine.MemoryProof, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.checkOpenLocked(ctx); err != nil {
+		return nil, err
+	}
+	return &machine.MemoryProof{
+		Log2RootSize:   log2RootSize,
+		Log2TargetSize: log2TargetSize,
+		RootHash:       m.state.machineHash,
+		TargetAddress:  address,
+		TargetHash:     determinismHash("memory-proof", []byte{byte(log2TargetSize)}),
+	}, nil
+}
+
 func (m *determinismRuntime) StateProof(ctx context.Context) (*machine.StateProof, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
