@@ -167,7 +167,7 @@ func ToDurationFromSeconds(s string) (time.Duration, error) {
 func ToLogLevelFromString(s string) (LogLevel, error) {
 	var m = map[string]LogLevel{
 		"debug": slog.LevelDebug,
-		"info":  slog.LevelInfo,
+		"info":  slog.LevelInfo, //nolint:goconst // Stable config keyword also appears in generated defaults.
 		"warn":  slog.LevelWarn,
 		"error": slog.LevelError,
 	}
@@ -268,7 +268,7 @@ func ToAuthKindFromString(s string) (AuthKind, error) {
 	var m = map[string]AuthKind{
 		"private_key":      AuthKindPrivateKeyVar,
 		"private_key_file": AuthKindPrivateKeyFile,
-		"mnemonic":         AuthKindMnemonicVar,
+		"mnemonic":         AuthKindMnemonicVar, //nolint:goconst // Stable config keyword also appears in generated defaults.
 		"mnemonic_file":    AuthKindMnemonicFile,
 		"aws":              AuthKindAWS,
 	}

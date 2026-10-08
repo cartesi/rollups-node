@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+
+	"github.com/cartesi/rollups-node/internal/config"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -15,23 +18,43 @@ import (
 )
 
 func AddFlagBoolVar(flags *pflag.FlagSet, varRef *bool, flagName string, cfgName string, flagDesc string) {
-	flags.BoolVar(varRef, flagName, viper.GetBool(cfgName), flagDesc)
+	var value bool
+	if declared := declaredFlagDefault(cfgName); declared != "" {
+		var err error
+		value, err = strconv.ParseBool(declared)
+		cobra.CheckErr(err)
+	}
+	flags.BoolVar(varRef, flagName, value, flagDesc)
 	cobra.CheckErr(viper.BindPFlag(cfgName, flags.Lookup(flagName)))
 }
 
 func AddFlagUint64Var(flags *pflag.FlagSet, varRef *uint64, flagName string, cfgName string, flagDesc string) {
-	flags.Uint64Var(varRef, flagName, viper.GetUint64(cfgName), flagDesc)
+	var value uint64
+	if declared := declaredFlagDefault(cfgName); declared != "" {
+		var err error
+		value, err = strconv.ParseUint(declared, 10, 64)
+		cobra.CheckErr(err)
+	}
+	flags.Uint64Var(varRef, flagName, value, flagDesc)
 	cobra.CheckErr(viper.BindPFlag(cfgName, flags.Lookup(flagName)))
 }
 
 func AddFlagStrVar(flags *pflag.FlagSet, varRef *string, flagName string, cfgName string, flagDesc string) {
-	flags.StringVar(varRef, flagName, viper.GetString(cfgName), flagDesc)
+	flags.StringVar(varRef, flagName, declaredFlagDefault(cfgName), flagDesc)
 	cobra.CheckErr(viper.BindPFlag(cfgName, flags.Lookup(flagName)))
 }
 
 func AddFlagStrVarP(flags *pflag.FlagSet, varRef *string, flagName string, flagShort string, cfgName string, flagDesc string) {
-	flags.StringVarP(varRef, flagName, flagShort, viper.GetString(cfgName), flagDesc)
+	flags.StringVarP(varRef, flagName, flagShort, declaredFlagDefault(cfgName), flagDesc)
 	cobra.CheckErr(viper.BindPFlag(cfgName, flags.Lookup(flagName)))
+}
+
+func declaredFlagDefault(cfgName string) string {
+	value, known := config.DeclaredDefault(cfgName)
+	if !known {
+		panic("unknown configuration key for flag: " + cfgName)
+	}
+	return value
 }
 
 // LogErr logs an error without exiting, so callers can finish deferred cleanup.

@@ -145,10 +145,23 @@ const (
 {{ end -}}
 )
 
+// DeclaredDefault returns only the binary's declared configuration default.
+// A known setting without a default returns an empty string and true.
+func DeclaredDefault(name string) (string, bool) {
+	switch name {
+{{ range . -}}
+	case {{ toConstName .Name }}:
+		return {{ printf "%q" (defaultVal .Default) }}, true
+{{ end -}}
+	default:
+		return "", false
+	}
+}
+
 func SetDefaults() {
 	// Set defaults based on the TOML definitions.
 {{ range . }}
-{{ if .Default }}	viper.SetDefault({{ toConstName .Name }}, "{{ defaultVal .Default }}")
+{{ if .Default }}	viper.SetDefault({{ toConstName .Name }}, {{ printf "%q" (defaultVal .Default) }})
 {{ else }}	// no default for {{ .Name }}
 {{ end }}
 {{ end }}

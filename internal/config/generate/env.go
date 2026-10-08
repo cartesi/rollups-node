@@ -3,6 +3,8 @@
 
 package main
 
+import "strconv"
+
 // An entry in the toml's top level table representing an environment variable.
 type Env struct {
 	// Name of the environment variable.
@@ -39,5 +41,17 @@ func (e *Env) validate() {
 	}
 	if e.Description == "" {
 		panic("missing description for " + e.Name)
+	}
+	if e.Default != nil {
+		var err error
+		switch e.GoType {
+		case "bool":
+			_, err = strconv.ParseBool(*e.Default)
+		case "uint64":
+			_, err = strconv.ParseUint(*e.Default, 10, 64)
+		}
+		if err != nil {
+			panic("invalid declared default for " + e.Name)
+		}
 	}
 }
