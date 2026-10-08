@@ -584,7 +584,8 @@ default = "http://localhost:10011/rpc"
 go-type = "URL"
 http = true
 description = """
-HTTP(S) URL with a DNS name or IP address for the JSON-RPC API."""
+HTTP(S) URL with a DNS name or IP address for the JSON-RPC API.
+Redirects are not followed; use the final endpoint URL."""
 used-by = ["cli"]
 
 [http.CARTESI_INSPECT_URL]
@@ -592,7 +593,8 @@ default = "http://localhost:10012"
 go-type = "URL"
 http = true
 description = """
-HTTP(S) URL with a DNS name or IP address for the inspect service."""
+HTTP(S) URL with a DNS name or IP address for the inspect service.
+Redirects are not followed; use the final endpoint URL."""
 used-by = ["cli"]
 
 #

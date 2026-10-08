@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/inspectmessages"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	pkgmachine "github.com/cartesi/rollups-node/pkg/machine"
@@ -121,19 +122,20 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 
 func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestID := service.RequestIDFromContext(r.Context())
+	logger := inspect.Logger.With("request_id", requestID)
 	dapp := r.PathValue("dapp")
 
 	if dapp == "" {
-		inspect.Logger.Info("Bad request",
+		logger.Info("Bad request",
 			"err", "Missing application address")
-		http.Error(w, "Missing application address", http.StatusBadRequest)
+		http.Error(w, inspectmessages.MissingApplicationAddress, http.StatusBadRequest)
 		return
 	}
 
 	if r.Method != http.MethodPost {
-		inspect.Logger.Info("HTTP method not allowed", "application", dapp, "method", r.Method)
+		logger.Info("HTTP method not allowed", "application", dapp, "method", r.Method)
 		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, inspectmessages.MethodNotAllowed, http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -145,40 +147,40 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
-			inspect.Logger.Info("Payload too large",
+			logger.Info("Payload too large",
 				"limit", maxPayloadSize,
 				"application", dapp)
-			http.Error(w, "Payload too large", http.StatusRequestEntityTooLarge)
+			http.Error(w, inspectmessages.PayloadTooLarge, http.StatusRequestEntityTooLarge)
 			return
 		}
-		inspect.Logger.Info("Bad request", "err", err, "application", dapp)
-		http.Error(w, "Bad request", http.StatusBadRequest)
+		logger.Info("Bad request", "err", err, "application", dapp)
+		http.Error(w, inspectmessages.BadRequest, http.StatusBadRequest)
 		return
 	}
 
-	inspect.Logger.Info("Got new inspect request", "application", dapp)
+	logger.Info("Got new inspect request", "application", dapp)
 
 	app, machine, resolveErr := inspect.resolveApp(r.Context(), dapp)
 	if resolveErr != nil {
 		if errors.Is(resolveErr, ErrTerminalAppNoInspect) {
-			inspect.Logger.Info("Terminal application inspect unavailable",
+			logger.Info("Terminal application inspect unavailable",
 				"application", dapp, "err", resolveErr)
-			http.Error(w, "Application is terminal; inspect unavailable", http.StatusServiceUnavailable)
+			http.Error(w, inspectmessages.TerminalApplication, http.StatusServiceUnavailable)
 			return
 		}
 		if errors.Is(resolveErr, ErrMachineNotReady) {
-			inspect.Logger.Warn("Machine not ready", "application", dapp, "err", resolveErr)
-			http.Error(w, "Machine not ready", http.StatusServiceUnavailable)
+			logger.Warn("Machine not ready", "application", dapp, "err", resolveErr)
+			http.Error(w, inspectmessages.MachineNotReady, http.StatusServiceUnavailable)
 			return
 		}
 		if errors.Is(resolveErr, ErrForeclosedAppNoMachine) {
-			inspect.Logger.Info("Foreclosed application machine unavailable", "application", dapp, "err", resolveErr)
-			http.Error(w, "Application was foreclosed; machine unavailable", http.StatusServiceUnavailable)
+			logger.Info("Foreclosed application machine unavailable", "application", dapp, "err", resolveErr)
+			http.Error(w, inspectmessages.ForeclosedApplication, http.StatusServiceUnavailable)
 			return
 		}
 		if errors.Is(resolveErr, ErrNoApp) {
-			inspect.Logger.Info("Application not found", "application", dapp, "err", resolveErr)
-			http.Error(w, "Application not found", http.StatusNotFound)
+			logger.Info("Application not found", "application", dapp, "err", resolveErr)
+			http.Error(w, inspectmessages.ApplicationNotFound, http.StatusNotFound)
 			return
 		}
 		service.WriteInternalError(r.Context(), w, inspect.Logger,
@@ -197,14 +199,14 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, manager.ErrInspectAtCapacity):
-			inspect.Logger.Info("Application inspect at capacity",
+			logger.Info("Application inspect at capacity",
 				"application", dapp)
-			http.Error(w, "Application inspect at capacity", http.StatusServiceUnavailable)
+			http.Error(w, inspectmessages.InspectAtCapacity, http.StatusServiceUnavailable)
 			return
 		case errors.Is(err, manager.ErrMachineClosed):
-			inspect.Logger.Info("Application machine unavailable",
+			logger.Info("Application machine unavailable",
 				"application", dapp)
-			http.Error(w, "Machine not ready", http.StatusServiceUnavailable)
+			http.Error(w, inspectmessages.MachineNotReady, http.StatusServiceUnavailable)
 			return
 		}
 		service.WriteInternalError(ctx, w, inspect.Logger,
@@ -219,14 +221,13 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Headers are already flushed; we can only log. Writing a 500 via
 		// WriteInternalError here would produce "superfluous WriteHeader"
 		// warnings and garble the response.
-		inspect.Logger.Error("failed to encode inspect response",
+		logger.Error("failed to encode inspect response",
 			"err", err,
 			"application", dapp,
-			"request_id", requestID,
 		)
 		return
 	}
-	inspect.Logger.Info("Request executed",
+	logger.Info("Request executed",
 		"status", response.Status,
 		"application", dapp)
 }

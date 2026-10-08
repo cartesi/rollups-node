@@ -1,7 +1,7 @@
 # HTTP Deployment Posture
 
 **Audience:** operators running the Cartesi rollups-node in production.
-**Applies to:** releases that include the HTTP hardening package (2.0.0-alpha.12 and later).
+**Applies to:** inbound HTTP controls introduced in 2.0.0-alpha.12.
 
 This document describes the HTTP-facing surfaces of the node, how they are
 protected in-process, and the deployment posture operators are expected to
@@ -373,9 +373,100 @@ Every HTTP handler chain is wrapped in a panic-recovery middleware:
    The default 64 is sized for a single-node deployment on typical
    hardware; operators should not assume it represents a global limit.
 
+## Outbound endpoint credentials
+
+`CARTESI_BLOCKCHAIN_HTTP_ENDPOINT`, `CARTESI_JSONRPC_API_URL`, and
+`CARTESI_INSPECT_URL` require an `http` or `https` URL with a DNS name or IP address.
+IPv4 and bracketed IPv6 addresses are supported, for example
+`http://127.0.0.1:10011/rpc` and `http://[::1]:10011/rpc`.
+WebSocket URLs and IPC paths are rejected. Configure the final endpoint
+directly: outbound clients do not follow redirects, including 307 and 308.
+HTTP 101 upgrade streams are closed; these clients support HTTP API responses.
+
+Help, usage, and generated command documentation show the defaults declared
+in the binary, independently of environment or configuration values. Sensitive
+configuration errors omit the supplied value, including a secret accidentally
+placed in a `_FILE` variable instead of a filename.
+
+Outbound clients restore URL credentials, paths, queries, and Basic authentication
+only in the HTTP transport. Connection diagnostics and retry logs expose the
+scheme and host, with fixed descriptions for DNS, connection, timeout and TLS
+certificate failures. Non-2xx response bodies are replaced with safe diagnostics;
+arbitrary provider messages are discarded. Numeric RPC codes and the fixed
+`nonce too low` classification are retained for complete, bounded error bodies.
+The retrying Ethereum client can lose that phrase after exhausting retries on
+5xx responses; this also occurred before the fix. The inspect client retains
+the node's exact fixed inspect failure messages. Inspect operations append
+their path and query to the configured base URL.
+
+Non-2xx diagnostic reads are limited to 64 KiB; larger or incomplete bodies produce
+a generic failure while retaining the HTTP status. Interrupted reads retain
+their safe cancellation or timeout cause after status-based retry decisions.
+An HTTP 400 body interrupted by the client's request timeout is not retried.
+Successful response buffering
+remains unlimited. Unexpected 2xx statuses
+other than HTTP 200 are errors in the JSON-RPC API client, and their bodies are
+omitted from diagnostics. The Ethereum and JSON-RPC API clients decode the first
+JSON response value, preserving their existing acceptance of trailing data. The
+Ethereum envelope check still rejects malformed outer field types safely.
+
+The Ethereum constructors own their protected HTTP client; a supplied
+`rpc.WithHTTPClient` option is superseded. Other RPC options still apply. The
+JSON-RPC client keeps its existing public `URL` configuration field, which may
+contain credentials; use returned diagnostics when displaying failures.
+The protected inspect constructor accepts ordinary `*http.Client` overrides;
+it rejects arbitrary custom HTTP doers whose transport cannot be protected.
+
+The JSON-RPC API and inspect CLI send a fresh local UUID in `X-Request-ID` and
+print that ID on failure. If the request reached the node, use the ID to find
+the matching JSON-RPC dispatch/error or inspect error log. Failures before
+JSON-RPC request construction have no request ID. Response IDs and
+arbitrary error bodies are not displayed; a provider can put a credential there.
+Successful CLI output is unchanged.
+
+For example, a provider connection failure exposes only the public address:
+
+```text
+HTTP request failed for https://provider.example: connection refused
+```
+
+A node API internal failure includes the locally generated correlation ID:
+
+```text
+RPC Error -32603: Internal server error (request_id=<uuid>)
+```
+
+Connection diagnostics use these fixed labels:
+
+| Label | Meaning |
+| --- | --- |
+| `proxy connection failed` | The connection to the configured proxy failed. |
+| `context canceled` | The request was canceled. |
+| `context deadline exceeded` | The request context expired. |
+| `timeout` | A network operation timed out. |
+| `DNS lookup failed` | Hostname resolution failed. |
+| `connection refused` / `connection reset` | The destination refused or reset the connection. |
+| `unknown certificate authority` | The TLS certificate authority is not trusted. |
+| `certificate hostname mismatch` | The certificate does not match the hostname. |
+| `certificate verification failed` / `TLS handshake failed` | TLS validation or negotiation failed. |
+| `unexpected EOF` / `connection closed` | A response or connection ended unexpectedly. |
+| `empty response` | An RPC decoder received no JSON response. |
+
+Valid Ethereum 2xx and JSON-RPC API HTTP-200 payloads retain their content, including provider error
+messages and result data. A provider can reflect a credential in that content
+or in a result that later fails to decode. Hostnames are also visible, including
+provider subdomains that serve as credentials. These protections do not remove
+secrets from process environments, inherited child environments, or command-line
+arguments visible through process listings.
+
+Owner-mismatch failure reasons omit raw provider error messages. Other application
+failure reasons retain contract revert-data hex as operational evidence. Hex is
+reversible: provider-supplied data can therefore reach the public `application.reason`
+field, and that field is not universally secret-free.
+
 ## Non-goals
 
-The following are explicitly **out of scope** for the HTTP hardening
+The following are explicitly **out of scope** for the inbound HTTP hardening
 package. If you need them, add them at the reverse proxy or via
 follow-up work.
 

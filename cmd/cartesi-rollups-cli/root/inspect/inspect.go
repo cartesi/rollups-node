@@ -5,17 +5,21 @@ package inspect
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/httpclient"
 	"github.com/cartesi/rollups-node/pkg/inspectclient"
 )
 
@@ -96,27 +100,38 @@ func run(cmd *cobra.Command, args []string) {
 	url, err := config.GetInspectUrl()
 	cobra.CheckErr(err)
 
-	client, err := inspectclient.NewClient(url.Raw())
+	client, err := inspectclient.NewSafeClient(url.Raw())
 	cobra.CheckErr(err)
 
 	payload, err := resolvePayload(args)
 	cobra.CheckErr(err)
 	requestBody := bytes.NewReader(payload)
 
-	response, err := client.InspectPostWithBody(ctx, nameOrAddress, "application/octet-stream", requestBody)
-	cobra.CheckErr(err)
+	requestID := uuid.NewString()
+	checkRequestError := func(err error) {
+		if err != nil {
+			cobra.CheckErr(fmt.Errorf("%w (request_id=%s)", err, requestID))
+		}
+	}
+	response, err := client.InspectPostWithBody(ctx, nameOrAddress, "application/octet-stream", requestBody,
+		func(_ context.Context, request *http.Request) error {
+			request.Header.Set("X-Request-ID", requestID)
+			return nil
+		})
+	checkRequestError(err)
 	defer response.Body.Close()
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(response.Body)
-		cobra.CheckErr(fmt.Errorf("HTTP request failed with status %d: %s", response.StatusCode, string(bodyBytes)))
+		checkRequestError(fmt.Errorf("HTTP request failed with status %d: %s", response.StatusCode, string(bodyBytes)))
 	}
 
 	respBytes, err := io.ReadAll(response.Body)
-	cobra.CheckErr(err)
+	checkRequestError(err)
 
 	var prettyJSON bytes.Buffer
-	cobra.CheckErr(json.Indent(&prettyJSON, []byte(respBytes), "", "    "))
+	checkRequestError(httpclient.Diagnostic(ctx, json.Indent(&prettyJSON, respBytes, "", "    "),
+		"decode inspect response", client.Endpoint()))
 
 	fmt.Print(prettyJSON.String())
 }
