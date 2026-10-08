@@ -99,7 +99,7 @@ func NewEthClient(
 	// deliberately opaque; do not inspect it to try to extract an injected client.
 	opts = append(opts, rpc.WithHTTPClient(httpClient))
 
-	rpcClient, err := rpc.DialOptions(ctx, safeBase, opts...)
+	rpcClient, err := rpc.DialOptions(ctx, safeBase, opts...) //nolint:forbidigo // Protected Ethereum connection.
 	if err != nil {
 		return nil, httpclient.Diagnostic(ctx, err, "dial eth client", safeBase)
 	}
@@ -117,7 +117,7 @@ func DialEthClient(ctx context.Context, endpoint string) (*ethclient.Client, err
 		return nil, err
 	}
 	client.Transport = nullErrorTransport{next: client.Transport}
-	rpcClient, err := rpc.DialOptions(ctx, safeBase, rpc.WithHTTPClient(client))
+	rpcClient, err := rpc.DialOptions(ctx, safeBase, rpc.WithHTTPClient(client)) //nolint:forbidigo // Protected Ethereum connection.
 	if err != nil {
 		return nil, httpclient.Diagnostic(ctx, err, "dial eth client", safeBase)
 	}

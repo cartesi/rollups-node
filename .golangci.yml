@@ -20,6 +20,7 @@ linters:
     - gosec
     - nolintlint
     - prealloc
+    - forbidigo
 #    - depguard
   settings:
     lll:
@@ -28,6 +29,21 @@ linters:
     mnd:
       ignored-functions:
         - ^make
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: '^config\.(SafeURL|URL)\.Raw$'
+          pkg: '^github\.com/cartesi/rollups-node/internal/config$'
+          msg: 'Use typed CLI connection helpers or reviewed service transports for raw URLs.'
+        - pattern: '^rpc\.Dial.*$'
+          pkg: '^github\.com/ethereum/go-ethereum/rpc$'
+          msg: 'Use ethutil protected HTTP constructors.'
+        - pattern: '^ethclient\.Dial.*$'
+          pkg: '^github\.com/ethereum/go-ethereum/ethclient$'
+          msg: 'Use ethutil protected HTTP constructors.'
+        - pattern: '^factory\.NewRepositoryFromConnectionString$'
+          pkg: '^github\.com/cartesi/rollups-node/internal/repository/factory$'
+          msg: 'Use cli.OpenRepository for typed database connections.'
   exclusions:
     generated: lax
     presets:
@@ -36,6 +52,10 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      # Tests use synthetic URLs and in-process RPC connections to exercise the boundaries.
+      - path: '_test\.go$'
+        linters:
+          - forbidigo
       - path: internal/jsonrpc/api/.*\.go
         text: avoid meaningless package names
         linters:

@@ -46,11 +46,11 @@ func CreateReadService(ctx context.Context, useJsonrpc bool) (ReadService, error
 		if err != nil {
 			return nil, err
 		}
-		return NewJsonrpcReadService(ctx, url.Raw())
+		return NewJsonrpcReadService(ctx, url.Raw()) //nolint:forbidigo // Connect through the protected JSON-RPC transport.
 	}
 	dsn, err := config.GetDatabaseConnection()
 	if err != nil {
 		return nil, err
 	}
-	return NewRepositoryReadService(ctx, dsn.Raw())
+	return NewRepositoryReadService(ctx, dsn)
 }

@@ -43,6 +43,7 @@ func run(_ *cobra.Command, _ []string) {
 	cobra.CheckErr(err)
 
 	for i := range 5 {
+		//nolint:forbidigo // Database connection.
 		s, err = schema.New(dsnURL.Raw())
 		if err == nil {
 			break

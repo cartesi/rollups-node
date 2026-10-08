@@ -511,7 +511,11 @@ dependencies.sha256:
 # =============================================================================
 # Static Analysis
 # =============================================================================
-lint: ## Run the linter
+lint-endpoints: ## Check endpoint access restrictions and their fixtures
+	@golangci-lint run --enable-only forbidigo ./...
+	@bash dev/test-endpoint-lint.sh
+
+lint: lint-endpoints ## Run the linter
 	@echo "Running the linter"
 	@golangci-lint run ./...
 
@@ -627,6 +631,9 @@ unit-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run unit tests using d
 
 lint-with-docker: ## Run linting inside Docker (no host Go needed)
 	@docker run --rm cartesi/rollups-node:tester sh -c 'make lint && make vet && make fmt-check'
+
+lint-endpoints-with-docker: ## Check endpoint access restrictions in the tester image
+	@docker run --rm cartesi/rollups-node:tester make lint-endpoints
 
 check-license: ## Verify license headers on Go source files
 	@scripts/check-license-header.sh
@@ -908,7 +915,7 @@ build-debian-package: install
 	integration-test-shard-check list-integration-shards list-integration-cells \
 	generate generate-contracts generate-config generate-inspect check-generate generate-db THIRD_PARTY_LICENSES.md \
 	docs generate-cli-docs generate-config-docs \
-	lint fmt fmt-check vet escape check-license \
+	lint lint-endpoints lint-endpoints-with-docker fmt fmt-check vet escape check-license \
 	devnet image tester-image debian-packager run-with-compose shutdown-compose \
 	start start-devnet start-postgres stop stop-devnet stop-postgres restart restart-devnet restart-postgres \
 	install copy-debian-package build-debian-package \

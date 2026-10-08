@@ -430,6 +430,7 @@ func initChainClient(cmd *cobra.Command, args []string) (*chainClient, context.C
 		cancel = func() {}
 	}
 
+	//nolint:forbidigo // Protected Ethereum connection.
 	cc, err := newChainClient(ctx, ethEndpoint.Raw(), appAddr, block)
 	if err != nil {
 		cancel()

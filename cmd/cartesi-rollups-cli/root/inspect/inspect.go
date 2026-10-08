@@ -100,7 +100,7 @@ func run(cmd *cobra.Command, args []string) {
 	url, err := config.GetInspectUrl()
 	cobra.CheckErr(err)
 
-	client, err := inspectclient.NewSafeClient(url.Raw())
+	client, err := inspectclient.NewSafeClient(url.Raw()) //nolint:forbidigo // Connect through the protected inspect transport.
 	cobra.CheckErr(err)
 
 	payload, err := resolvePayload(args)

@@ -15,7 +15,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
 	"github.com/cartesi/rollups-node/internal/manager"
 	"github.com/cartesi/rollups-node/internal/prt"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/validator"
 	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/cartesi/rollups-node/pkg/service"
@@ -142,7 +141,7 @@ func run(cmd *cobra.Command, args []string) (runErr error) {
 	defer func() { cli.LogErr(logger, runErr) }()
 	cmd.SilenceUsage = true
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, cfg.DatabaseConnection.Raw())
+	repo, err := cli.OpenRepository(ctx, cfg.DatabaseConnection)
 	if err != nil {
 		return err
 	}

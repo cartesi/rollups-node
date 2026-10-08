@@ -19,7 +19,6 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/ierc20metadata"
 	"github.com/cartesi/rollups-node/pkg/contracts/ierc20portal"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -143,7 +142,7 @@ func runERC20(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
+	client, err := cli.DialBlockchain(ctx, ethEndpoint)
 	if err != nil {
 		return err
 	}

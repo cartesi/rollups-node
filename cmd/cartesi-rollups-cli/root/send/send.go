@@ -16,7 +16,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -139,7 +138,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
+	client, err := cli.DialBlockchain(ctx, ethEndpoint)
 	if err != nil {
 		return err
 	}

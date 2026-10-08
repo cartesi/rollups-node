@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +42,7 @@ func run(cmd *cobra.Command, _ []string) {
 	dsn, err := config.GetDatabaseConnection()
 	cobra.CheckErr(err)
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
+	repo, err := cli.OpenRepository(ctx, dsn)
 	cobra.CheckErr(err)
 	defer repo.Close()
 

@@ -8,11 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputs"
 	"github.com/cartesi/rollups-node/pkg/contracts/outputs"
 
@@ -887,7 +887,7 @@ func (s *RepositoryReadService) Close() {
 	s.Repository.Close()
 }
 
-func NewRepositoryReadService(ctx context.Context, dns string) (ReadService, error) {
+func NewRepositoryReadService(ctx context.Context, dsn config.SafeURL) (ReadService, error) {
 	inputAbi, err := inputs.InputsMetaData.GetAbi()
 	if err != nil {
 		return nil, err
@@ -896,7 +896,7 @@ func NewRepositoryReadService(ctx context.Context, dns string) (ReadService, err
 	if err != nil {
 		return nil, err
 	}
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dns)
+	repo, err := cli.OpenRepository(ctx, dsn)
 	if err != nil {
 		return nil, err
 	}
