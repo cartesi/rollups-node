@@ -116,7 +116,11 @@ func startMultiNode(logPath string, extraEnv ...string) (*multiNode, error) {
 			mn.stop(nil)
 			return nil, fmt.Errorf("%s not found on PATH: %w", svc.name, err)
 		}
-		cmd := exec.Command(svc.name) //nolint:gosec
+		cmd, err := limitedNodeCommand(svc.name, logFile)
+		if err != nil {
+			mn.stop(nil)
+			return nil, err
+		}
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 		cmd.Env = append(append(append([]string{}, base...), svc.extraEnv...), extraEnv...)
