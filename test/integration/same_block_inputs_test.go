@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,14 +25,17 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -66,7 +70,7 @@ var spamboxABIJSON string
 var spamboxBytecode string
 
 func (s *SameBlockInputsSuite) SetupSuite() {
-	s.ctx, s.cancel = context.WithTimeout(context.Background(), 15*time.Minute)
+	s.ctx, s.cancel = context.WithTimeout(context.Background(), 30*time.Minute)
 	s.client = newIntegrationEthClient(s.ctx, s.T())
 }
 
@@ -208,6 +212,167 @@ func (s *SameBlockInputsSuite) TestMultipleInputsOneTransactionAuthority() {
 		r.Equal(spamReceipt.TxHash, input.TransactionHash)
 		r.Equal(logIndexByInputIndex[expectedIndex], input.LogIndex)
 	}
+}
+
+// TestMaximumInputsOneBlockAuthority stresses the reader's in-memory input
+// batch with the largest Spambox call that fits the block gas budget. It checks
+// ingestion, not machine execution. A normal block may not exhaust memory;
+// CARTESI_TEST_INPUT_STRESS_GAS_LIMIT can raise Anvil's block limit for an OOM
+// reproduction, together with CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES. RPC gas caps
+// must also allow the requested budget. The original block limit is restored.
+func (s *SameBlockInputsSuite) TestMaximumInputsOneBlockAuthority() {
+	r := s.Require()
+	// Require an observable process before mutating the shared chain.
+	if sharedNode == nil {
+		s.T().Skip("memory stress test requires a test-managed node")
+	}
+	s.appName = uniqueAppName("maximum-inputs-one-block-authority")
+	root, err := repositoryRoot()
+	r.NoError(err, "resolve repository root")
+	dappPath := envOrDefault("CARTESI_TEST_DAPP_PATH", filepath.Join(root, "applications", "echo-dapp"))
+	appAddrStr, err := deployApplication(s.ctx, s.appName, dappPath, "--salt", uniqueSalt())
+	r.NoError(err, "deploy app")
+	appAddr := common.HexToAddress(appAddrStr)
+	inputBoxAddr := inputBoxAddress(s.T())
+	spambox := deploySpambox(s.ctx, s.T(), s.client, inputBoxAddr)
+	r.Zero(inputBoxInputCount(s.ctx, s.T(), s.client, inputBoxAddr, appAddr),
+		"stress application must start without inputs")
+
+	// Anvil applies gas-limit changes to the next block; latest may still
+	// contain the previous test's limit after its cleanup restored the setting.
+	header, err := s.client.HeaderByNumber(s.ctx, big.NewInt(int64(rpc.PendingBlockNumber)))
+	r.NoError(err, "read pending block gas limit")
+	gasLimit := uint64(500_000_000)
+	if value := os.Getenv("CARTESI_TEST_INPUT_STRESS_GAS_LIMIT"); value != "" {
+		gasLimit, err = strconv.ParseUint(value, 10, 64)
+		r.NoError(err, "parse CARTESI_TEST_INPUT_STRESS_GAS_LIMIT")
+		r.Greater(gasLimit, uint64(21_000), "stress gas budget must exceed intrinsic transaction gas")
+	}
+
+	// Pause both mining modes so the measured state cannot change between the
+	// probes and the real transaction. Restore even after a fatal assertion,
+	// using a fresh context in case the suite deadline has expired.
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		s.Assert().NoError(anvilRPC(ctx, "evm_setBlockGasLimit", fmt.Sprintf("0x%x", header.GasLimit)))
+		s.Assert().NoError(anvilRPC(ctx, "evm_setIntervalMining", 1))
+		s.Assert().NoError(anvilRPC(ctx, "evm_setAutomine", true))
+	}()
+	setAnvilAutomine(s.ctx, s.T(), false)
+	setAnvilIntervalMining(s.ctx, s.T(), 0)
+	r.NoError(anvilRPC(s.ctx, "evm_setBlockGasLimit", fmt.Sprintf("0x%x", gasLimit)),
+		"set stress block gas limit")
+	// Publish the limit so eth_estimateGas sees the same budget as mining.
+	r.NoError(anvilMine(s.ctx, 1), "mine block with stress gas limit")
+
+	opts := transactorForMnemonicIndex(s.ctx, s.T(), s.client, 3)
+	// Fund only the stress sender explicitly: lack of ETH must not cap the
+	// workload. Restore its previous balance after the transaction is mined.
+	balance, err := s.client.BalanceAt(s.ctx, opts.From, nil)
+	r.NoError(err, "read stress sender balance")
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		s.Assert().NoError(anvilSetBalance(ctx, opts.From.Hex(), "0x"+balance.Text(16)))
+	}()
+	// Use a fee above the frozen block's base fee and reserve the full gas cost.
+	opts.GasPrice = new(big.Int).Add(new(big.Int).Mul(header.BaseFee, big.NewInt(2)), big.NewInt(1_000_000_000))
+	funds := new(big.Int).Mul(new(big.Int).SetUint64(gasLimit), opts.GasPrice)
+	funds.Add(funds, balance)
+	r.NoError(anvilSetBalance(s.ctx, opts.From.Hex(), "0x"+funds.Text(16)), "fund stress transaction")
+
+	// Build calldata without sending or estimating. Probe with eth_estimateGas
+	// to include intrinsic gas and EIP-150 forwarding costs, not just call gas.
+	probe := *opts
+	probe.NoSend = true
+	probe.GasLimit = gasLimit
+	probe.Nonce = big.NewInt(0)
+	estimate := func(count uint64) (uint64, error) {
+		tx, err := spambox.Transact(&probe, "spam", appAddr, new(big.Int).SetUint64(count))
+		if err != nil {
+			return 0, err
+		}
+		return s.client.EstimateGas(s.ctx, ethereum.CallMsg{
+			From: opts.From, To: tx.To(), Gas: gasLimit,
+			GasPrice: opts.GasPrice, Data: tx.Data(),
+		})
+	}
+	s.T().Logf("about to estimate count for gas budget %d", gasLimit)
+	_, err = estimate(1)
+	r.NoError(err, "one input must fit before searching the gas boundary")
+	// Each input emits a LOG costing at least 375 gas; this is a strict upper
+	// bound, even without storage, hashing, calldata, or memory expansion costs.
+	low, high := uint64(1), gasLimit/375+1
+	for low+1 < high {
+		mid := low + (high-low)/2
+		gas, err := estimate(mid)
+		if err != nil {
+			// An inner addInput running out of gas can surface as a revert.
+			// Transport, timeout, and other RPC failures must not shrink the batch.
+			message := strings.ToLower(err.Error())
+			r.True(strings.Contains(message, "out of gas") ||
+				strings.Contains(message, "gas required exceeds allowance") ||
+				strings.Contains(message, "execution reverted"),
+				"estimate %d inputs failed unexpectedly: %v", mid, err)
+			high = mid
+		} else if gas > gasLimit {
+			high = mid
+		} else {
+			low = mid
+		}
+	}
+	count := low
+	s.T().Logf("stress batch: %d inputs, block gas budget %d, node memory limit setting %q",
+		count, gasLimit, os.Getenv("CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES"))
+	opts.GasLimit = gasLimit
+	tx, err := spambox.Transact(opts, "spam", appAddr, new(big.Int).SetUint64(count))
+	r.NoError(err, "submit maximum-input transaction")
+	// Start before mining: the reader can ingest the block before waitReceipt
+	// returns. Keep sampling until the repository cursor confirms ingestion.
+	r.NoError(anvilMine(s.ctx, 1), "mine stress transaction in one block")
+	receiptCtx, receiptCancel := context.WithTimeout(s.ctx, 2*time.Minute)
+	defer receiptCancel()
+	receipt := waitReceipt(receiptCtx, s.T(), s.client, tx)
+	r.Equal(uint64(types.ReceiptStatusSuccessful), receipt.Status, "stress transaction must succeed")
+	r.Equal(count, inputBoxInputCount(s.ctx, s.T(), s.client, inputBoxAddr, appAddr),
+		"all stress inputs must exist on chain")
+	s.T().Logf("stress block %d: inputs=%d gas used=%d/%d tx=%s",
+		receipt.BlockNumber.Uint64(), count, receipt.GasUsed, gasLimit, tx.Hash())
+
+	dsn, err := config.GetDatabaseConnection()
+	r.NoError(err, "get database connection")
+	repo, err := factory.NewRepositoryFromConnectionString(s.ctx, dsn.Raw())
+	r.NoError(err, "open repository")
+	defer repo.Close()
+	ctx, cancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
+	defer cancel()
+	err = pollUntil(ctx, 2*time.Second, func() (bool, error) {
+		if checker, ok := sharedNode.(nodeExitChecker); ok {
+			if err := checker.exitedProcessError(); err != nil {
+				return false, err
+			}
+		}
+		stored, err := repo.GetNumberOfInputs(ctx, s.appName)
+		if err != nil || stored != count {
+			return false, err
+		}
+		app, err := repo.GetApplication(ctx, s.appName)
+		return app != nil && app.LastInputCheckBlock >= receipt.BlockNumber.Uint64(), err
+	})
+	r.NoError(err, "reader must ingest %d inputs from block %d under its memory limit; check node log for allocation failures",
+		count, receipt.BlockNumber.Uint64())
+	first, err := repo.GetInput(ctx, s.appName, 0)
+	r.NoError(err, "read first ingested input")
+	r.NotNil(first)
+	// Count in SQL with a one-row page, avoiding another large in-memory batch
+	// in the test runner. All inputs must belong to this transaction and epoch.
+	txHash := tx.Hash()
+	_, total, err := repo.ListInputs(ctx, s.appName, repository.InputFilter{
+		EpochIndex: &first.EpochIndex, TransactionHash: &txHash,
+	}, repository.Pagination{Limit: 1}, false)
+	r.NoError(err, "count stress inputs in one epoch")
+	r.Equal(count, total, "entire stress batch must be stored in one epoch")
 }
 
 // runMultipleInputsOneBlock deploys an application, batches three inputs into a
