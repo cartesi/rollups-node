@@ -9,15 +9,25 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/spf13/viper"
 )
 
-// Unwrap the http authorization config `key:val` into a ClientOption that rpc accepts
+// HTTPAuthorizationOption unwraps the http authorization config `key:val`
+// into a ClientOption that rpc accepts.
+//
+// Authorization is optional: when neither the direct value nor its _FILE
+// counterpart is set it returns (nil, nil). When either is set but invalid
+// (missing or non-conformant file, malformed value) the error is returned so
+// the service refuses to start, as documented in docs/secrets.md.
 func HTTPAuthorizationOption() (rpc.ClientOption, error) {
+	if viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION) == "" &&
+		viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION_FILE) == "" {
+		return nil, nil
+	}
 
-	// no authorization is allowed.
 	auth, err := GetBlockchainHttpAuthorization()
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	kv := strings.SplitN(auth.Value, ":", 2)

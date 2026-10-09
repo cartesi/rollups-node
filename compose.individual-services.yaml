@@ -40,17 +40,40 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: rollupsdb
 
+  # NOTE: compose can't override uid/gid/mode for secrets, it bind mounts them
+  # with the host credentials. The portable workaround to deal with this was to
+  # use volumes instead and manually chown/chmod the files upon creation.
+  secret-init:
+    image: cartesi/rollups-node:devel
+    user: root # required by: chown
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        rm -f /dst/*
+        cp /src/* /dst/
+        chown 102:102 /dst /dst/*
+        chmod 0400 /dst/*
+    volumes:
+      - ./test/secrets:/src:ro
+      - node_secrets:/dst
+    network_mode: "none"
+    restart: "no"
+
   migration:
     image: cartesi/rollups-node:devel
     command: cartesi-rollups-cli db init
     depends_on:
+      secret-init:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
+    volumes:
+      - node_secrets:/run/secrets:ro
     networks:
       - devnet
     restart: "no"
-    secrets:
-      - database_connection
     environment:
       <<: *env
 
@@ -58,10 +81,14 @@ services:
     image: cartesi/rollups-node:devel
     command: cartesi-rollups-evm-reader
     depends_on:
+      secret-init:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
       ethereum_provider:
         condition: service_healthy
+    volumes:
+      - node_secrets:/run/secrets:ro
     networks:
       - devnet
     ports:
@@ -71,10 +98,6 @@ services:
       interval: 1s
       timeout: 1s
       retries: 5
-    secrets:
-      - auth_mnemonic
-      - blockchain_http_endpoint
-      - database_connection
     environment:
       <<: *env
 
@@ -83,12 +106,15 @@ services:
     init: true
     command: cartesi-rollups-advancer
     depends_on:
+      secret-init:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
       ethereum_provider:
         condition: service_healthy
     volumes:
       - node_data:/var/lib/cartesi-rollups-node/data
+      - node_secrets:/run/secrets:ro
     networks:
       - devnet
     ports:
@@ -99,9 +125,6 @@ services:
       interval: 1s
       timeout: 1s
       retries: 5
-    secrets:
-      - auth_mnemonic
-      - database_connection
     environment:
       <<: *env
 
@@ -109,8 +132,12 @@ services:
     image: cartesi/rollups-node:devel
     command: cartesi-rollups-validator
     depends_on:
+      secret-init:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
+    volumes:
+      - node_secrets:/run/secrets:ro
     networks:
       - devnet
     ports:
@@ -120,8 +147,6 @@ services:
       interval: 1s
       timeout: 1s
       retries: 5
-    secrets:
-      - database_connection
     environment:
       <<: *env
 
@@ -129,10 +154,14 @@ services:
     image: cartesi/rollups-node:devel
     command: cartesi-rollups-claimer
     depends_on:
+      secret-init:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
       ethereum_provider:
         condition: service_healthy
+    volumes:
+      - node_secrets:/run/secrets:ro
     networks:
       - devnet
     ports:
@@ -142,10 +171,6 @@ services:
       interval: 1s
       timeout: 1s
       retries: 5
-    secrets:
-      - auth_mnemonic
-      - blockchain_http_endpoint
-      - database_connection
     environment:
       <<: *env
 
@@ -166,10 +191,6 @@ services:
       interval: 1s
       timeout: 1s
       retries: 5
-    secrets:
-      - auth_mnemonic
-      - blockchain_http_endpoint
-      - database_connection
     environment:
       <<: *env
 
@@ -177,8 +198,12 @@ services:
     image: cartesi/rollups-node:devel
     command: cartesi-rollups-jsonrpc-api
     depends_on:
+      secret-init:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
+    volumes:
+      - node_secrets:/run/secrets:ro
     networks:
       - devnet
     ports:
@@ -189,22 +214,11 @@ services:
       interval: 1s
       timeout: 1s
       retries: 5
-    secrets:
-      - auth_mnemonic
-      - blockchain_http_endpoint
-      - database_connection
     environment:
       <<: *env
 volumes:
   node_data:
+  node_secrets:
 
 networks:
   devnet:
-
-secrets:
-  auth_mnemonic:
-    file: test/secrets/auth_mnemonic.txt
-  blockchain_http_endpoint:
-    file: test/secrets/blockchain_http_endpoint.txt
-  database_connection:
-    file: test/secrets/database_connection.txt
