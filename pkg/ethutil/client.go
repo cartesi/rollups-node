@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/errutil"
+	"github.com/cartesi/rollups-node/internal/httpclient"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/hashicorp/go-retryablehttp"
@@ -60,8 +61,10 @@ type RetryConfig struct {
 }
 
 // NewEthClient creates an Ethereum JSON-RPC client with retryable HTTP transport.
-// The logger output redacts the endpoint URL to prevent leaking API keys
-// that may be embedded in endpoint paths or query parameters.
+// Only HTTP(S) endpoints with a hostname are supported. Endpoint userinfo,
+// paths, and queries remain below retry and RPC error handling. The constructor
+// owns its HTTP client: rpc.WithHTTPClient options are superseded by the protected
+// retry client. Other RPC options, including headers and authentication, apply.
 func NewEthClient(
 	ctx context.Context,
 	endpoint string,
@@ -70,28 +73,35 @@ func NewEthClient(
 	rpcOptions ...rpc.ClientOption,
 ) (*ethclient.Client, error) {
 	rclient := retryablehttp.NewClient()
-	rclient.Logger = newRedactedLogger(logger, endpoint)
+	safeBase, inner, err := httpclient.NewClient(endpoint, rclient.HTTPClient, httpclient.Options{})
+	if err != nil {
+		return nil, err
+	}
+	rclient.HTTPClient = inner
+	rclient.Logger = &retryLeveledLogger{logger: logger}
 	rclient.RetryMax = int(min(retryConfig.MaxRetries, uint64(math.MaxInt)))
 	rclient.RetryWaitMin = retryConfig.RetryMinWait
 	rclient.RetryWaitMax = retryConfig.RetryMaxWait
 	rclient.HTTPClient.Timeout = retryConfig.RequestTimeout
 	rclient.Backoff = retryBackoff
+	rclient.CheckRetry = protectedRetryPolicy
 
 	httpClient := rclient.StandardClient()
+	httpClient.CheckRedirect = inner.CheckRedirect
 	httpClient.Transport = nullErrorTransport{next: httpClient.Transport}
-	opts := []rpc.ClientOption{
-		rpc.WithHTTPClient(httpClient),
-	}
+	opts := make([]rpc.ClientOption, 0, len(rpcOptions)+1)
 	for _, opt := range rpcOptions {
 		if opt != nil {
 			opts = append(opts, opt)
 		}
 	}
+	// Always keep endpoint restoration and diagnostic protection. ClientOption is
+	// deliberately opaque; do not inspect it to try to extract an injected client.
+	opts = append(opts, rpc.WithHTTPClient(httpClient))
 
-	rpcClient, err := rpc.DialOptions(ctx, endpoint, opts...)
+	rpcClient, err := rpc.DialOptions(ctx, safeBase, opts...) //nolint:forbidigo // Protected Ethereum connection.
 	if err != nil {
-		return nil, fmt.Errorf("dial eth client: %w",
-			RedactEndpointFromError(err, endpoint))
+		return nil, httpclient.Diagnostic(ctx, err, "dial eth client", safeBase)
 	}
 
 	return ethclient.NewClient(rpcClient), nil
@@ -99,14 +109,29 @@ func NewEthClient(
 
 // DialEthClient connects to an Ethereum JSON-RPC endpoint like
 // ethclient.DialContext, and accepts a null error member in the responses like
-// NewEthClient.
+// NewEthClient. It accepts only HTTP(S) endpoints with a hostname and does not
+// follow redirects.
 func DialEthClient(ctx context.Context, endpoint string) (*ethclient.Client, error) {
-	httpClient := &http.Client{Transport: nullErrorTransport{next: http.DefaultTransport}}
-	rpcClient, err := rpc.DialOptions(ctx, endpoint, rpc.WithHTTPClient(httpClient))
+	safeBase, client, err := httpclient.NewClient(endpoint, nil, httpclient.Options{})
 	if err != nil {
 		return nil, err
 	}
+	client.Transport = nullErrorTransport{next: client.Transport}
+	rpcClient, err := rpc.DialOptions(ctx, safeBase, rpc.WithHTTPClient(client)) //nolint:forbidigo // Protected Ethereum connection.
+	if err != nil {
+		return nil, httpclient.Diagnostic(ctx, err, "dial eth client", safeBase)
+	}
 	return ethclient.NewClient(rpcClient), nil
+}
+
+// Retry decisions use the original cause, because retryablehttp inspects both
+// concrete certificate types and invalid-header text. Policy errors are discarded
+// locally; the returned error can only be the request context's safe sentinel.
+func protectedRetryPolicy(ctx context.Context, resp *http.Response, err error) (bool, error) {
+	retry, _ := retryablehttp.DefaultRetryPolicy(ctx, resp, httpclient.ClassificationError(err))
+	// The policy uses the original cause only for its decision. Its error
+	// output is restricted locally instead of trusting dependency behavior.
+	return retry, ctx.Err()
 }
 
 // retryBackoff caps server-directed Retry-After delays while preserving the
@@ -123,128 +148,40 @@ func retryBackoff(minDuration, maxDuration time.Duration, attemptNum int, resp *
 	return retryablehttp.DefaultBackoff(minDuration, maxDuration, attemptNum, resp)
 }
 
-// Compile-time assertion that redactedLeveledLogger implements the LeveledLogger
-// interface from hashicorp/go-retryablehttp. Without this, a change to the library's
-// interface would only be caught at runtime when the logger is first used, because
-// the assignment to rclient.Logger uses the untyped interface{} field.
-var _ retryablehttp.LeveledLogger = (*redactedLeveledLogger)(nil)
+// The transport supplies safe diagnostics before retryablehttp logs them.
+// This adapter only lowers pure cancellation failures to Debug.
+var _ retryablehttp.LeveledLogger = (*retryLeveledLogger)(nil)
 
-// redactedLeveledLogger implements retryablehttp.LeveledLogger.
-// It wraps slog.Logger and replaces all occurrences of the full endpoint URL
-// in log values with a redacted version (scheme://host only). This prevents
-// leaking API keys that providers like Alchemy and Infura embed in URL paths.
-//
-// The redaction is endpoint-aware rather than key-name-aware: it scrubs ALL
-// string, error, and fmt.Stringer values, catching URLs regardless of which
-// log key they appear under (e.g., "url", "request", "error").
-type redactedLeveledLogger struct {
-	logger       *slog.Logger
-	endpoint     string // full endpoint URL to scrub
-	normalized   string // url.Parse(endpoint).String() canonical form (may differ from endpoint)
-	redactedHost string // scheme://host replacement
-}
+type retryLeveledLogger struct{ logger *slog.Logger }
 
-func newRedactedLogger(logger *slog.Logger, endpoint string) *redactedLeveledLogger {
-	// Precompute the normalized form so we can scrub both the raw and
-	// canonical representations without per-call parsing overhead.
-	normalized := endpoint
-	if u, err := url.Parse(endpoint); err == nil {
-		if canon := u.String(); canon != endpoint {
-			normalized = canon
-		}
-	}
-	return &redactedLeveledLogger{
-		logger:       logger,
-		endpoint:     endpoint,
-		normalized:   normalized,
-		redactedHost: redactURLString(endpoint),
-	}
-}
-
-func (l *redactedLeveledLogger) Error(msg string, keysAndValues ...any) {
-	// retryablehttp logs canceled requests before returning their error to the
-	// caller. Cancellation is not a transport failure. Keep the diagnostic at
-	// Debug; the caller still receives the error and applies its own policy.
-	// Classify before redaction, which can turn an error into a plain string.
-	for i := 0; i+1 < len(keysAndValues); i += 2 {
-		if keysAndValues[i] == "error" {
-			if err, ok := keysAndValues[i+1].(error); ok && errutil.IsOnlyCancellation(err) {
-				l.Debug(msg, keysAndValues...)
+func (l *retryLeveledLogger) Error(msg string, values ...any) {
+	for i := 0; i+1 < len(values); i += 2 {
+		if values[i] == "error" {
+			if err, ok := values[i+1].(error); ok && errutil.IsOnlyCancellation(err) {
+				l.logger.Debug(msg, values...)
 				return
 			}
 		}
 	}
-	l.logger.Error(l.redactString(msg), l.redactValues(keysAndValues)...)
+	l.logger.Error(msg, values...)
 }
 
-func (l *redactedLeveledLogger) Info(msg string, keysAndValues ...any) {
-	l.logger.Info(l.redactString(msg), l.redactValues(keysAndValues)...)
-}
-
-func (l *redactedLeveledLogger) Debug(msg string, keysAndValues ...any) {
-	l.logger.Debug(l.redactString(msg), l.redactValues(keysAndValues)...)
-}
-
-func (l *redactedLeveledLogger) Warn(msg string, keysAndValues ...any) {
-	l.logger.Warn(l.redactString(msg), l.redactValues(keysAndValues)...)
-}
-
-func (l *redactedLeveledLogger) redactString(s string) string {
-	if l.endpoint == l.redactedHost {
-		return s
-	}
-	s = strings.ReplaceAll(s, l.endpoint, l.redactedHost)
-	if l.normalized != l.endpoint {
-		s = strings.ReplaceAll(s, l.normalized, l.redactedHost)
-	}
-	return s
-}
-
-// redactValues replaces all occurrences of the full endpoint URL in string,
-// error, and fmt.Stringer values with the redacted host-only version.
-func (l *redactedLeveledLogger) redactValues(keysAndValues []any) []any {
-	if l.endpoint == l.redactedHost {
-		return keysAndValues
-	}
-	result := make([]any, len(keysAndValues))
-	copy(result, keysAndValues)
-	for i := range result {
-		result[i] = l.redactValue(result[i])
-	}
-	return result
-}
-
-func (l *redactedLeveledLogger) redactValue(v any) any {
-	switch val := v.(type) {
-	case string:
-		return l.redactString(val)
-	case error:
-		s := val.Error()
-		replaced := l.redactString(s)
-		if replaced != s {
-			return replaced
-		}
-		return v
-	case fmt.Stringer:
-		s := val.String()
-		replaced := l.redactString(s)
-		if replaced != s {
-			return replaced
-		}
-		return v
-	default:
-		return v
-	}
-}
+func (l *retryLeveledLogger) Info(msg string, values ...any)  { l.logger.Info(msg, values...) }
+func (l *retryLeveledLogger) Debug(msg string, values ...any) { l.logger.Debug(msg, values...) }
+func (l *retryLeveledLogger) Warn(msg string, values ...any)  { l.logger.Warn(msg, values...) }
 
 // RedactEndpointFromError returns a new error with all occurrences of the
 // endpoint URL replaced by its redacted (scheme://host) form. Returns nil
-// for nil errors. This should be used to wrap errors from dial functions
-// (both HTTP and WebSocket) that may embed the full URL in error messages.
+// for nil errors. This legacy API replaces only exact URL representations;
+// masked or differently escaped URLs can escape replacement. HTTP callers
+// should use NewEthClient or DialEthClient, which protect the error producer.
 //
 // When redaction occurs, the returned error intentionally does not wrap the
 // original; errors.Is and errors.As will not match the original error chain.
 // This prevents callers from recovering the sensitive URL via error unwrapping.
+//
+// Deprecated: use NewEthClient or DialEthClient to protect diagnostics at the
+// HTTP transport boundary instead of matching endpoint strings after failure.
 func RedactEndpointFromError(err error, endpoint string) error {
 	if err == nil {
 		return nil

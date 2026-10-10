@@ -28,11 +28,11 @@ func TestDecodeFailuresAreAggregatedInLogs(t *testing.T) {
 	s.inputABI = inputABI
 	s.outputABI = outputABI
 
-	decodedInputs := s.decodeInputs("app", []*model.Input{
+	decodedInputs := s.decodeInputs(t.Context(), "app", []*model.Input{
 		{Index: 7, RawData: nil},
 		{Index: 9, RawData: []byte{0x01}},
 	})
-	decodedOutputs := s.decodeOutputs("app", []*model.Output{
+	decodedOutputs := s.decodeOutputs(t.Context(), "app", []*model.Output{
 		{Index: 11, RawData: nil},
 		{Index: 13, RawData: []byte{0x01}},
 	})

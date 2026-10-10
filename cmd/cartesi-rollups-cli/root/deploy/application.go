@@ -14,7 +14,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
@@ -153,7 +152,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	cobra.CheckErr(err)
 
-	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
+	client, err := cli.DialBlockchain(ctx, ethEndpoint)
 	cobra.CheckErr(err)
 	defer client.Close()
 
@@ -178,7 +177,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 
 		dsn, err := config.GetDatabaseConnection()
 		cobra.CheckErr(err)
-		repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
+		repo, err := cli.OpenRepository(ctx, dsn)
 		cobra.CheckErr(err)
 		defer repo.Close()
 
@@ -331,7 +330,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 			cobra.CheckErr(fmt.Errorf("failed to register application: %w", err))
 		}
 
-		repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
+		repo, err := cli.OpenRepository(ctx, dsn)
 		if err != nil {
 			cobra.CheckErr(fmt.Errorf("failed to register application: %w", err))
 		}

@@ -16,10 +16,10 @@ import (
 	"strings"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-machine-tool/accountdrive"
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/spf13/cobra"
@@ -86,24 +86,24 @@ type replayOptions struct {
 }
 
 func runReplay(ctx context.Context, opts replayOptions) error {
+	var dsn config.SafeURL
+	var err error
 	if opts.DatabaseConnection == "" {
-		dsn, err := config.GetDatabaseConnection()
+		dsn, err = config.GetDatabaseConnection()
 		if err != nil {
 			return fmt.Errorf("database connection is required for replay: %w", err)
 		}
-		opts.DatabaseConnection = dsn.Raw()
 	} else {
-		dsn, err := config.ToURLFromString(opts.DatabaseConnection)
+		dsn, err = config.ToURLFromString(opts.DatabaseConnection)
 		if err != nil {
 			return fmt.Errorf("--database-connection: %w", err)
 		}
-		opts.DatabaseConnection = dsn.Raw()
 	}
 	if opts.HasToEpoch == opts.HasToInputIndex {
 		return errors.New("exactly one replay target is required: --to-epoch or --to-input-index")
 	}
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, opts.DatabaseConnection)
+	repo, err := cli.OpenRepository(ctx, dsn)
 	if err != nil {
 		return fmt.Errorf("open repository: %w", err)
 	}

@@ -11,7 +11,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 )
 
 var Cmd = &cobra.Command{
@@ -54,7 +53,7 @@ func run(cmd *cobra.Command, args []string) {
 	dsn, err := config.GetDatabaseConnection()
 	cobra.CheckErr(err)
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
+	repo, err := cli.OpenRepository(ctx, dsn)
 	cobra.CheckErr(err)
 	defer repo.Close()
 

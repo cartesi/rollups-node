@@ -15,11 +15,16 @@ import (
 	"io"
 	"net/http"
 	"sync/atomic"
+
+	"github.com/cartesi/rollups-node/internal/httpclient"
+	"github.com/google/uuid"
 )
 
 // Client is a JSON-RPC 2.0 client over HTTP.
 type Client struct {
-	// URL is the endpoint of the JSON‑RPC service.
+	// URL configures the HTTP(S) endpoint and may contain credentials. Transport
+	// diagnostics use its public scheme and host. Valid HTTP-200 provider errors
+	// retain their messages and may reflect credentials supplied to that provider.
 	URL string
 	// HTTPClient is the underlying HTTP client.
 	HTTPClient *http.Client
@@ -27,10 +32,13 @@ type Client struct {
 	idCounter uint64
 }
 
-// NewClient creates a new JSON‑RPC client.
-func NewClient(url string) *Client {
+// NewClient creates an HTTP(S) JSON-RPC client. Requests preserve the configured
+// path, query and authentication, and do not follow redirects. Call validates the
+// endpoint and emits safe transport diagnostics. Unexpected non-200 statuses are
+// errors; non-2xx messages are filtered and other 2xx bodies are omitted.
+func NewClient(endpoint string) *Client {
 	return &Client{
-		URL:        url,
+		URL:        endpoint,
 		HTTPClient: http.DefaultClient,
 	}
 }
@@ -65,8 +73,16 @@ func (e *rpcError) Error() string {
 }
 
 // Call sends a JSON‑RPC request with the given method and parameters, and
-// decodes the response into result (if non‑nil).
-func (c *Client) Call(ctx context.Context, method string, params any, result any) error {
+// decodes the first response value into result (if non-nil). Trailing values are
+// ignored. Valid HTTP-200 RPC error messages are returned without redaction.
+// Requests carry a locally generated X-Request-ID. Failures include that same
+// identifier after request construction and preserve the original error cause.
+// If the request reached the node, its logs contain that identifier.
+func (c *Client) Call(ctx context.Context, method string, params any, result any) (err error) {
+	endpoint, httpClient, err := httpclient.NewClient(c.URL, c.HTTPClient, httpclient.Options{})
+	if err != nil {
+		return fmt.Errorf("configure JSON-RPC client: %w", err)
+	}
 	reqObj := rpcRequest{
 		JSONRPC: "2.0",
 		Method:  method,
@@ -78,33 +94,48 @@ func (c *Client) Call(ctx context.Context, method string, params any, result any
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL, bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
 	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
+		return httpclient.Diagnostic(ctx, err, "create JSON-RPC request", endpoint)
 	}
+	requestID := uuid.NewString()
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("%w (request_id=%s)", err, requestID)
+		}
+	}()
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", requestID)
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("HTTP error: %s, body: %s", resp.Status, string(body))
+		// The shared transport preserves successful payloads. Unexpected 2xx
+		// bodies therefore remain untrusted diagnostic input and are omitted.
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return fmt.Errorf("HTTP error from %s: %s", endpoint, resp.Status)
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return httpclient.Diagnostic(ctx, err, "read JSON-RPC error response", endpoint)
+		}
+		return fmt.Errorf("HTTP error from %s: %s, body: %s", endpoint, resp.Status, string(body))
 	}
 
 	var rpcResp rpcResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+		return httpclient.Diagnostic(ctx, err, "decode JSON-RPC response", endpoint)
 	}
 	if rpcResp.Error != nil {
 		return rpcResp.Error
 	}
 	if result != nil {
 		if err := json.Unmarshal(rpcResp.Result, result); err != nil {
-			return fmt.Errorf("failed to unmarshal result: %w", err)
+			return httpclient.Diagnostic(ctx, err, "decode JSON-RPC result", endpoint)
 		}
 	}
 	return nil

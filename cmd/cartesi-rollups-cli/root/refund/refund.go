@@ -22,7 +22,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 var Cmd = newCommand()
@@ -114,7 +113,7 @@ func (o *options) run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	client, err := ethutil.DialEthClient(ctx, endpoint.Raw())
+	client, err := cli.DialBlockchain(ctx, endpoint)
 	if err != nil {
 		return fmt.Errorf("connect to Ethereum: %w", err)
 	}

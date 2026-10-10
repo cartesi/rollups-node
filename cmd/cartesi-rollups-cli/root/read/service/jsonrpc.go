@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
@@ -390,9 +389,6 @@ func (s *JsonrpcReadService) Close() {
 }
 
 func NewJsonrpcReadService(_ context.Context, serviceURL string) (ReadService, error) {
-	if _, err := url.ParseRequestURI(serviceURL); err != nil {
-		return nil, err
-	}
 	service := &JsonrpcReadService{
 		Client: client.NewClient(serviceURL),
 	}

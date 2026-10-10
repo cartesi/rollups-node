@@ -10,7 +10,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/spf13/cobra"
 )
@@ -36,7 +35,7 @@ func RunSingleService(opts SingleServiceOptions) (runErr error) {
 	defer func() { LogErr(logger, runErr) }()
 	opts.Command.SilenceUsage = true
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, opts.DatabaseConnection.Raw())
+	repo, err := OpenRepository(ctx, opts.DatabaseConnection)
 	if err != nil {
 		return err
 	}

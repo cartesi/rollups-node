@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,109 +94,15 @@ func TestRedactURLString(t *testing.T) {
 	}
 }
 
-func TestRedactedLeveledLogger(t *testing.T) {
-	endpoint := "https://eth-mainnet.g.alchemy.com/v2/secret-key-123"
-
-	newTestLogger := func() (*bytes.Buffer, *redactedLeveledLogger) {
-		var buf bytes.Buffer
-		handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
-		logger := slog.New(handler)
-		return &buf, newRedactedLogger(logger, endpoint)
+func TestRetryLeveledLoggerPreservesSafeValues(t *testing.T) {
+	var logs bytes.Buffer
+	logger := &retryLeveledLogger{logger: slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+	for _, log := range []func(string, ...any){logger.Error, logger.Warn, logger.Info, logger.Debug} {
+		log("request", "url", "https://provider.example", "attempt", 2)
 	}
-
-	t.Run("redacts url key", func(t *testing.T) {
-		buf, rl := newTestLogger()
-		rl.Debug("performing request", "method", "POST", "url", endpoint)
-
-		output := buf.String()
-		require.Contains(t, output, "performing request")
-		require.Contains(t, output, "https://eth-mainnet.g.alchemy.com")
-		require.NotContains(t, output, "secret-key-123")
-		require.NotContains(t, output, "/v2/")
-	})
-
-	t.Run("redacts request key containing method and URL", func(t *testing.T) {
-		buf, rl := newTestLogger()
-		rl.Debug("retrying request", "request", "POST "+endpoint, "timeout", "1s")
-
-		output := buf.String()
-		require.Contains(t, output, "retrying request")
-		require.Contains(t, output, "POST https://eth-mainnet.g.alchemy.com")
-		require.NotContains(t, output, "secret-key-123")
-		require.NotContains(t, output, "/v2/")
-	})
-
-	t.Run("redacts error values containing URL", func(t *testing.T) {
-		buf, rl := newTestLogger()
-		httpErr := &url.Error{
-			Op:  "Get",
-			URL: endpoint,
-			Err: errors.New("dial tcp: connection refused"),
-		}
-		rl.Error("request failed", "error", httpErr, "url", endpoint)
-
-		output := buf.String()
-		require.Contains(t, output, "request failed")
-		require.Contains(t, output, "https://eth-mainnet.g.alchemy.com")
-		require.NotContains(t, output, "secret-key-123")
-		require.NotContains(t, output, "/v2/")
-	})
-
-	t.Run("all log levels redact", func(t *testing.T) {
-		for _, level := range []string{"Error", "Warn", "Info", "Debug"} {
-			t.Run(level, func(t *testing.T) {
-				buf, rl := newTestLogger()
-				switch level {
-				case "Error":
-					rl.Error("msg", "url", endpoint)
-				case "Warn":
-					rl.Warn("msg", "url", endpoint)
-				case "Info":
-					rl.Info("msg", "url", endpoint)
-				case "Debug":
-					rl.Debug("msg", "url", endpoint)
-				}
-				require.NotContains(t, buf.String(), "secret-key-123")
-			})
-		}
-	})
-
-	t.Run("no-op when endpoint has no path", func(t *testing.T) {
-		var buf bytes.Buffer
-		handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
-		logger := slog.New(handler)
-		rl := newRedactedLogger(logger, "http://localhost:8545")
-
-		rl.Debug("msg", "url", "http://localhost:8545")
-		require.Contains(t, buf.String(), "http://localhost:8545")
-	})
-
-	t.Run("does not modify non-string values", func(t *testing.T) {
-		buf, rl := newTestLogger()
-		rl.Info("msg", "status", 500, "retries", 3)
-
-		output := buf.String()
-		require.Contains(t, output, "500")
-		require.Contains(t, output, "3")
-	})
-
-	t.Run("handles stringer values", func(t *testing.T) {
-		buf, rl := newTestLogger()
-		u, _ := url.Parse(endpoint)
-		rl.Debug("msg", "parsed", u)
-
-		output := buf.String()
-		require.NotContains(t, output, "secret-key-123")
-	})
-
-	t.Run("redacts msg parameter containing endpoint", func(t *testing.T) {
-		buf, rl := newTestLogger()
-		rl.Error("failed request to " + endpoint)
-
-		output := buf.String()
-		require.Contains(t, output, "failed request to https://eth-mainnet.g.alchemy.com")
-		require.NotContains(t, output, "secret-key-123")
-	})
+	require.Equal(t, 4, strings.Count(logs.String(), `"msg":"request"`))
+	require.Equal(t, 4, strings.Count(logs.String(), `"url":"https://provider.example"`))
+	require.Contains(t, logs.String(), `"attempt":2`)
 }
 
 func TestRedactEndpointFromError(t *testing.T) {

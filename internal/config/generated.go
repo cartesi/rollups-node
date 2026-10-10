@@ -8,7 +8,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -104,6 +103,147 @@ const (
 
 	PRT_AUTH_PRIVATE_KEY_FILE = "CARTESI_PRT_AUTH_PRIVATE_KEY_FILE"
 )
+
+// DeclaredDefault returns only the binary's declared configuration default.
+// A known setting without a default returns an empty string and true.
+func DeclaredDefault(name string) (string, bool) {
+	switch name {
+	case AUTH_AWS_KMS_KEY_ID:
+		return "", true
+	case AUTH_KIND:
+		return "mnemonic", true
+	case AUTH_MNEMONIC:
+		return "", true
+	case AUTH_MNEMONIC_ACCOUNT_INDEX:
+		return "0", true
+	case AUTH_PRIVATE_KEY:
+		return "", true
+	case BLOCKCHAIN_DEFAULT_BLOCK:
+		return "finalized", true
+	case BLOCKCHAIN_HTTP_AUTHORIZATION:
+		return "", true
+	case BLOCKCHAIN_HTTP_ENDPOINT:
+		return "", true
+	case BLOCKCHAIN_ID:
+		return "", true
+	case BLOCKCHAIN_LEGACY_ENABLED:
+		return "false", true
+	case CONTRACTS_APPLICATION_FACTORY_ADDRESS:
+		return "", true
+	case CONTRACTS_AUTHORITY_FACTORY_ADDRESS:
+		return "", true
+	case CONTRACTS_DAVE_APP_FACTORY_ADDRESS:
+		return "", true
+	case CONTRACTS_INPUT_BOX_ADDRESS:
+		return "", true
+	case CONTRACTS_QUORUM_FACTORY_ADDRESS:
+		return "", true
+	case CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS:
+		return "", true
+	case DATABASE_CONNECTION:
+		return "", true
+	case FEATURE_CLAIM_SUBMISSION_ENABLED:
+		return "true", true
+	case FEATURE_INSPECT_ENABLED:
+		return "true", true
+	case FEATURE_JSONRPC_API_ENABLED:
+		return "true", true
+	case FEATURE_MACHINE_HASH_CHECK_ENABLED:
+		return "true", true
+	case ADVANCER_TELEMETRY_ADDRESS:
+		return ":10002", true
+	case CLAIMER_TELEMETRY_ADDRESS:
+		return ":10004", true
+	case EVM_READER_TELEMETRY_ADDRESS:
+		return ":10001", true
+	case INSPECT_ADDRESS:
+		return ":10012", true
+	case INSPECT_CORS_ALLOWED_ORIGINS:
+		return "", true
+	case INSPECT_MAX_INFLIGHT:
+		return "64", true
+	case INSPECT_URL:
+		return "http://localhost:10012", true
+	case JSONRPC_API_ADDRESS:
+		return ":10011", true
+	case JSONRPC_API_URL:
+		return "http://localhost:10011/rpc", true
+	case JSONRPC_CORS_ALLOWED_ORIGINS:
+		return "", true
+	case JSONRPC_MAX_INFLIGHT:
+		return "64", true
+	case JSONRPC_TELEMETRY_ADDRESS:
+		return ":10005", true
+	case NODE_TELEMETRY_ADDRESS:
+		return ":10000", true
+	case PRT_TELEMETRY_ADDRESS:
+		return ":10006", true
+	case VALIDATOR_TELEMETRY_ADDRESS:
+		return ":10003", true
+	case LOG_COLOR:
+		return "true", true
+	case LOG_LEVEL:
+		return "info", true
+	case LOG_LEVEL_ADVANCER:
+		return "", true
+	case LOG_LEVEL_CLAIMER:
+		return "", true
+	case LOG_LEVEL_EVM_READER:
+		return "", true
+	case LOG_LEVEL_JSONRPC_API:
+		return "", true
+	case LOG_LEVEL_PRT:
+		return "", true
+	case LOG_LEVEL_VALIDATOR:
+		return "", true
+	case JSONRPC_MACHINE_LOG_LEVEL:
+		return "info", true
+	case PRT_AUTH_AWS_KMS_KEY_ID:
+		return "", true
+	case PRT_AUTH_KIND:
+		return "mnemonic", true
+	case PRT_AUTH_MNEMONIC:
+		return "", true
+	case PRT_AUTH_MNEMONIC_ACCOUNT_INDEX:
+		return "6", true
+	case PRT_AUTH_PRIVATE_KEY:
+		return "", true
+	case ADVANCER_INPUT_BATCH_SIZE:
+		return "500", true
+	case ADVANCER_POLLING_INTERVAL:
+		return "3", true
+	case BLOCKCHAIN_GAS_LIMIT:
+		return "0", true
+	case BLOCKCHAIN_HTTP_MAX_RETRIES:
+		return "4", true
+	case BLOCKCHAIN_HTTP_REQUEST_TIMEOUT:
+		return "120", true
+	case BLOCKCHAIN_HTTP_RETRY_MAX_WAIT:
+		return "60", true
+	case BLOCKCHAIN_HTTP_RETRY_MIN_WAIT:
+		return "1", true
+	case BLOCKCHAIN_MAX_BLOCK_RANGE:
+		return "0", true
+	case CLAIMER_MAX_ACCEPT_ATTEMPTS:
+		return "5", true
+	case CLAIMER_POLLING_INTERVAL:
+		return "3", true
+	case EVM_READER_POLLING_INTERVAL:
+		return "12", true
+	case EVM_READER_READY_MAX_STALENESS:
+		return "0", true
+	case MAX_STARTUP_TIME:
+		return "15", true
+	case PRT_POLLING_INTERVAL:
+		return "3", true
+	case VALIDATOR_POLLING_INTERVAL:
+		return "3", true
+	case SNAPSHOTS_DIR:
+		return "/var/lib/cartesi-rollups-node/snapshots", true
+	default:
+		return "", false
+	}
+}
 
 func SetDefaults() {
 	// Set defaults based on the TOML definitions.
@@ -429,7 +569,8 @@ type ClaimerConfig struct {
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
-	// HTTP endpoint for the blockchain RPC provider.
+	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
+	// Redirects are not followed; use the final endpoint URL.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -642,7 +783,8 @@ type EvmreaderConfig struct {
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
-	// HTTP endpoint for the blockchain RPC provider.
+	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
+	// Redirects are not followed; use the final endpoint URL.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -941,7 +1083,8 @@ type NodeConfig struct {
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
-	// HTTP endpoint for the blockchain RPC provider.
+	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
+	// Redirects are not followed; use the final endpoint URL.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -1342,7 +1485,8 @@ type PrtConfig struct {
 	// One of 'latest', 'pending', 'safe', 'finalized'
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
-	// HTTP endpoint for the blockchain RPC provider.
+	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
+	// Redirects are not followed; use the final endpoint URL.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -1765,7 +1909,7 @@ func GetAuthMnemonic() (RedactedString, error) {
 	s := viper.GetString(AUTH_MNEMONIC)
 	if s == "" {
 		filename := viper.GetString(AUTH_MNEMONIC_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_MNEMONIC_FILE, err)
 		}
@@ -1799,7 +1943,7 @@ func GetAuthPrivateKey() (RedactedString, error) {
 	s := viper.GetString(AUTH_PRIVATE_KEY)
 	if s == "" {
 		filename := viper.GetString(AUTH_PRIVATE_KEY_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_PRIVATE_KEY_FILE, err)
 		}
@@ -1833,7 +1977,7 @@ func GetBlockchainHttpAuthorization() (RedactedString, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_AUTHORIZATION_FILE, err)
 		}
@@ -1854,14 +1998,14 @@ func GetBlockchainHttpEndpoint() (URL, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_ENDPOINT_FILE, err)
 		}
 		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
-		v, err := toURL(s)
+		v, err := toHTTPURL(s)
 		if err != nil {
 			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_ENDPOINT, err)
 		}
@@ -1979,7 +2123,7 @@ func GetDatabaseConnection() (URL, error) {
 	s := viper.GetString(DATABASE_CONNECTION)
 	if s == "" {
 		filename := viper.GetString(DATABASE_CONNECTION_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_CONNECTION_FILE, err)
 		}
@@ -2126,16 +2270,16 @@ func GetInspectMaxInflight() (uint64, error) {
 }
 
 // GetInspectUrl returns the value for the environment variable CARTESI_INSPECT_URL.
-func GetInspectUrl() (string, error) {
+func GetInspectUrl() (URL, error) {
 	s := viper.GetString(INSPECT_URL)
 	if s != "" {
-		v, err := toString(s)
+		v, err := toHTTPURL(s)
 		if err != nil {
 			return v, fmt.Errorf("failed to parse %s: %w", INSPECT_URL, err)
 		}
 		return v, nil
 	}
-	return notDefinedstring(), fmt.Errorf("%s: %w", INSPECT_URL, ErrNotDefined)
+	return notDefinedURL(), fmt.Errorf("%s: %w", INSPECT_URL, ErrNotDefined)
 }
 
 // GetJsonrpcApiAddress returns the value for the environment variable CARTESI_JSONRPC_API_ADDRESS.
@@ -2152,16 +2296,16 @@ func GetJsonrpcApiAddress() (string, error) {
 }
 
 // GetJsonrpcApiUrl returns the value for the environment variable CARTESI_JSONRPC_API_URL.
-func GetJsonrpcApiUrl() (string, error) {
+func GetJsonrpcApiUrl() (URL, error) {
 	s := viper.GetString(JSONRPC_API_URL)
 	if s != "" {
-		v, err := toString(s)
+		v, err := toHTTPURL(s)
 		if err != nil {
 			return v, fmt.Errorf("failed to parse %s: %w", JSONRPC_API_URL, err)
 		}
 		return v, nil
 	}
-	return notDefinedstring(), fmt.Errorf("%s: %w", JSONRPC_API_URL, ErrNotDefined)
+	return notDefinedURL(), fmt.Errorf("%s: %w", JSONRPC_API_URL, ErrNotDefined)
 }
 
 // GetJsonrpcCorsAllowedOrigins returns the value for the environment variable CARTESI_JSONRPC_CORS_ALLOWED_ORIGINS.
@@ -2390,7 +2534,7 @@ func GetPrtAuthMnemonic() (RedactedString, error) {
 	s := viper.GetString(PRT_AUTH_MNEMONIC)
 	if s == "" {
 		filename := viper.GetString(PRT_AUTH_MNEMONIC_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_MNEMONIC_FILE, err)
 		}
@@ -2424,7 +2568,7 @@ func GetPrtAuthPrivateKey() (RedactedString, error) {
 	s := viper.GetString(PRT_AUTH_PRIVATE_KEY)
 	if s == "" {
 		filename := viper.GetString(PRT_AUTH_PRIVATE_KEY_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_PRIVATE_KEY_FILE, err)
 		}

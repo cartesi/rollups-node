@@ -92,6 +92,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 		if err != nil {
 			return nil, err
 		}
+		//nolint:forbidigo // Protected Ethereum connection.
 		ethClient, err = ethutil.NewEthClient(ctx, c.Config.BlockchainHttpEndpoint.Raw(), s.Logger,
 			ethutil.RetryConfig{
 				MaxRetries:     c.Config.BlockchainHttpMaxRetries,

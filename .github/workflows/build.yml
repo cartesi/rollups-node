@@ -247,6 +247,9 @@ jobs:
           docker tag ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/rollups-node-devnet:${{ env.CI_TAG }} \
             cartesi/rollups-node-devnet:devel
 
+      - name: Check endpoint access restrictions
+        run: make lint-endpoints-with-docker
+
       - name: Cache test machine images
         uses: actions/cache@v5
         with:

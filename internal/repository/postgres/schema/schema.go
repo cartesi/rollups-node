@@ -32,6 +32,16 @@ var (
 	ErrNoValidDatabaseSchema = errors.New("No valid database schema found")
 )
 
+// VersionMismatchError contains only the schema versions needed for diagnosis.
+type VersionMismatchError struct {
+	Expected uint
+	Actual   uint
+}
+
+func (e *VersionMismatchError) Error() string {
+	return fmt.Sprintf("database schema version mismatch. Expected %d but it is %d", e.Expected, e.Actual)
+}
+
 func New(postgresEndpoint string) (*Schema, error) {
 	driver, err := iofs.New(content, "migrations")
 	if err != nil {
@@ -109,8 +119,7 @@ func (s *Schema) ValidateVersion() (uint, error) {
 	}
 
 	if version != ExpectedVersion {
-		format := "database schema version mismatch. Expected %d but it is %d"
-		return 0, fmt.Errorf(format, ExpectedVersion, version)
+		return 0, &VersionMismatchError{Expected: ExpectedVersion, Actual: version}
 	}
 	return version, nil
 }

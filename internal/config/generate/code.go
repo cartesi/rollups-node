@@ -48,9 +48,12 @@ var funcMap = template.FuncMap{
 		return *s
 	},
 	// toGoFunc returns the conversion function name.
-	"toGoFunc": func(goType string) string {
+	"toGoFunc": func(env Env) string {
+		if env.HTTP {
+			return "toHTTPURL"
+		}
 		// For example, "int" becomes "toInt", "Duration" becomes "toDuration".
-		return "to" + strings.ToUpper(goType[:1]) + goType[1:]
+		return "to" + strings.ToUpper(env.GoType[:1]) + env.GoType[1:]
 	},
 	// splitLines splits a string into lines (by "\n").
 	"splitLines": func(s string) []string {
@@ -122,7 +125,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -145,10 +147,23 @@ const (
 {{ end -}}
 )
 
+// DeclaredDefault returns only the binary's declared configuration default.
+// A known setting without a default returns an empty string and true.
+func DeclaredDefault(name string) (string, bool) {
+	switch name {
+{{ range . -}}
+	case {{ toConstName .Name }}:
+		return {{ printf "%q" (defaultVal .Default) }}, true
+{{ end -}}
+	default:
+		return "", false
+	}
+}
+
 func SetDefaults() {
 	// Set defaults based on the TOML definitions.
 {{ range . }}
-{{ if .Default }}	viper.SetDefault({{ toConstName .Name }}, "{{ defaultVal .Default }}")
+{{ if .Default }}	viper.SetDefault({{ toConstName .Name }}, {{ printf "%q" (defaultVal .Default) }})
 {{ else }}	// no default for {{ .Name }}
 {{ end }}
 {{ end }}
@@ -221,7 +236,7 @@ func Get{{ toFieldName .Name }}() ({{ .GoType }}, error) {
 	{{- if .File }}
 	if s == "" {
 		filename := viper.GetString({{toConstName .Name}}_FILE)
-		contents, err := os.ReadFile(filename)
+		contents, err := readConfigFile(filename)
 		if err != nil {
 			return notDefined{{ .GoType }}(), fmt.Errorf("failed to parse %s: %w", {{ toConstName .Name }}_FILE, err)
 		}
@@ -233,7 +248,7 @@ func Get{{ toFieldName .Name }}() ({{ .GoType }}, error) {
 	{{- else }}
 	if s != "" {
 	{{- end }}
-		v, err := {{ toGoFunc .GoType }}(s)
+		v, err := {{ toGoFunc . }}(s)
 		if err != nil {
 			return v, fmt.Errorf("failed to parse %s: %w", {{ toConstName .Name }}, err)
 		}

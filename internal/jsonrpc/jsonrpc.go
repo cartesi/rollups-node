@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"reflect"
@@ -25,6 +26,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/version"
+	"github.com/cartesi/rollups-node/pkg/service"
 )
 
 //go:embed jsonrpc-discover.json
@@ -191,23 +193,30 @@ func batchExceedsListItemLimit(requests []json.RawMessage) bool {
 // Dispatching JSON‑RPC methods
 // -----------------------------------------------------------------------------
 
-func (s *Service) handleWriteResponse(err error) bool {
+// requestLogger keeps request attributes local to this log call.
+func (s *Service) requestLogger(ctx context.Context) *slog.Logger {
+	return s.Logger.With("request_id", service.RequestIDFromContext(ctx))
+}
+
+func (s *Service) handleWriteResponse(ctx context.Context, err error) bool {
 	if err == nil {
 		return true
 	}
-	s.Logger.Warn("failed writing response", "error", err)
+	s.requestLogger(ctx).Warn("failed writing response", "error", err)
 	return false
 }
 
-func (s *Service) writeByte(w http.ResponseWriter, c byte) bool {
+func (s *Service) writeByte(ctx context.Context, w http.ResponseWriter, c byte) bool {
 	_, err := w.Write([]byte{c})
-	return s.handleWriteResponse(err)
+	return s.handleWriteResponse(ctx, err)
 }
 
 // writeRPCError sends a generic error response for internal errors.
-func (s *Service) writeRPCError(w http.ResponseWriter, id json.RawMessage, code int, message string) bool {
+func (s *Service) writeRPCError(
+	ctx context.Context, w http.ResponseWriter, id json.RawMessage, code int, message string,
+) bool {
 	err := writeRPCError(w, id, code, message)
-	return s.handleWriteResponse(err)
+	return s.handleWriteResponse(ctx, err)
 }
 
 func (s *Service) repositoryError(ctx context.Context, message string, err error) error {
@@ -217,7 +226,7 @@ func (s *Service) repositoryError(ctx context.Context, message string, err error
 	if errors.Is(err, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return err
 	}
-	s.Logger.Error(message, "err", err)
+	s.requestLogger(ctx).Error(message, "err", err)
 	return newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 }
 
@@ -233,7 +242,7 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 	}
 	fn, ok := s.handlers[req.Method]
 	if !ok {
-		s.Logger.Debug("RPC method not found", "method", truncatedMethod(req.Method))
+		s.requestLogger(r.Context()).Debug("RPC method not found", "method", truncatedMethod(req.Method))
 		return writeRPCError(w, req.ID, JSONRPC_METHOD_NOT_FOUND, "Method not found")
 	}
 	result, err := fn(s, r, req)
@@ -244,7 +253,7 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 		return err
 	}
 	if errors.Is(err, context.DeadlineExceeded) && errors.Is(r.Context().Err(), context.DeadlineExceeded) {
-		s.Logger.Warn("RPC method dispatch timeout", "method", truncatedMethod(req.Method))
+		s.requestLogger(r.Context()).Warn("RPC method dispatch timeout", "method", truncatedMethod(req.Method))
 		return writeRPCError(w, req.ID, JSONRPC_TIMEOUT_ERROR, "Request timed out")
 	}
 
@@ -255,7 +264,7 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 		return writeRPCError(w, req.ID, rpcErr.Code, rpcErr.Message)
 	}
 
-	s.Logger.Error("RPC method failed", "method", truncatedMethod(req.Method), "error", err)
+	s.requestLogger(r.Context()).Error("RPC method failed", "method", truncatedMethod(req.Method), "error", err)
 	return writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
 }
 
@@ -286,30 +295,30 @@ func (s *Service) dispatchOneRequest(
 			if recovered == http.ErrAbortHandler {
 				panic(recovered)
 			}
-			s.Logger.Error("RPC method panic",
+			s.requestLogger(r.Context()).Error("RPC method panic",
 				"method", truncatedMethod(req.Method),
 				"panic", recovered,
 				"stack", string(debug.Stack()),
 			)
-			responded = s.writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
+			responded = s.writeRPCError(r.Context(), w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
 		}
 	}()
 
 	buffer := budgetResp.NewLimitedWriter()
 	if buffer == nil {
-		return s.writeRPCError(w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
+		return s.writeRPCError(r.Context(), w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
 	}
 	err := s.handleRequest(buffer, r, req)
 	switch {
 	case err == nil:
-		return s.handleWriteResponse(buffer.Flush())
+		return s.handleWriteResponse(r.Context(), buffer.Flush())
 	case errors.Is(err, context.Canceled):
 		return false
 	case errors.Is(err, io.ErrShortBuffer):
-		return s.writeRPCError(w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
+		return s.writeRPCError(r.Context(), w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
 	default:
-		s.Logger.Error("RPC method response encode failed", "method", truncatedMethod(req.Method), "error", err)
-		return s.writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
+		s.requestLogger(r.Context()).Error("RPC method response encode failed", "method", truncatedMethod(req.Method), "error", err)
+		return s.writeRPCError(r.Context(), w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
 	}
 }
 
@@ -347,10 +356,10 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 	case '{':
 		var req RPCRequest
 		if err := json.Unmarshal(body, &req); err != nil {
-			s.writeRPCError(w, nil, JSONRPC_PARSE_ERROR, "Parse error")
+			s.writeRPCError(r.Context(), w, nil, JSONRPC_PARSE_ERROR, "Parse error")
 			return
 		}
-		s.Logger.Info("Dispatching RPC request", "method", truncatedMethod(req.Method))
+		s.requestLogger(r.Context()).Info("Dispatching RPC request", "method", truncatedMethod(req.Method))
 		s.dispatchOneRequest(w, r, req, budgetResp)
 
 	case '[':
@@ -358,26 +367,27 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 		// the list-item limit can be checked before dispatching any request.
 		var reqSeq []json.RawMessage
 		if err := json.Unmarshal(body, &reqSeq); err != nil {
-			s.writeRPCError(w, nil, JSONRPC_PARSE_ERROR, "Parse error")
+			s.writeRPCError(r.Context(), w, nil, JSONRPC_PARSE_ERROR, "Parse error")
 			return
 		}
 		if len(reqSeq) == 0 || len(reqSeq) > MAX_BATCH_SIZE {
-			s.writeRPCError(w, nil, JSONRPC_INVALID_BATCH, fmt.Sprintf("invalid request batch size (expected [1..%v])", MAX_BATCH_SIZE))
+			s.writeRPCError(r.Context(), w, nil, JSONRPC_INVALID_BATCH,
+				fmt.Sprintf("invalid request batch size (expected [1..%v])", MAX_BATCH_SIZE))
 			return
 		}
 		if batchExceedsListItemLimit(reqSeq) {
-			s.writeRPCError(w, nil, JSONRPC_BATCH_LIST_ITEM_LIMIT_EXCEEDED, "Batch list item limit exceeded")
+			s.writeRPCError(r.Context(), w, nil, JSONRPC_BATCH_LIST_ITEM_LIMIT_EXCEEDED, "Batch list item limit exceeded")
 			return
 		}
 
-		s.Logger.Info("Received RPC request batch", "items", len(reqSeq))
-		if !s.writeByte(w, '[') {
+		s.requestLogger(r.Context()).Info("Received RPC request batch", "items", len(reqSeq))
+		if !s.writeByte(r.Context(), w, '[') {
 			return
 		}
 
 		for i, rawReq := range reqSeq {
 
-			if i > 0 && !s.writeByte(w, ',') {
+			if i > 0 && !s.writeByte(r.Context(), w, ',') {
 				return
 			}
 
@@ -388,19 +398,19 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 			case context.Canceled:
 				return
 			case context.DeadlineExceeded:
-				s.Logger.Warn("RPC method dispatch timeout")
+				s.requestLogger(r.Context()).Warn("RPC method dispatch timeout")
 				if err := json.Unmarshal(rawReq, &req); err != nil {
-					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
+					responded = s.writeRPCError(r.Context(), w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
 				} else if !validRPCID(req.ID) {
-					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "Invalid request ID")
+					responded = s.writeRPCError(r.Context(), w, nil, JSONRPC_INVALID_REQUEST, "Invalid request ID")
 				} else {
-					responded = s.writeRPCError(w, req.ID, JSONRPC_TIMEOUT_ERROR, "Request timed out")
+					responded = s.writeRPCError(r.Context(), w, req.ID, JSONRPC_TIMEOUT_ERROR, "Request timed out")
 				}
 			default:
 				if err := json.Unmarshal(rawReq, &req); err != nil {
-					responded = s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
+					responded = s.writeRPCError(r.Context(), w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
 				} else {
-					s.Logger.Debug("Dispatching RPC request", "method", truncatedMethod(req.Method))
+					s.requestLogger(r.Context()).Debug("Dispatching RPC request", "method", truncatedMethod(req.Method))
 					responded = s.dispatchOneRequest(w, r, req, budgetResp)
 				}
 			}
@@ -409,13 +419,13 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		s.writeByte(w, ']')
+		s.writeByte(r.Context(), w, ']')
 
 	default:
 		if json.Valid(body) {
-			s.writeRPCError(w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
+			s.writeRPCError(r.Context(), w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
 		} else {
-			s.writeRPCError(w, nil, JSONRPC_PARSE_ERROR, "Parse error")
+			s.writeRPCError(r.Context(), w, nil, JSONRPC_PARSE_ERROR, "Parse error")
 		}
 
 	}
@@ -433,7 +443,7 @@ func handleDiscover(s *Service, _ *http.Request, _ RPCRequest) (any, error) {
 func handleListApplications(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListApplicationsParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -472,7 +482,7 @@ func handleListApplications(s *Service, r *http.Request, req RPCRequest) (any, e
 func handleGetApplication(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetApplicationParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -495,7 +505,7 @@ func handleGetApplication(s *Service, r *http.Request, req RPCRequest) (any, err
 func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListEpochsParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -567,7 +577,7 @@ func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 func handleGetEpoch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetEpochParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -598,7 +608,7 @@ func handleGetEpoch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 func handleGetEpochByVirtualIndex(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetEpochByVirtualIndexParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -629,7 +639,7 @@ func handleGetEpochByVirtualIndex(s *Service, r *http.Request, req RPCRequest) (
 func handleGetLastAcceptedEpochIndex(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetLastAcceptedEpochIndexParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -652,7 +662,7 @@ func handleGetLastAcceptedEpochIndex(s *Service, r *http.Request, req RPCRequest
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", index)}, nil
 }
 
-func (s *Service) decodeInputs(application string, inputs []*model.Input) []*api.DecodedInput {
+func (s *Service) decodeInputs(ctx context.Context, application string, inputs []*model.Input) []*api.DecodedInput {
 	result := make([]*api.DecodedInput, 0, len(inputs))
 	failureCount := 0
 	var firstFailingIndex uint64
@@ -663,12 +673,12 @@ func (s *Service) decodeInputs(application string, inputs []*model.Input) []*api
 				firstFailingIndex = input.Index
 			}
 			failureCount++
-			s.Logger.Debug("Unable to decode Input", "app", application, "index", input.Index, "err", err)
+			s.requestLogger(ctx).Debug("Unable to decode Input", "app", application, "index", input.Index, "err", err)
 		}
 		result = append(result, decoded)
 	}
 	if failureCount > 0 {
-		s.Logger.Warn("Unable to decode Inputs",
+		s.requestLogger(ctx).Warn("Unable to decode Inputs",
 			"app", application,
 			"count", failureCount,
 			"first_index", firstFailingIndex,
@@ -680,7 +690,7 @@ func (s *Service) decodeInputs(application string, inputs []*model.Input) []*api
 func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListInputsParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -745,7 +755,7 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 		}
 	}
 
-	resultInputs := s.decodeInputs(params.Application, inputs)
+	resultInputs := s.decodeInputs(r.Context(), params.Application, inputs)
 
 	return api.ListResponse[*api.DecodedInput]{
 		Data: resultInputs,
@@ -760,7 +770,7 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 func handleGetInput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetInputParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -785,7 +795,7 @@ func handleGetInput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Input not found")
 	}
 
-	decoded := s.decodeInputs(params.Application, []*model.Input{input})[0]
+	decoded := s.decodeInputs(r.Context(), params.Application, []*model.Input{input})[0]
 
 	return api.SingleResponse[*api.DecodedInput]{Data: decoded}, nil
 }
@@ -793,7 +803,7 @@ func handleGetInput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 func handleGetProcessedInputCount(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetApplicationParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -816,7 +826,7 @@ func handleGetProcessedInputCount(s *Service, r *http.Request, req RPCRequest) (
 func handleGetExecutedOutputCount(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetApplicationParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -840,7 +850,7 @@ func handleGetExecutedOutputCount(s *Service, r *http.Request, req RPCRequest) (
 func handleGetPendingExecutableOutputCount(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetApplicationParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -861,7 +871,7 @@ func handleGetPendingExecutableOutputCount(s *Service, r *http.Request, req RPCR
 	return api.SingleResponse[string]{Data: fmt.Sprintf("0x%x", count)}, nil
 }
 
-func (s *Service) decodeOutputs(application string, outputs []*model.Output) []*api.DecodedOutput {
+func (s *Service) decodeOutputs(ctx context.Context, application string, outputs []*model.Output) []*api.DecodedOutput {
 	result := make([]*api.DecodedOutput, 0, len(outputs))
 	failureCount := 0
 	var firstFailingIndex uint64
@@ -872,12 +882,12 @@ func (s *Service) decodeOutputs(application string, outputs []*model.Output) []*
 				firstFailingIndex = output.Index
 			}
 			failureCount++
-			s.Logger.Debug("Unable to decode Output", "app", application, "index", output.Index, "err", err)
+			s.requestLogger(ctx).Debug("Unable to decode Output", "app", application, "index", output.Index, "err", err)
 		}
 		result = append(result, decoded)
 	}
 	if failureCount > 0 {
-		s.Logger.Warn("Unable to decode Outputs",
+		s.requestLogger(ctx).Warn("Unable to decode Outputs",
 			"app", application,
 			"count", failureCount,
 			"first_index", firstFailingIndex,
@@ -889,7 +899,7 @@ func (s *Service) decodeOutputs(application string, outputs []*model.Output) []*
 func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListOutputsParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -967,7 +977,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve outputs from repository", err)
 	}
 
-	resultOutputs := s.decodeOutputs(params.Application, outputs)
+	resultOutputs := s.decodeOutputs(r.Context(), params.Application, outputs)
 
 	if len(resultOutputs) == 0 {
 		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
@@ -988,7 +998,7 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 func handleGetOutput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetOutputParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -1013,7 +1023,7 @@ func handleGetOutput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Output not found")
 	}
 
-	decoded := s.decodeOutputs(params.Application, []*model.Output{output})[0]
+	decoded := s.decodeOutputs(r.Context(), params.Application, []*model.Output{output})[0]
 
 	return api.SingleResponse[*api.DecodedOutput]{Data: decoded}, nil
 }
@@ -1021,7 +1031,7 @@ func handleGetOutput(s *Service, r *http.Request, req RPCRequest) (any, error) {
 func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListReportsParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -1095,7 +1105,7 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 func handleGetReport(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetReportParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -1126,7 +1136,7 @@ func handleGetReport(s *Service, r *http.Request, req RPCRequest) (any, error) {
 func handleListWithdrawals(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListWithdrawalsParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -1184,7 +1194,7 @@ func handleListWithdrawals(s *Service, r *http.Request, req RPCRequest) (any, er
 func handleGetWithdrawal(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetWithdrawalParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -1214,7 +1224,7 @@ func handleGetWithdrawal(s *Service, r *http.Request, req RPCRequest) (any, erro
 func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListTournamentsParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -1298,7 +1308,7 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 func handleGetTournament(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetTournamentParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -1329,7 +1339,7 @@ func handleGetTournament(s *Service, r *http.Request, req RPCRequest) (any, erro
 func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListCommitmentsParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -1396,7 +1406,7 @@ func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, er
 func handleGetCommitment(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetCommitmentParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -1438,7 +1448,7 @@ func handleGetCommitment(s *Service, r *http.Request, req RPCRequest) (any, erro
 func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListMatchesParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -1505,7 +1515,7 @@ func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error)
 func handleGetMatch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetMatchParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -1544,7 +1554,7 @@ func handleGetMatch(s *Service, r *http.Request, req RPCRequest) (any, error) {
 func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListMatchAdvancesParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -1601,7 +1611,7 @@ func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, 
 func handleGetMatchAdvance(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetMatchAdvanceParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 
@@ -1680,7 +1690,7 @@ func parseTournamentEventFilter(epoch, tournament *string) (*uint64, *common.Add
 func handleListBondEvents(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.ListBondEventsParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	if params.Offset > math.MaxInt64 {
@@ -1722,7 +1732,7 @@ func handleListBondEvents(s *Service, r *http.Request, req RPCRequest) (any, err
 func handleGetBondEvent(s *Service, r *http.Request, req RPCRequest) (any, error) {
 	var params api.GetBondEventParams
 	if err := api.UnmarshalParams(req.Params, &params); err != nil {
-		s.Logger.Debug("Invalid parameters", "err", err)
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
 		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
 	}
 	txHash, logIndex, err := parseTournamentEventIdentity(params.Application, params.TxHash, params.LogIndex)

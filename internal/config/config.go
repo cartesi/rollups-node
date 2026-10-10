@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/httpclient"
 	"github.com/cartesi/rollups-node/internal/model"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -28,6 +30,23 @@ type Redacted[T any] struct {
 
 func (r Redacted[T]) String() string {
 	return "[REDACTED]"
+}
+
+// Format redacts verbs dispatched to fmt.Formatter, including numeric verbs and
+// %#v. Pointer verbs and reflection through unexported enclosing fields can
+// bypass this method; the wrapper does not make its exported Value inaccessible.
+func (r Redacted[T]) Format(state fmt.State, _ rune) {
+	_, _ = fmt.Fprint(state, r.String())
+}
+
+// MarshalJSON prevents exported values from leaking through JSON diagnostics.
+func (r Redacted[T]) MarshalJSON() ([]byte, error) {
+	return []byte(`"[REDACTED]"`), nil
+}
+
+// LogValue protects both text and structured slog handlers.
+func (r Redacted[T]) LogValue() slog.Value {
+	return slog.StringValue(r.String())
 }
 
 // SafeURL wraps *url.URL with a safe String() that only shows scheme://host.
@@ -167,7 +186,7 @@ func ToDurationFromSeconds(s string) (time.Duration, error) {
 func ToLogLevelFromString(s string) (LogLevel, error) {
 	var m = map[string]LogLevel{
 		"debug": slog.LevelDebug,
-		"info":  slog.LevelInfo,
+		"info":  slog.LevelInfo, //nolint:goconst // Stable config keyword also appears in generated defaults.
 		"warn":  slog.LevelWarn,
 		"error": slog.LevelError,
 	}
@@ -268,7 +287,7 @@ func ToAuthKindFromString(s string) (AuthKind, error) {
 	var m = map[string]AuthKind{
 		"private_key":      AuthKindPrivateKeyVar,
 		"private_key_file": AuthKindPrivateKeyFile,
-		"mnemonic":         AuthKindMnemonicVar,
+		"mnemonic":         AuthKindMnemonicVar, //nolint:goconst // Stable config keyword also appears in generated defaults.
 		"mnemonic_file":    AuthKindMnemonicFile,
 		"aws":              AuthKindAWS,
 	}
@@ -286,7 +305,37 @@ func ToRedactedStringFromString(s string) (RedactedString, error) {
 
 func ToRedactedUint32FromString(s string) (RedactedUint, error) {
 	value, err := strconv.ParseUint(s, 10, 32)
-	return RedactedUint{uint32(value)}, err
+	if err != nil {
+		cause := strconv.ErrSyntax
+		if errors.Is(err, strconv.ErrRange) {
+			cause = strconv.ErrRange
+		}
+		return RedactedUint{}, fmt.Errorf("invalid redacted number: %w", cause)
+	}
+	return RedactedUint{uint32(value)}, nil
+}
+
+// readConfigFile retains filesystem classification without keeping a filename
+// in the returned error: operators may accidentally supply a secret as the path.
+func readConfigFile(filename string) ([]byte, error) {
+	contents, err := os.ReadFile(filename)
+	if err == nil {
+		return contents, nil
+	}
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		return nil, pathErr.Err
+	}
+	return nil, errors.New("cannot read configuration file")
+}
+
+// ToHTTPURLFromString applies the HTTP-specific policy without changing DSNs.
+func ToHTTPURLFromString(s string) (SafeURL, error) {
+	u, err := httpclient.Validate(s)
+	if err != nil {
+		return SafeURL{}, err
+	}
+	return NewSafeURL(u), nil
 }
 
 func ToURLFromString(s string) (SafeURL, error) {
@@ -310,9 +359,9 @@ func checkDatabaseURL(raw string, u *url.URL) error {
 	if strings.Contains(raw, "#") {
 		return errors.New("invalid database URL [Redacted]: encode '#' as %23")
 	}
-	for key, values := range u.Query() {
+	for _, values := range u.Query() {
 		if len(values) > 1 {
-			return fmt.Errorf("invalid database URL [Redacted]: parameter %q is repeated", key)
+			return errors.New("invalid database URL [Redacted]: repeated parameter")
 		}
 	}
 	return nil
@@ -370,6 +419,7 @@ var (
 	toRedactedString  = ToRedactedStringFromString
 	toRedactedUint    = ToRedactedUint32FromString
 	toURL             = ToURLFromString
+	toHTTPURL         = ToHTTPURLFromString
 	toMachineLogLevel = ToMachineLogLevelFromString
 	toAddress         = ToAddressFromString
 )

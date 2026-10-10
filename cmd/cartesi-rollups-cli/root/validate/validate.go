@@ -10,7 +10,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 
@@ -64,7 +63,7 @@ func run(cmd *cobra.Command, args []string) {
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	cobra.CheckErr(err)
 
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
+	repo, err := cli.OpenRepository(ctx, dsn)
 	cobra.CheckErr(err)
 	defer repo.Close()
 
@@ -86,7 +85,7 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(0)
 	}
 
-	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
+	client, err := cli.DialBlockchain(ctx, ethEndpoint)
 	cobra.CheckErr(err)
 
 	if !asJSONParam {

@@ -69,7 +69,7 @@ func runDeployQuorum(cmd *cobra.Command, _ []string) {
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	cobra.CheckErr(err)
 
-	client, err := ethutil.DialEthClient(ctx, ethEndpoint.Raw())
+	client, err := cli.DialBlockchain(ctx, ethEndpoint)
 	cobra.CheckErr(err)
 	defer client.Close()
 

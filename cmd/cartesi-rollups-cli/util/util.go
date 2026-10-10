@@ -13,8 +13,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
 )
 
 // ResolveApplicationAddress returns the IApplication address corresponding
@@ -41,7 +41,7 @@ func ResolveApplicationAddress(ctx context.Context, nameOrAddress string) (commo
 			"resolving application %q by name requires the database; pass the application address (0x…) "+
 				"instead to skip the local repository: %w", nameOrAddress, err)
 	}
-	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
+	repo, err := cli.OpenRepository(ctx, dsn)
 	if err != nil {
 		return common.Address{}, err
 	}
