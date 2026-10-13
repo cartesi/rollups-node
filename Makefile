@@ -501,7 +501,7 @@ $(CARTESI_TEST_MACHINE_IMAGES):
 	@wget -nc -i test/dependencies -P $(DOWNLOADS_DIR)
 	@shasum -ca 256 test/dependencies.sha256
 	@cd $(DOWNLOADS_DIR) && ln -s rootfs-tools.ext2 rootfs.ext2
-	@cd $(DOWNLOADS_DIR) && ln -s linux-6.5.13-ctsi-2-v0.21.0.bin linux.bin
+	@cd $(DOWNLOADS_DIR) && ln -s linux-6.18.56-ctsi-1.bin linux.bin
 
 download-test-dependencies: | $(CARTESI_TEST_MACHINE_IMAGES)
 
