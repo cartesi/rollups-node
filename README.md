@@ -16,7 +16,7 @@ We provide packages for debian (.deb) in **amd64** and **arm64** variants on the
 
 ##### System Requirements
 
-- Cartesi Machine emulator == 0.21.x
+- Cartesi Machine emulator == 0.22.x
 - GNU Make >= 3.81
 - Go >= 1.27.1
 

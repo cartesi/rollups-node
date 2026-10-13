@@ -26,8 +26,8 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## github.com/cartesi/machine-emulator
 
 * Name: github.com/cartesi/machine-emulator
-* Version: 0.21.0
-* License: [LGPL-3.0](https://github.com/cartesi/machine-emulator/blob/v0.21.0/COPYING)
+* Version: 0.22.0
+* License: [LGPL-3.0](https://github.com/cartesi/machine-emulator/blob/v0.22.0/COPYING)
 
 ## github.com/cartesi/rollups-contracts
 

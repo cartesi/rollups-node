@@ -16,7 +16,7 @@ package emulator
 //     cm_machine *m,
 //     uint16_t reason,
 //     const uint8_t *data,
-//     uint64_t length,
+//     uint32_t length,
 //     const uint8_t *revert_root_hash)
 // {
 //     return cm_send_cmio_response(
@@ -455,7 +455,7 @@ func (m *Machine) SendCmioResponse(reason uint16, data []byte, revertRootHash *H
 
 	m.callCAPI(func() {
 		var ptrData *C.uint8_t
-		sizeData := C.uint64_t(len(data))
+		sizeData := C.uint32_t(len(data))
 		if sizeData > 0 {
 			ptrData = (*C.uint8_t)(unsafe.Pointer(&data[0]))
 		}

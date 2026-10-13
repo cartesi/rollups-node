@@ -174,7 +174,7 @@ func replayInputsBatch(ctx context.Context, opts replayOptions, tmp string, inpu
 		"--quiet",
 		"--no-revert",
 		"--load=" + opts.Template,
-		fmt.Sprintf("--cmio-advance-state=input:%s,input_index_begin:0,input_index_end:%d",
+		fmt.Sprintf("--cmio-advance-state=input:%s,input_file_index_begin:0,input_file_index_end:%d",
 			filepath.Join(tmp, "input-%i.bin"), len(inputs)),
 		"--store=" + opts.Store,
 	}
