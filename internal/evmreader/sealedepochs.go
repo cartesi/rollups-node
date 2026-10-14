@@ -86,6 +86,9 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 			if errors.Is(err, context.Canceled) {
 				return false // shutting down
 			}
+			if errors.Is(err, errInputBudgetExhausted) {
+				continue
+			}
 			if errors.Is(err, errContractNotDeployedAtBlock) {
 				// Registration can precede deployment visibility at the configured
 				// block. Neither sealed nor open epochs can be observed yet.
@@ -394,7 +397,29 @@ func (r *Service) processSealedEpochEvent(
 	// Use InputIndexLowerBound as prevValue rather than the DB input count, since
 	// the open epoch may have already stored some of these inputs ahead of us.
 	var inputs []*Input
-	if epoch.InputIndexUpperBound > epoch.InputIndexLowerBound {
+	partial := false
+	inputCursor := event.Raw.BlockNumber - 1
+	if r.maxInputsPerStep > 0 {
+		count, err := r.repository.GetNumberOfInputs(ctx, app.application.IApplicationAddress.String())
+		if err != nil {
+			return fmt.Errorf("get stored input count: %w", err)
+		}
+		first := min(max(count, epoch.InputIndexLowerBound), epoch.InputIndexUpperBound)
+		if first < epoch.InputIndexUpperBound {
+			var next, cursor uint64
+			inputs, next, cursor, err = r.fetchInputBatch(ctx, app, epoch.FirstBlock, epoch.LastBlock, first, epoch.InputIndexUpperBound)
+			if err != nil {
+				return err
+			}
+			if next < epoch.InputIndexUpperBound {
+				partial = true
+				epoch.Status = EpochStatus_Open
+				epoch.InputIndexUpperBound = next
+				epoch.TournamentAddress = nil
+				inputCursor = min(inputCursor, cursor)
+			}
+		}
+	} else if epoch.InputIndexUpperBound > epoch.InputIndexLowerBound {
 		var err error
 		prevValue := new(big.Int).SetUint64(epoch.InputIndexLowerBound)
 		inputs, _, err = r.fetchInputs(ctx, app,
@@ -425,7 +450,7 @@ func (r *Service) processSealedEpochEvent(
 		ctx,
 		app.application.IApplicationAddress.String(),
 		epochInputMap,
-		event.Raw.BlockNumber-1,
+		inputCursor,
 	)
 	if err != nil {
 		if errors.Is(err, repository.ErrInputLogIdentityConflict) {
@@ -435,6 +460,9 @@ func (r *Service) processSealedEpochEvent(
 		return fmt.Errorf("failed to store epoch and inputs: %w", err)
 	}
 
+	if partial {
+		return errInputBudgetExhausted
+	}
 	r.Logger.Debug("Stored sealed epoch and inputs",
 		"application", app.application.Name,
 		"epoch_number", epoch.Index,
@@ -515,10 +543,19 @@ func (r *Service) processApplicationOpenEpoch(
 			"failed to get number of inputs from repository: %w", err)
 	}
 	prevValue := new(big.Int).SetUint64(inputCount)
-	inputs, endCount, err := r.fetchInputs(ctx, app,
-		lastInputCheckBlock+1, mostRecentBlockNumber,
-		prevValue,
-		openEpoch.InputIndexLowerBound, math.MaxUint64)
+	var inputs []*Input
+	var endCount uint64
+	scanEnd := mostRecentBlockNumber
+	if r.maxInputsPerStep > 0 {
+		inputs, endCount, scanEnd, err = r.fetchInputBatch(ctx, app, lastInputCheckBlock+1, mostRecentBlockNumber, inputCount, math.MaxUint64)
+		if errors.Is(err, errInputBudgetExhausted) {
+			return nil
+		}
+	} else {
+		inputs, endCount, err = r.fetchInputs(ctx, app,
+			lastInputCheckBlock+1, mostRecentBlockNumber,
+			prevValue, openEpoch.InputIndexLowerBound, math.MaxUint64)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to fetch inputs for epoch %d: %w", openEpoch.Index, err)
 	}
@@ -529,7 +566,10 @@ func (r *Service) processApplicationOpenEpoch(
 
 	// increase the upper bound according to the number of fetched inputs
 	openEpoch.InputIndexUpperBound += uint64(len(inputs))
-	openEpoch.LastBlock = mostRecentBlockNumber
+	openEpoch.LastBlock = scanEnd
+	if len(inputs) > 0 {
+		openEpoch.LastBlock = max(openEpoch.LastBlock, inputs[len(inputs)-1].BlockNumber)
+	}
 
 	r.Logger.Debug("Storing open epoch",
 		"application", app.application.Name,
@@ -543,7 +583,7 @@ func (r *Service) processApplicationOpenEpoch(
 		ctx,
 		app.application.IApplicationAddress.String(),
 		epochInputMap,
-		mostRecentBlockNumber,
+		scanEnd,
 	)
 
 	if err != nil {

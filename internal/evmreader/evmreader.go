@@ -203,6 +203,11 @@ func (r *Service) runBlockScanners(
 	if ctx.Err() != nil {
 		return false
 	}
+	if r.maxInputsPerStep > 0 {
+		remaining := r.maxInputsPerStep
+		r.inputBudget = &remaining
+		defer func() { r.inputBudget = nil }()
+	}
 	// Detect foreclosure first so later scanners use the marker observed in this same tick.
 	success := r.checkForForeclosure(ctx, apps, blockNumber)
 	if ctx.Err() != nil {
