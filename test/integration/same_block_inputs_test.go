@@ -216,8 +216,10 @@ func (s *SameBlockInputsSuite) TestMultipleInputsOneTransactionAuthority() {
 
 // TestMaximumInputsOneBlockAuthority stresses the reader's in-memory input
 // batch with the largest Spambox call that fits the block gas budget. It checks
-// ingestion, not machine execution. A normal block may not exhaust memory;
-// CARTESI_TEST_INPUT_STRESS_GAS_LIMIT can raise Anvil's block limit for an OOM
+// ingestion and process survival under the configured virtual-memory limit,
+// without sampling memory usage or waiting for machine execution.
+// A normal block may not exhaust memory. CARTESI_TEST_INPUT_STRESS_GAS_LIMIT
+// can raise Anvil's block limit for an OOM
 // reproduction, together with CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES. RPC gas caps
 // must also allow the requested budget. The original block limit is restored.
 func (s *SameBlockInputsSuite) TestMaximumInputsOneBlockAuthority() {
@@ -328,8 +330,8 @@ func (s *SameBlockInputsSuite) TestMaximumInputsOneBlockAuthority() {
 	opts.GasLimit = gasLimit
 	tx, err := spambox.Transact(opts, "spam", appAddr, new(big.Int).SetUint64(count))
 	r.NoError(err, "submit maximum-input transaction")
-	// Start before mining: the reader can ingest the block before waitReceipt
-	// returns. Keep sampling until the repository cursor confirms ingestion.
+	// Mining makes the inputs visible to the reader. After confirming the
+	// receipt, poll ingestion progress and check whether the node has exited.
 	r.NoError(anvilMine(s.ctx, 1), "mine stress transaction in one block")
 	receiptCtx, receiptCancel := context.WithTimeout(s.ctx, 2*time.Minute)
 	defer receiptCancel()

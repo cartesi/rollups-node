@@ -6,7 +6,6 @@ package evmreader
 import (
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -51,7 +50,7 @@ func (s *EvmReaderSuite) TestFetchApplicationInputsDuplicateAndOutOfOrderEvents(
 	// delivered out-of-order: [2, 0, 1, 1]
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(0, 3),
 	).Return([]iinputbox.IInputBoxInputAdded{
 		makeInputEvent(addr, 2, 100),
 		makeInputEvent(addr, 0, 100),
@@ -60,7 +59,7 @@ func (s *EvmReaderSuite) TestFetchApplicationInputsDuplicateAndOutOfOrderEvents(
 	}, nil)
 
 	prevValue := new(big.Int).SetUint64(0) // repo returns 0 inputs
-	inputs, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 0, math.MaxUint64)
+	inputs, _, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 0, 300)
 	s.Require().NoError(err)
 
 	// 3 unique inputs, sorted by index
@@ -98,11 +97,11 @@ func (s *EvmReaderSuite) TestFetchInputsSameTransactionHashPreservesLogIndex() {
 		Return(new(big.Int).SetUint64(2), nil)
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(0, 2),
 	).Return([]iinputbox.IInputBoxInputAdded{input0, input1}, nil)
 
-	inputs, _, err := s.evmReader.fetchInputs(
-		s.ctx, app, 10, 200, new(big.Int).SetUint64(0), 0, math.MaxUint64)
+	inputs, _, _, err := s.evmReader.fetchInputs(
+		s.ctx, app, 10, 200, new(big.Int).SetUint64(0), 0, 300)
 	s.Require().NoError(err)
 	s.Require().Len(inputs, 2)
 	s.Equal(txHash, inputs[0].TransactionHash)
@@ -149,7 +148,7 @@ func (s *EvmReaderSuite) sameTransactionScanApp() (appContracts, common.Hash) {
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 			return opts.Start == 100 && opts.End != nil && *opts.End == 100
 		}),
-		[]common.Address{addr}, mock.Anything,
+		[]common.Address{addr}, inputIndexRange(0, 2),
 	).Return([]iinputbox.IInputBoxInputAdded{event0, event1}, nil).Once()
 
 	return app, txHash
@@ -213,9 +212,7 @@ func (s *EvmReaderSuite) TestInputLogIdentityConflictMarksApplicationCorrupted()
 }
 
 // --- Bounds filtering: inputs outside [lowerBound, upperBound) are excluded ---
-// When RetrieveInputs returns events with indices outside the requested bounds,
-// fetchInputs must exclude them. This exercises the bounds filtering added in the
-// unified fetchInputs (C2 consolidation).
+// The RPC topic filter must contain only indices inside the requested bounds.
 func (s *EvmReaderSuite) TestFetchInputsBoundsFiltering() {
 	addr := common.HexToAddress("0x3333333333333333333333333333333333333333")
 
@@ -236,20 +233,17 @@ func (s *EvmReaderSuite) TestFetchInputsBoundsFiltering() {
 	inputSrc.On("GetNumberOfInputs", blockFrom(100), mock.Anything).
 		Return(new(big.Int).SetUint64(5), nil)
 
-	// RetrieveInputs returns indices 0..4, but we only want [2, 4)
+	// Only indices 2 and 3 may be requested and returned.
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(2, 4),
 	).Return([]iinputbox.IInputBoxInputAdded{
-		makeInputEvent(addr, 0, 100), // below lowerBound → excluded
-		makeInputEvent(addr, 1, 100), // below lowerBound → excluded
 		makeInputEvent(addr, 2, 100), // in bounds → included
 		makeInputEvent(addr, 3, 100), // in bounds → included
-		makeInputEvent(addr, 4, 100), // >= upperBound → excluded
 	}, nil)
 
 	prevValue := new(big.Int).SetUint64(0)
-	inputs, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 2, 4)
+	inputs, _, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 2, 4)
 	s.Require().NoError(err)
 
 	// Only indices 2 and 3 should be included
@@ -281,19 +275,12 @@ func (s *EvmReaderSuite) TestFetchInputsEmptyBoundsRange() {
 	inputSrc.On("GetNumberOfInputs", blockFrom(100), mock.Anything).
 		Return(new(big.Int).SetUint64(2), nil)
 
-	inputSrc.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{
-		makeInputEvent(addr, 0, 100),
-		makeInputEvent(addr, 1, 100),
-	}, nil)
-
 	// lowerBound == upperBound == 5 → empty range
 	prevValue := new(big.Int).SetUint64(0)
-	inputs, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 5, 5)
+	inputs, _, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 5, 5)
 	s.Require().NoError(err)
 	s.Require().Empty(inputs)
+	inputSrc.AssertNotCalled(s.T(), "RetrieveInputs", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // --- Bounds filtering: boundary-exact inclusion/exclusion ---
@@ -321,16 +308,14 @@ func (s *EvmReaderSuite) TestFetchInputsBoundaryExactness() {
 
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(1, 2),
 	).Return([]iinputbox.IInputBoxInputAdded{
-		makeInputEvent(addr, 0, 100),
 		makeInputEvent(addr, 1, 100),
-		makeInputEvent(addr, 2, 100),
 	}, nil)
 
 	// Range [1, 2): only index 1 should be included
 	prevValue := new(big.Int).SetUint64(0)
-	inputs, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 1, 2)
+	inputs, _, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 1, 2)
 	s.Require().NoError(err)
 	s.Require().Len(inputs, 1)
 	s.Require().Equal(uint64(1), inputs[0].Index)
@@ -438,11 +423,11 @@ func (s *SealedEpochsSuite) TestFetchSealedEpochInputsRetrieveFailure() {
 	// RetrieveInputs fails at the transition block
 	s.inputBox.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(0, 2),
 	).Return(([]iinputbox.IInputBoxInputAdded)(nil), errors.New("RPC timeout"))
 
 	prevValue := new(big.Int).SetUint64(epoch.InputIndexLowerBound)
-	_, _, err := s.evmReader.fetchInputs(s.ctx, app,
+	_, _, _, err := s.evmReader.fetchInputs(s.ctx, app,
 		epoch.FirstBlock, epoch.LastBlock,
 		prevValue,
 		epoch.InputIndexLowerBound, epoch.InputIndexUpperBound)
