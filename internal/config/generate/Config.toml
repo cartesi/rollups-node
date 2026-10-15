@@ -112,6 +112,15 @@ Maximum number of inputs fetched per database query during advance processing an
 synchronization. Bounds memory usage for applications with large backlogs of unprocessed inputs."""
 used-by = ["advancer", "node"]
 
+[rollups.CARTESI_EVM_READER_MAX_INPUTS_PER_STEP]
+default = "500"
+go-type = "uint64"
+description = """
+Maximum number of new inputs fetched and stored by the EVM reader in a single service tick,
+shared across applications and sealed and open epochs. Inputs in the same block are split
+across ticks. Zero disables the limit."""
+used-by = ["evmreader", "node"]
+
 [rollups.CARTESI_EVM_READER_POLLING_INTERVAL]
 default = "12"
 go-type = "Duration"
