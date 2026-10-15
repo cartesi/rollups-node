@@ -53,18 +53,20 @@ func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
 	repo.On("RegisterObserver", mock.Anything, EvmReaderConfigKey, requested).
 		Return(requested, nil).Once()
 
-	_, err = Create(t.Context(), &CreateInfo{
+	created, err := Create(t.Context(), &CreateInfo{
 		Config: config.EvmreaderConfig{
 			LogLevel:                     logLevel,
 			BlockchainDefaultBlock:       DefaultBlock_Finalized,
 			BlockchainHttpRequestTimeout: requestTimeout,
 			BlockchainId:                 chainID,
 			EvmReaderPollingInterval:     pollInterval,
+			EvmReaderMaxInputsPerStep:    17,
 		},
 		EthClient:  client,
 		Repository: repo,
 	})
 	require.NoError(t, err)
+	require.Equal(t, uint64(17), created.(*Service).maxInputsPerStep)
 
 	repo.AssertExpectations(t)
 }

@@ -51,9 +51,10 @@ func (s *SealedEpochsSuite) SetupTest() {
 	s.dave = newMockDaveConsensus()
 
 	s.evmReader = &Service{
-		repository:     s.repository,
-		defaultBlock:   DefaultBlock_Latest,
-		hasEnabledApps: true,
+		repository:       s.repository,
+		defaultBlock:     DefaultBlock_Latest,
+		hasEnabledApps:   true,
+		maxInputsPerStep: 500,
 	}
 
 	logLevel, err := config.GetLogLevel()
@@ -141,18 +142,8 @@ func (s *SealedEpochsSuite) TestProcessSealedEpochFindsInputAtOverlapBlock() {
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 			return opts.Start == sealBlock0
 		}),
-		mock.Anything,
-		mock.Anything,
+		mock.Anything, inputIndexRange(3, 4),
 	).Return([]iinputbox.IInputBoxInputAdded{overlapInput}, nil)
-
-	// No inputs at other blocks in the range.
-	s.inputBox.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-			return opts.Start != sealBlock0
-		}),
-		mock.Anything,
-		mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{}, nil)
 
 	// CreateEpochsAndInputs captures what was stored.
 	var storedInputs []*Input
