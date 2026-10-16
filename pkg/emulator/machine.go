@@ -26,6 +26,7 @@ import "C"
 
 import (
 	"encoding/json"
+	"math"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -452,6 +453,11 @@ func (m *Machine) CollectUarchCycleRootHashes(
 // send_cmio_response
 func (m *Machine) SendCmioResponse(reason uint16, data []byte, revertRootHash *Hash) error {
 	var err error
+
+	// we can't let cm handle this because, e.g. 4GB+2MB would clamp to 2MB instead of an error.
+	if len(data) > math.MaxUint32 {
+		return Error{ErrCodeInvalidArgument, "data field of SendCmioResponse is larger than 4GB"}
+	}
 
 	m.callCAPI(func() {
 		var ptrData *C.uint8_t
