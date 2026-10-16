@@ -42,6 +42,8 @@ type Service struct {
 	lastSuccessfulPoll      atomic.Pointer[time.Time]
 	consecutiveScanFailures atomic.Uint32
 	readyMaxStaleness       time.Duration
+	maxInputsPerStep        uint64
+	inputBudget             *uint64
 }
 
 const EvmReaderConfigKey = "evm-reader"
@@ -136,6 +138,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 
 	s.resolver = newApplicationAdapterResolver(s.Logger, s.adapterFactory)
 	s.readyMaxStaleness = readyMaxStaleness
+	s.maxInputsPerStep = c.Config.EvmReaderMaxInputsPerStep
 	s.lastSuccessfulPoll.Store(&time.Time{})
 
 	s.Logger.Info("Created", "config", c.Config)

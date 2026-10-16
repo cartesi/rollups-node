@@ -339,7 +339,21 @@ func (r *Service) readAndStoreApplicationInputs(
 		return r.recordInputCorruption(ctx, app.application, "Application has epoch length of zero")
 	}
 
-	inputs, err := r.readApplicationInputs(ctx, app, lastProcessedBlock+1, mostRecentBlockNumber)
+	var inputs []*Input
+	var err error
+	scanEnd := mostRecentBlockNumber
+	if r.maxInputsPerStep > 0 {
+		var count uint64
+		count, err = r.repository.GetNumberOfInputs(ctx, address.String())
+		if err == nil {
+			inputs, _, scanEnd, err = r.fetchInputBatch(ctx, app, lastProcessedBlock+1, mostRecentBlockNumber, count, math.MaxUint64)
+		}
+	} else {
+		inputs, err = r.readApplicationInputs(ctx, app, lastProcessedBlock+1, mostRecentBlockNumber)
+	}
+	if errors.Is(err, errInputBudgetExhausted) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -347,7 +361,14 @@ func (r *Service) readAndStoreApplicationInputs(
 	if err != nil {
 		return fmt.Errorf("retrieve current epoch: %w", err)
 	}
-	epochInputMap, err := indexInputsIntoEpochs(epochLength, currentEpoch, inputs, mostRecentBlockNumber)
+	// A previous batch may have opened an epoch in a partially read block.
+	if r.maxInputsPerStep > 0 && len(inputs) > 0 && (currentEpoch == nil || currentEpoch.Status != EpochStatus_Open) {
+		currentEpoch, err = r.repository.GetEpoch(ctx, address.String(), calculateEpochIndex(epochLength, inputs[0].BlockNumber))
+		if err != nil {
+			return fmt.Errorf("retrieve batch epoch: %w", err)
+		}
+	}
+	epochInputMap, err := indexInputsIntoEpochs(epochLength, currentEpoch, inputs, scanEnd)
 	if err != nil {
 		if errors.Is(err, ErrInputForNonOpenEpoch) {
 			return r.recordInputCorruption(ctx, app.application, "Should never happen. %v", err)
@@ -359,7 +380,7 @@ func (r *Service) readAndStoreApplicationInputs(
 		// No epoch needs to be stored or closed. Only this application's
 		// successfully processed range is eligible for the cursor-only update.
 		err = r.repository.UpdateEventLastCheckBlock(
-			ctx, []int64{app.application.ID}, MonitoredEvent_InputAdded, mostRecentBlockNumber)
+			ctx, []int64{app.application.ID}, MonitoredEvent_InputAdded, scanEnd)
 		if err != nil {
 			return fmt.Errorf("update input cursor: %w", err)
 		}
@@ -368,7 +389,7 @@ func (r *Service) readAndStoreApplicationInputs(
 
 	// This transaction stores inputs, closes epochs, and advances the cursor.
 	// An epoch closure with no new inputs must use the same atomic write.
-	err = r.repository.CreateEpochsAndInputs(ctx, address.String(), epochInputMap, mostRecentBlockNumber)
+	err = r.repository.CreateEpochsAndInputs(ctx, address.String(), epochInputMap, scanEnd)
 	if err != nil {
 		if errors.Is(err, repository.ErrInputLogIdentityConflict) {
 			return r.recordInputCorruption(ctx, app.application,
@@ -400,7 +421,7 @@ func (r *Service) readAndStoreApplicationInputs(
 		"application", app.application.Name,
 		"address", address,
 		"start_block", lastProcessedBlock+1,
-		"end_block", mostRecentBlockNumber,
+		"end_block", scanEnd,
 		"epoch_count", len(epochInputMap),
 		"input_count", len(inputs),
 	)
