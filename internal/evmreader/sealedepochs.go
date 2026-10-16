@@ -356,17 +356,23 @@ func (r *Service) processSealedEpochEvent(
 		return fmt.Errorf("failed to fetch epoch %d: %w", epochNumber, err)
 	}
 
+	var unprocessedFirstBlock uint64
+	var unprocessedIndexLowerBound uint64
 	if epoch == nil {
 		// Create new epoch from sealed event
 		epoch = &Epoch{
 			Index:                event.EpochNumber.Uint64(),
-			FirstBlock:           firstBlock, // Will be calculated based on epoch length
+			FirstBlock:           firstBlock,
 			LastBlock:            event.Raw.BlockNumber,
 			InputIndexLowerBound: event.InputIndexLowerBound.Uint64(),
 			InputIndexUpperBound: event.InputIndexUpperBound.Uint64(),
 			TournamentAddress:    &event.Tournament,
 			Status:               EpochStatus_Closed, // Sealed epochs are closed
 		}
+
+		// setup the entire epoch as unprocessed
+		unprocessedFirstBlock = epoch.FirstBlock
+		unprocessedIndexLowerBound = epoch.InputIndexLowerBound
 	} else {
 		if epoch.FirstBlock != firstBlock || epoch.InputIndexLowerBound != event.InputIndexLowerBound.Uint64() {
 			return fmt.Errorf("epoch %d data mismatch with sealed event", epoch.Index)
@@ -380,6 +386,11 @@ func (r *Service) processSealedEpochEvent(
 			// claim/proof progress when replaying a partially completed scan.
 			return nil
 		}
+
+		// backup markers that indicate which part of the epoch was already processed
+		unprocessedFirstBlock = epoch.LastBlock + 1
+		unprocessedIndexLowerBound = epoch.InputIndexUpperBound
+
 		epoch.LastBlock = event.Raw.BlockNumber
 		epoch.InputIndexUpperBound = event.InputIndexUpperBound.Uint64()
 		epoch.TournamentAddress = &event.Tournament
@@ -387,31 +398,30 @@ func (r *Service) processSealedEpochEvent(
 	}
 
 	// Fetch inputs for this epoch from the InputBox.
-	// Always search from epoch.FirstBlock (not lastInputCheckBlock+1) because with
+	// Always search from unprocessedFirstBlock (not lastInputCheckBlock+1) because with
 	// PRT's overlapping block boundaries (sealed epoch's LastBlock = next epoch's
 	// FirstBlock), inputs for this epoch may exist at the overlap block — added in
 	// a later transaction than the previous epoch's seal within the same block.
-	// Use InputIndexLowerBound as prevValue rather than the DB input count, since
-	// the open epoch may have already stored some of these inputs ahead of us.
 	var inputs []*Input
-	if epoch.InputIndexUpperBound > epoch.InputIndexLowerBound {
+	if unprocessedIndexLowerBound < epoch.InputIndexUpperBound {
 		var err error
-		prevValue := new(big.Int).SetUint64(epoch.InputIndexLowerBound)
+		prevValue := new(big.Int).SetUint64(unprocessedIndexLowerBound)
 		inputs, _, err = r.fetchInputs(ctx, app,
-			epoch.FirstBlock, epoch.LastBlock,
+			unprocessedFirstBlock, epoch.LastBlock,
 			prevValue,
-			epoch.InputIndexLowerBound, epoch.InputIndexUpperBound)
+			unprocessedIndexLowerBound, epoch.InputIndexUpperBound)
 		if err != nil {
 			return fmt.Errorf("failed to fetch inputs for epoch %d: %w", epoch.Index, err)
 		}
 
-		expectedCount := epoch.InputIndexUpperBound - epoch.InputIndexLowerBound
-		if uint64(len(inputs)) != expectedCount {
+		actualCount := uint64(len(inputs))
+		expectedCount := epoch.InputIndexUpperBound - unprocessedIndexLowerBound
+		if actualCount != expectedCount {
 			return fmt.Errorf(
 				"epoch %d input count mismatch: expected %d (indices %d to %d), got %d",
 				epoch.Index, expectedCount,
-				epoch.InputIndexLowerBound, epoch.InputIndexUpperBound,
-				len(inputs))
+				unprocessedIndexLowerBound, epoch.InputIndexUpperBound,
+				actualCount)
 		}
 	}
 	// The seal covers every input before its transaction, but later inputs in
@@ -488,7 +498,6 @@ func (r *Service) processApplicationOpenEpoch(
 		return fmt.Errorf("failed to fetch epoch %d: %w", nextEpochNumber, err)
 	}
 	if openEpoch == nil {
-		// Create epoch from sealed event
 		openEpoch = &Epoch{
 			Index:                nextEpochNumber,
 			FirstBlock:           lastEpoch.LastBlock,
@@ -518,7 +527,7 @@ func (r *Service) processApplicationOpenEpoch(
 	inputs, endCount, err := r.fetchInputs(ctx, app,
 		lastInputCheckBlock+1, mostRecentBlockNumber,
 		prevValue,
-		openEpoch.InputIndexLowerBound, math.MaxUint64)
+		openEpoch.InputIndexUpperBound, math.MaxUint64)
 	if err != nil {
 		return fmt.Errorf("failed to fetch inputs for epoch %d: %w", openEpoch.Index, err)
 	}

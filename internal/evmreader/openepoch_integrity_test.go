@@ -40,6 +40,8 @@ func TestDaveOpenEpochChecksInputCountBeforePublication(t *testing.T) {
 			{name: "no new inputs", storedCount: 2, lowerBound: 2, endCount: 2},
 			{name: "existing open inputs", storedCount: 4, lowerBound: 2, endCount: 5,
 				logIndices: []uint64{4}, wantIndices: []uint64{4}},
+			{name: "rescanned block includes stored open inputs", storedCount: 4, lowerBound: 2, endCount: 5,
+				logIndices: []uint64{2, 3, 4}, wantIndices: []uint64{4}},
 		} {
 			t.Run(name+"/"+test.name, func(t *testing.T) {
 				repo := newMockRepository()
