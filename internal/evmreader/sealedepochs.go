@@ -358,6 +358,7 @@ func (r *Service) processSealedEpochEvent(
 
 	var unprocessedFirstBlock uint64
 	var unprocessedIndexLowerBound uint64
+
 	if epoch == nil {
 		// Create new epoch from sealed event
 		epoch = &Epoch{
@@ -405,8 +406,9 @@ func (r *Service) processSealedEpochEvent(
 	var inputs []*Input
 	if unprocessedIndexLowerBound < epoch.InputIndexUpperBound {
 		var err error
+		var lastInputBlock uint64
 		prevValue := new(big.Int).SetUint64(unprocessedIndexLowerBound)
-		inputs, _, err = r.fetchInputs(ctx, app,
+		inputs, lastInputBlock, _, err = r.fetchInputs(ctx, app,
 			unprocessedFirstBlock, epoch.LastBlock,
 			prevValue,
 			unprocessedIndexLowerBound, epoch.InputIndexUpperBound)
@@ -423,6 +425,10 @@ func (r *Service) processSealedEpochEvent(
 				unprocessedIndexLowerBound, epoch.InputIndexUpperBound,
 				actualCount)
 		}
+
+		// update epoch cursors to reflect partially processed inputs
+		epoch.LastBlock = lastInputBlock
+		epoch.InputIndexUpperBound = unprocessedIndexLowerBound + actualCount
 	}
 	// The seal covers every input before its transaction, but later inputs in
 	// the same block belong to the next epoch. Publish only complete blocks;
@@ -435,7 +441,7 @@ func (r *Service) processSealedEpochEvent(
 		ctx,
 		app.application.IApplicationAddress.String(),
 		epochInputMap,
-		event.Raw.BlockNumber-1,
+		epoch.LastBlock-1, // last block must be rescanned for inputs for the next epoch
 	)
 	if err != nil {
 		if errors.Is(err, repository.ErrInputLogIdentityConflict) {
@@ -524,7 +530,7 @@ func (r *Service) processApplicationOpenEpoch(
 			"failed to get number of inputs from repository: %w", err)
 	}
 	prevValue := new(big.Int).SetUint64(inputCount)
-	inputs, endCount, err := r.fetchInputs(ctx, app,
+	inputs, lastInputBlock, endCount, err := r.fetchInputs(ctx, app,
 		lastInputCheckBlock+1, mostRecentBlockNumber,
 		prevValue,
 		openEpoch.InputIndexUpperBound, math.MaxUint64)
@@ -536,9 +542,9 @@ func (r *Service) processApplicationOpenEpoch(
 			openEpoch.Index, inputCount, endCount, len(inputs))
 	}
 
-	// increase the upper bound according to the number of fetched inputs
+	// increase the upper bound according to the number of fetched inputs.
 	openEpoch.InputIndexUpperBound += uint64(len(inputs))
-	openEpoch.LastBlock = mostRecentBlockNumber
+	openEpoch.LastBlock = lastInputBlock
 
 	r.Logger.Debug("Storing open epoch",
 		"application", app.application.Name,
@@ -552,7 +558,7 @@ func (r *Service) processApplicationOpenEpoch(
 		ctx,
 		app.application.IApplicationAddress.String(),
 		epochInputMap,
-		mostRecentBlockNumber,
+		openEpoch.LastBlock,
 	)
 
 	if err != nil {
