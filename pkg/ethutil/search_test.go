@@ -63,7 +63,7 @@ func (s *SearchSuite) TestNoTransitionsWhenValuesEqual() {
 		10: big.NewInt(1),
 	}
 	var blocks []uint64
-	_, err := FindTransitions(s.ctx, 0, 10, nil, mockTransitionQuery(values), collectOnHit(&blocks))
+	_, _, err := FindTransitions(s.ctx, 0, 10, nil, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.NoError(err)
 	s.Empty(blocks)
 }
@@ -74,7 +74,7 @@ func (s *SearchSuite) TestSingleTransition() {
 		1: big.NewInt(2),
 	}
 	var blocks []uint64
-	_, err := FindTransitions(s.ctx, 0, 1, nil, mockTransitionQuery(values), collectOnHit(&blocks))
+	_, _, err := FindTransitions(s.ctx, 0, 1, nil, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.NoError(err)
 	s.Equal([]uint64{1}, blocks)
 }
@@ -89,14 +89,14 @@ func (s *SearchSuite) TestMultipleTransitions() {
 		6: big.NewInt(3),
 	}
 	var blocks []uint64
-	count, err := FindTransitions(s.ctx, 1, 6, nil, mockTransitionQuery(values), collectOnHit(&blocks))
+	count, _, err := FindTransitions(s.ctx, 1, 6, nil, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.NoError(err)
 	s.Equal(count, uint64(2))
 	s.Equal([]uint64{3, 5}, blocks)
 
 	blocks = []uint64{}
 	previousValue := big.NewInt(0)
-	count, err = FindTransitions(s.ctx, 1, 6, previousValue, mockTransitionQuery(values), collectOnHit(&blocks))
+	count, _, err = FindTransitions(s.ctx, 1, 6, previousValue, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.NoError(err)
 	s.Equal(count, uint64(3))
 	s.Equal([]uint64{1, 3, 5}, blocks)
@@ -108,14 +108,14 @@ func (s *SearchSuite) TestTransitionAtBoundary() {
 		1: big.NewInt(2),
 	}
 	var blocks []uint64
-	count, err := FindTransitions(s.ctx, 0, 1, nil, mockTransitionQuery(values), collectOnHit(&blocks))
+	count, _, err := FindTransitions(s.ctx, 0, 1, nil, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.NoError(err)
 	s.Equal(count, uint64(1))
 	s.Equal([]uint64{1}, blocks)
 
 	blocks = []uint64{}
 	previousValue := big.NewInt(0)
-	count, err = FindTransitions(s.ctx, 0, 1, previousValue, mockTransitionQuery(values), collectOnHit(&blocks))
+	count, _, err = FindTransitions(s.ctx, 0, 1, previousValue, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.NoError(err)
 	s.Equal(count, uint64(2))
 	s.Equal([]uint64{0, 1}, blocks)
@@ -127,14 +127,14 @@ func (s *SearchSuite) TestStartEqualsEnd() {
 		5: big.NewInt(1),
 	}
 	var blocks []uint64
-	count, err := FindTransitions(s.ctx, 5, 5, nil, mockTransitionQuery(values), collectOnHit(&blocks))
+	count, _, err := FindTransitions(s.ctx, 5, 5, nil, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.NoError(err)
 	s.Equal(count, uint64(0))
 	s.Empty(blocks)
 
 	blocks = []uint64{}
 	previousValue := big.NewInt(0)
-	count, err = FindTransitions(s.ctx, 5, 5, previousValue, mockTransitionQuery(values), collectOnHit(&blocks))
+	count, _, err = FindTransitions(s.ctx, 5, 5, previousValue, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.NoError(err)
 	s.Equal(count, uint64(1))
 	s.Equal([]uint64{5}, blocks)
@@ -148,14 +148,14 @@ func (s *SearchSuite) TestContextCancellation() {
 	ctx, cancel := context.WithCancel(s.ctx)
 	cancel()
 	var blocks []uint64
-	_, err := FindTransitions(ctx, 0, 10, nil, mockTransitionQuery(values), collectOnHit(&blocks))
+	_, _, err := FindTransitions(ctx, 0, 10, nil, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.Error(err)
 	s.Equal(context.Canceled, err)
 }
 
 func (s *SearchSuite) TestTransitionQueryErrorAtStart() {
 	var blocks []uint64
-	_, err := FindTransitions(s.ctx, 0, 10, nil, errorTransitionQuery(fmt.Errorf("query error")), collectOnHit(&blocks))
+	_, _, err := FindTransitions(s.ctx, 0, 10, nil, nil, errorTransitionQuery(fmt.Errorf("query error")), collectOnHit(&blocks))
 	s.Error(err)
 	s.Contains(err.Error(), "transitionQuery(startBlock=0): query error")
 	s.Empty(blocks)
@@ -166,7 +166,7 @@ func (s *SearchSuite) TestTransitionQueryErrorAtEnd() {
 		0: big.NewInt(1),
 	}
 	var blocks []uint64
-	_, err := FindTransitions(s.ctx, 0, 10, nil, func(_ context.Context, block uint64) (*big.Int, error) {
+	_, _, err := FindTransitions(s.ctx, 0, 10, nil, nil, func(_ context.Context, block uint64) (*big.Int, error) {
 		if block == 10 {
 			return nil, fmt.Errorf("query error at end")
 		}
@@ -183,7 +183,7 @@ func (s *SearchSuite) TestTransitionQueryErrorAtMid() {
 		10: big.NewInt(2),
 	}
 	var blocks []uint64
-	_, err := FindTransitions(s.ctx, 0, 10, nil, func(_ context.Context, block uint64) (*big.Int, error) {
+	_, _, err := FindTransitions(s.ctx, 0, 10, nil, nil, func(_ context.Context, block uint64) (*big.Int, error) {
 		if block == 5 {
 			return nil, fmt.Errorf("query error at mid")
 		}
@@ -203,7 +203,7 @@ func (s *SearchSuite) TestOnHitError() {
 		1: big.NewInt(2),
 	}
 	var blocks []uint64
-	_, err := FindTransitions(s.ctx, 0, 1, nil, mockTransitionQuery(values), errorOnHit(fmt.Errorf("onHit error")))
+	_, _, err := FindTransitions(s.ctx, 0, 1, nil, nil, mockTransitionQuery(values), errorOnHit(fmt.Errorf("onHit error")))
 	s.Error(err)
 	s.Contains(err.Error(), "onHit error")
 	s.Empty(blocks)
@@ -219,14 +219,14 @@ func (s *SearchSuite) TestLargeRange() {
 		}
 	}
 	var blocks []uint64
-	_, err := FindTransitions(s.ctx, 0, 100, nil, mockTransitionQuery(values), collectOnHit(&blocks))
+	_, _, err := FindTransitions(s.ctx, 0, 100, nil, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.NoError(err)
 	s.Equal([]uint64{50}, blocks)
 }
 
 func (s *SearchSuite) TestNoValuesDefined() {
 	var blocks []uint64
-	_, err := FindTransitions(s.ctx, 0, 10, nil, mockTransitionQuery(map[uint64]*big.Int{}), collectOnHit(&blocks))
+	_, _, err := FindTransitions(s.ctx, 0, 10, nil, nil, mockTransitionQuery(map[uint64]*big.Int{}), collectOnHit(&blocks))
 	s.NoError(err)
 	s.Empty(blocks)
 }
@@ -238,9 +238,96 @@ func (s *SearchSuite) TestMonotonicViolation() {
 	}
 	var blocks []uint64
 	previousValue := big.NewInt(3) // 3 > 2, violation
-	_, err := FindTransitions(s.ctx, 0, 1, previousValue, mockTransitionQuery(values), collectOnHit(&blocks))
+	_, _, err := FindTransitions(s.ctx, 0, 1, previousValue, nil, mockTransitionQuery(values), collectOnHit(&blocks))
 	s.Error(err)
 	s.ErrorIs(err, ErrMonotonicViolation)
 	s.Contains(err.Error(), "monotonic assumption violated")
 	s.Empty(blocks)
+}
+
+func (s *SearchSuite) TestUpperBoundStopsAtReachingTransition() {
+	// Counters can jump by more than one in a block. The block reaching or
+	// crossing the bound must be processed, but no later transition may be.
+	values := map[uint64]*big.Int{
+		10: big.NewInt(2), 11: big.NewInt(2),
+		12: big.NewInt(5), 13: big.NewInt(5),
+		14: big.NewInt(9), 15: big.NewInt(9),
+		16: big.NewInt(12), 17: big.NewInt(12),
+	}
+	for _, test := range []struct {
+		name  string
+		lower *big.Int
+		upper *big.Int
+		want  []uint64
+	}{
+		{name: "unbounded", want: []uint64{12, 14, 16}},
+		{name: "exact counter", upper: big.NewInt(5), want: []uint64{12}},
+		{name: "counter jumps past bound", upper: big.NewInt(6), want: []uint64{12, 14}},
+		{name: "bound above final counter", upper: big.NewInt(20), want: []uint64{12, 14, 16}},
+		{name: "bound already reached at start", upper: big.NewInt(2)},
+		{name: "bound already exceeded at start", upper: big.NewInt(1)},
+		{name: "initial transition reaches bound", lower: big.NewInt(0), upper: big.NewInt(2), want: []uint64{10}},
+		{name: "initial and later transitions", lower: big.NewInt(0), upper: big.NewInt(9), want: []uint64{10, 12, 14}},
+	} {
+		s.Run(test.name, func() {
+			var blocks []uint64
+			count, last, err := FindTransitions(s.ctx, 10, 17, test.lower, test.upper,
+				mockTransitionQuery(values), collectOnHit(&blocks))
+			s.Require().NoError(err)
+			s.Equal(test.want, blocks)
+			s.Equal(uint64(len(test.want)), count)
+			wantLast := uint64(9) // startBlock - 1 when no callback succeeds
+			if len(test.want) > 0 {
+				wantLast = test.want[len(test.want)-1]
+			}
+			s.Equal(wantLast, last)
+		})
+	}
+}
+
+func (s *SearchSuite) TestLastProcessedBlockOnEmptyAndSingleBlockRanges() {
+	for _, test := range []struct {
+		name       string
+		start, end uint64
+		lower      *big.Int
+		want       []uint64
+		last       uint64
+	}{
+		{name: "empty range", start: 11, end: 10, last: 10},
+		{name: "single block without transition", start: 10, end: 10, last: 9},
+		{name: "single block with transition", start: 10, end: 10, lower: big.NewInt(0), want: []uint64{10}, last: 10},
+	} {
+		s.Run(test.name, func() {
+			var blocks []uint64
+			count, last, err := FindTransitions(s.ctx, test.start, test.end, test.lower, nil,
+				mockTransitionQuery(map[uint64]*big.Int{10: big.NewInt(1)}), collectOnHit(&blocks))
+			s.Require().NoError(err)
+			s.Equal(test.want, blocks)
+			s.Equal(uint64(len(test.want)), count)
+			s.Equal(test.last, last)
+		})
+	}
+}
+
+func (s *SearchSuite) TestLastProcessedBlockExcludesFailedCallback() {
+	for _, failBlock := range []uint64{10, 11, 12} {
+		s.Run(fmt.Sprintf("failure_at_%d", failBlock), func() {
+			callbackErr := fmt.Errorf("callback failed at %d", failBlock)
+			var completed []uint64
+			count, last, err := FindTransitions(s.ctx, 10, 12, big.NewInt(0), nil,
+				func(_ context.Context, block uint64) (*big.Int, error) {
+					return new(big.Int).SetUint64(block - 9), nil
+				}, func(block uint64) error {
+					if block == failBlock {
+						return callbackErr
+					}
+					completed = append(completed, block)
+					return nil
+				})
+			s.ErrorIs(err, callbackErr)
+			s.Equal(failBlock-1, last)
+			s.Equal(failBlock-10, count)
+			s.Equal(uint64(len(completed)), count)
+		})
+	}
 }

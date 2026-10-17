@@ -207,8 +207,8 @@ func (c *chainClient) epochHistoryDave(consensusAddr common.Address) (*EpochHist
 		prevValue = val
 	}
 
-	_, err = ethutil.FindTransitions(
-		c.callOpts.Context, fromBlock, toBlock, prevValue, oracle, onHit,
+	_, _, err = ethutil.FindTransitions(
+		c.callOpts.Context, fromBlock, toBlock, prevValue, nil, oracle, onHit,
 	)
 	if err != nil && !errors.Is(err, errLimitReached) {
 		return nil, fmt.Errorf("find sealed epoch transitions: %w", err)
@@ -360,8 +360,8 @@ func (c *chainClient) epochHistoryAuthority(
 		prevValue = val
 	}
 
-	_, err = ethutil.FindTransitions(
-		c.callOpts.Context, fromBlock, toBlock, prevValue, oracle, onHit,
+	_, _, err = ethutil.FindTransitions(
+		c.callOpts.Context, fromBlock, toBlock, prevValue, nil, oracle, onHit,
 	)
 	if err != nil && !errors.Is(err, errLimitReached) {
 		return nil, fmt.Errorf("find claim transitions: %w", err)
@@ -489,8 +489,8 @@ func (c *chainClient) epochHistoryQuorum(
 		prevValue = val
 	}
 
-	_, err = ethutil.FindTransitions(
-		c.callOpts.Context, fromBlock, toBlock, prevValue, oracle, onHit,
+	_, _, err = ethutil.FindTransitions(
+		c.callOpts.Context, fromBlock, toBlock, prevValue, nil, oracle, onHit,
 	)
 	if err != nil && !errors.Is(err, errLimitReached) {
 		return nil, fmt.Errorf("find claim accepted transitions: %w", err)

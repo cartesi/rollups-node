@@ -291,8 +291,8 @@ func (c *chainClient) findMatchCommitments(
 		return nil
 	}
 
-	_, err = ethutil.FindTransitions(
-		c.callOpts.Context, deployBlock, c.blockNum, big.NewInt(0), oracle, onHit,
+	_, _, err = ethutil.FindTransitions(
+		c.callOpts.Context, deployBlock, c.blockNum, big.NewInt(0), nil, oracle, onHit,
 	)
 	if err != nil && !errors.Is(err, errFound) {
 		return [32]byte{}, [32]byte{}, fmt.Errorf("find match commitments: %w", err)

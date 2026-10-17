@@ -89,11 +89,12 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 		return false
 	}
 
-	_, err = ethutil.FindTransitions(
+	_, _, err = ethutil.FindTransitions(
 		ctx,
 		startBlock,
 		mostRecentBlockNumber,
 		prevValue,
+		nil,
 		query,
 		onHit,
 	)

@@ -278,8 +278,8 @@ func (c *chainClient) findTournamentForEpoch(
 	}
 
 	// Use -1 as prevValue so epoch 0 is detected as a transition from -1→0.
-	_, err = ethutil.FindTransitions(
-		c.callOpts.Context, deployBlock, c.blockNum, big.NewInt(-1), oracle, onHit,
+	_, _, err = ethutil.FindTransitions(
+		c.callOpts.Context, deployBlock, c.blockNum, big.NewInt(-1), nil, oracle, onHit,
 	)
 	if err != nil && !errors.Is(err, errFound) {
 		return common.Address{}, fmt.Errorf("find epoch %d tournament: %w", targetEpoch, err)
@@ -768,8 +768,8 @@ func (c *chainClient) findAndCollectEvents(
 		return val, oErr
 	}
 
-	_, err := ethutil.FindTransitions(
-		c.callOpts.Context, fromBlock, c.blockNum, big.NewInt(0), safeOracle, onHit,
+	_, _, err := ethutil.FindTransitions(
+		c.callOpts.Context, fromBlock, c.blockNum, big.NewInt(0), nil, safeOracle, onHit,
 	)
 	if err != nil && !errors.Is(err, errLimitReached) {
 		return fmt.Errorf("find %s transitions: %w", eventName, err)
@@ -923,8 +923,8 @@ func (c *chainClient) discoverChildTournaments(
 		return nil
 	}
 
-	_, err = ethutil.FindTransitions(
-		c.callOpts.Context, fromBlock, c.blockNum, big.NewInt(0), oracle, onHit,
+	_, _, err = ethutil.FindTransitions(
+		c.callOpts.Context, fromBlock, c.blockNum, big.NewInt(0), nil, oracle, onHit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("find child tournament transitions: %w", err)

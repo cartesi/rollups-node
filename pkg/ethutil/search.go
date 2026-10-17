@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"slices"
 )
 
 // ErrMonotonicViolation is returned by FindTransitions when the seed prevValue
@@ -24,26 +23,18 @@ type TransitionQueryFn func(ctx context.Context, block uint64) (*big.Int, error)
 
 type OnHitFn func(block uint64) error
 
-// sortAndCallOnHit sorts the transition blocks and calls onHit for each in chronological order
-func sortAndCallOnHit(transitionBlocks []uint64, onHit OnHitFn) (uint64, error) {
-	slices.Sort(transitionBlocks)
-	for _, block := range transitionBlocks {
-		if err := onHit(block); err != nil {
-			return 0, err
-		}
-	}
-	return uint64(len(transitionBlocks)), nil
-}
-
 // FindTransitions performs divide-and-conquer search for transitions using oracle
 // and calls onHit for each transition block in chronological order.
 // The prevValue is optional and used to detect a transition exactly at startBlock.
 // It assumes the queried value is monotonic (e.g., increasing counter); if it can revert,
 // intermediate transitions may be missed when net change is zero.
-func FindTransitions(ctx context.Context, startBlock, endBlock uint64, prevValue *big.Int,
-	transitionQuery TransitionQueryFn, onHit OnHitFn) (uint64, error) {
+func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBound, upperBound *big.Int,
+	transitionQuery TransitionQueryFn, onHit OnHitFn) (uint64, uint64, error) {
+
+	lastProcessedBlock := startBlock-1
+
 	if startBlock > endBlock {
-		return 0, nil
+		return 0, lastProcessedBlock, nil
 	}
 
 	type interval struct {
@@ -53,33 +44,37 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, prevValue
 
 	startValue, err := transitionQuery(ctx, startBlock)
 	if err != nil {
-		return 0, fmt.Errorf("transitionQuery(startBlock=%d): %w", startBlock, err)
+		return 0, lastProcessedBlock, fmt.Errorf("transitionQuery(startBlock=%d): %w", startBlock, err)
 	}
 
-	var transitionBlocks []uint64
-	if prevValue != nil {
-		comparisonResult := prevValue.Cmp(startValue)
+	var count uint64
+	if lowerBound != nil {
+		comparisonResult := lowerBound.Cmp(startValue)
 		if comparisonResult > 0 {
-			return 0, fmt.Errorf("%w: prevValue %s > startValue %s at block %d",
-				ErrMonotonicViolation, prevValue.String(), startValue.String(), startBlock)
+			return 0, lastProcessedBlock, fmt.Errorf("%w: lowerBound %s > startValue %s at block %d",
+				ErrMonotonicViolation, lowerBound.String(), startValue.String(), startBlock)
 		}
 		if comparisonResult < 0 {
-			transitionBlocks = append(transitionBlocks, startBlock)
+			if err := onHit(startBlock); err != nil {
+				return count, lastProcessedBlock, err
+			}
+			lastProcessedBlock = startBlock
+			count++
 		}
 	}
 
-	if startBlock == endBlock {
-		return sortAndCallOnHit(transitionBlocks, onHit)
+	if startBlock == endBlock || (upperBound != nil && startValue.Cmp(upperBound) >= 0) {
+		return count, lastProcessedBlock, nil
 	}
 
 	endValue, err := transitionQuery(ctx, endBlock)
 	if err != nil {
-		return 0, fmt.Errorf("transitionQuery(endBlock=%d): %w", endBlock, err)
+		return 0, lastProcessedBlock, fmt.Errorf("transitionQuery(endBlock=%d): %w", endBlock, err)
 	}
 
 	if startValue.Cmp(endValue) == 0 {
 		// No further transitions, but may have added startBlock
-		return sortAndCallOnHit(transitionBlocks, onHit)
+		return count, lastProcessedBlock, nil
 	}
 
 	// First phase: collect all transition blocks
@@ -88,7 +83,7 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, prevValue
 		// Check for context cancellation
 		select {
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return 0, lastProcessedBlock, ctx.Err()
 		default:
 		}
 
@@ -98,18 +93,22 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, prevValue
 
 		if iv.StartBlock == iv.EndBlock {
 			// Found a transition block
-			transitionBlocks = append(transitionBlocks, iv.StartBlock)
+			if err := onHit(iv.StartBlock); err != nil {
+				return count, lastProcessedBlock, err
+			}
+			lastProcessedBlock = iv.StartBlock
+			count++
 			continue
 		}
 
 		midBlock := iv.StartBlock + (iv.EndBlock-iv.StartBlock)/2 //nolint:mnd
 		midValue, err := transitionQuery(ctx, midBlock)
 		if err != nil {
-			return 0, fmt.Errorf("transitionQuery(midBlock=%d): %w", midBlock, err)
+			return 0, lastProcessedBlock, fmt.Errorf("transitionQuery(midBlock=%d): %w", midBlock, err)
 		}
 
 		// Add new intervals to stack if there are transitions
-		if midValue.Cmp(iv.EndValue) != 0 {
+		if midValue.Cmp(iv.EndValue) != 0 && (upperBound == nil || midValue.Cmp(upperBound) < 0) {
 			stack = append(stack, interval{StartBlock: midBlock + 1, EndBlock: iv.EndBlock, StartValue: midValue, EndValue: iv.EndValue})
 		}
 		if iv.StartValue.Cmp(midValue) != 0 {
@@ -117,6 +116,5 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, prevValue
 		}
 	}
 
-	// Second phase: sort transition blocks and call onHit in chronological order
-	return sortAndCallOnHit(transitionBlocks, onHit)
+	return count, lastProcessedBlock, nil
 }

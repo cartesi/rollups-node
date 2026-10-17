@@ -214,7 +214,7 @@ func (r *Service) processApplicationSealedEpochs(
 	}
 
 	// Use FindTransitions to find epoch transitions
-	_, err := ethutil.FindTransitions(ctx, nextSearchBlock, mostRecentBlockNumber, prevValue, oracle, onHit)
+	_, _, err := ethutil.FindTransitions(ctx, nextSearchBlock, mostRecentBlockNumber, prevValue, nil, oracle, onHit)
 	if err != nil {
 		return fmt.Errorf("failed to walk epoch transitions: %w", err)
 	}

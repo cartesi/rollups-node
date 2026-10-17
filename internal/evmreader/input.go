@@ -527,8 +527,8 @@ func (r *Service) fetchInputs(
 		return nil
 	}
 
-	_, err := ethutil.FindTransitions(
-		ctx, startBlock, endBlock, prevValue, oracle, onHit)
+	_, _, err := ethutil.FindTransitions(
+		ctx, startBlock, endBlock, prevValue, nil, oracle, onHit)
 	if err != nil {
 		return nil, startBlock - 1, 0, fmt.Errorf(
 			"failed to walk input transitions: %w", err)
