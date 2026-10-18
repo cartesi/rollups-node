@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
+	aws_http "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	aws_cfg "github.com/aws/aws-sdk-go-v2/config"
 	aws_kms "github.com/aws/aws-sdk-go-v2/service/kms"
 
@@ -100,7 +101,15 @@ func getTransactOptsFactory(
 		if err != nil {
 			return nil, err
 		}
-		awsCfg, err := aws_cfg.LoadDefaultConfig(ctx)
+		timeout, err := GetBlockchainHttpRequestTimeout()
+		if err != nil {
+			return nil, err
+		}
+		if timeout <= 0 {
+			return nil, fmt.Errorf("%s must be positive for AWS KMS", BLOCKCHAIN_HTTP_REQUEST_TIMEOUT)
+		}
+		awsCfg, err := aws_cfg.LoadDefaultConfig(ctx,
+			aws_cfg.WithHTTPClient(aws_http.NewBuildableClient().WithTimeout(timeout)))
 		if err != nil {
 			return nil, err
 		}

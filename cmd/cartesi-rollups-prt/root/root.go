@@ -21,6 +21,7 @@ var (
 	logLevel           string
 	logColor           bool
 	databaseConnection string
+	defaultBlockString string
 	pollInterval       string
 	maxStartupTime     string
 	telemetryAddress   string
@@ -28,9 +29,11 @@ var (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "cartesi-rollups-" + config.ServicePrt,
-	Short:   "Runs cartesi-rollups-" + config.ServicePrt,
-	Long:    "Runs cartesi-rollups-" + config.ServicePrt + " in standalone mode",
+	Use:   "cartesi-rollups-" + config.ServicePrt,
+	Short: "Runs cartesi-rollups-" + config.ServicePrt,
+	Long: "Runs cartesi-rollups-" + config.ServicePrt + " in standalone mode.\n\n" +
+		"Use one node deployment per database and one active process per service role.\n" +
+		"Use one submitting process per signer. Stop the current process before starting its replacement.",
 	RunE:    run,
 	Version: version.BuildVersion,
 }
@@ -52,6 +55,9 @@ func init() {
 		"Poll interval")
 	cli.AddFlagStrVar(flags, &maxStartupTime, "max-startup-time", config.MAX_STARTUP_TIME,
 		"Maximum startup time in seconds")
+
+	cli.AddFlagStrVarP(flags, &defaultBlockString, "default-block", "d", config.BLOCKCHAIN_DEFAULT_BLOCK,
+		"Block policy: latest, safe or finalized")
 
 	// TODO: validate on preRunE
 	Cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
