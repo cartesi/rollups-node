@@ -25,6 +25,7 @@ import (
 )
 
 func TestCommandRequiresMatchingDriveRootEvent(t *testing.T) {
+	config.SetDefaults()
 	address := common.HexToAddress("0x1234")
 	root := common.HexToHash("0x42")
 	parsed, err := iapplication.IApplicationMetaData.GetAbi()
