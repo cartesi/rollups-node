@@ -242,15 +242,25 @@ func (s *SameBlockInputsSuite) runMultipleInputsOneBlock(extraDeployArgs []strin
 	// so disabling automine alone is not enough — interval mining would sweep the
 	// pending txs into separate blocks. Turn both off, submit, mine once, restore.
 	// Safe because the integration suites run sequentially (no t.Parallel).
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		// Restore the interval last: enabling automine can replace its mode.
+		if err := anvilRPC(cleanupCtx, "evm_setAutomine", true); err != nil {
+			s.T().Errorf("restore Anvil automine: %v", err)
+		}
+		if err := anvilRPC(cleanupCtx, "evm_setIntervalMining", 1); err != nil {
+			s.T().Errorf("restore Anvil interval mining: %v", err)
+		}
+	}()
 	setAnvilAutomine(s.ctx, s.T(), false)
-	defer setAnvilAutomine(s.ctx, s.T(), true)
 	setAnvilIntervalMining(s.ctx, s.T(), 0)
-	defer setAnvilIntervalMining(s.ctx, s.T(), 1)
 
 	// Distinct funded senders with descending gas prices fix the in-block order
 	// under anvil's default fee ordering, so input indices follow submission order.
+	// Low bids preserve ordering without inflating the node's fee quotes.
 	signers := []uint32{2, 3, 4}
-	gasPrices := []int64{12, 11, 10}
+	gasPrices := []int64{3, 2, 1}
 	const numInputs = 3
 	txs := make([]*types.Transaction, numInputs)
 	for i := 0; i < numInputs; i++ {
@@ -275,6 +285,12 @@ func (s *SameBlockInputsSuite) runMultipleInputsOneBlock(extraDeployArgs []strin
 		r.Less(receipts[i-1].TransactionIndex, receipts[i].TransactionIndex,
 			"inputs must keep submission order within the block")
 	}
+	// Mining stays paused. Finalized readers need empty successors before they
+	// can observe the batch, without changing its same-block ordering.
+	policy, err := config.ToDefaultBlockFromString(envOrDefault(config.BLOCKCHAIN_DEFAULT_BLOCK, "latest"))
+	r.NoError(err, "read fixture observation policy")
+	_, err = advanceFixtureFinality(s.ctx, s.client, policy)
+	r.NoError(err, "make the same-block input batch observable under the configured block policy")
 
 	// Every input must be ingested with a contiguous index, processed by the
 	// machine, and assigned to the same epoch.
@@ -308,7 +324,7 @@ func (s *SameBlockInputsSuite) runMultipleInputsOneBlock(extraDeployArgs []strin
 // The seal is DaveConsensus.acceptStagedTournamentResult(), which the node also
 // issues on its own. We first let the node stage the finished tournament. We
 // then stop the node before the acceptance window. We submit our own acceptance
-// inside the batch and bracket it with inputs that use extreme gas prices. The
+// inside the batch and bracket it with inputs that use descending gas prices. The
 // pre-seal input is mined first. The post-seal input is mined last. The stopped
 // node cannot race the controlled acceptance transaction.
 func (s *SameBlockInputsSuite) TestInputsBeforeAndAfterEpochSealedSameBlock() {
@@ -409,9 +425,9 @@ func (s *SameBlockInputsSuite) TestInputsBeforeAndAfterEpochSealedSameBlock() {
 	// (bottom gas → last). Distinct senders avoid same-account nonce
 	// coupling. The block before this one is still inside the staging window, so
 	// the node cannot submit an earlier valid acceptance.
-	preTx, err := inputBox.AddInput(nextOpts(2, 1000), appAddr, []byte("before-seal")) //nolint:mnd
+	preTx, err := inputBox.AddInput(nextOpts(2, 3), appAddr, []byte("before-seal"))
 	r.NoError(err, "submit pre-seal input")
-	acceptTx, err := consensus.AcceptStagedTournamentResult(nextOpts(3, 500), big.NewInt(0))
+	acceptTx, err := consensus.AcceptStagedTournamentResult(nextOpts(3, 2), big.NewInt(0))
 	r.NoError(err, "submit acceptance for epoch 0")
 	postTx, err := inputBox.AddInput(nextOpts(4, 1), appAddr, []byte("after-seal"))
 	r.NoError(err, "submit post-seal input")

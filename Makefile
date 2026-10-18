@@ -91,6 +91,18 @@ GO_BUILD_PARAMS = $(MACHINE_GO_BUILD_PARAMS)
 GO_TEST_PACKAGES ?= ./...
 GO_TEST_FLAGS ?=
 
+# Short selector for make env and integration runs. An explicit selector takes
+# precedence over the node setting inherited from make env.
+DEFAULT_BLOCK ?= $(if $(CARTESI_BLOCKCHAIN_DEFAULT_BLOCK),$(CARTESI_BLOCKCHAIN_DEFAULT_BLOCK),latest)
+
+ifneq ($(filter env integration-test integration-test-local integration-test-with-compose \
+	_compose-topology-% _compose-cell-% _local-topology-%,$(MAKECMDGOALS)),)
+override CARTESI_BLOCKCHAIN_DEFAULT_BLOCK := $(DEFAULT_BLOCK)
+export CARTESI_BLOCKCHAIN_DEFAULT_BLOCK
+$(if $(filter latest safe finalized,$(DEFAULT_BLOCK)),,$(error DEFAULT_BLOCK must be latest, safe or finalized))
+$(if $(filter-out 1,$(words $(DEFAULT_BLOCK))),$(error DEFAULT_BLOCK must select one block policy))
+endif
+
 VERBOSE ?=
 ifeq ($(VERBOSE),true)
 	PURE_GO_BUILD_PARAMS += -v
@@ -146,7 +158,7 @@ env:
 	@echo export CGO_CFLAGS=\"$(CGO_CFLAGS)\"
 	@echo export CGO_LDFLAGS=\"$(CGO_LDFLAGS)\"
 	@echo export CARTESI_LOG_LEVEL="info"
-	@echo export CARTESI_BLOCKCHAIN_DEFAULT_BLOCK="latest"
+	@echo export CARTESI_BLOCKCHAIN_DEFAULT_BLOCK="$(DEFAULT_BLOCK)"
 	@echo export CARTESI_BLOCKCHAIN_HTTP_ENDPOINT="http://localhost:8545"
 	@echo export CARTESI_BLOCKCHAIN_ID="31337"
 	@echo export CARTESI_EVM_READER_POLLING_INTERVAL="1"
@@ -296,7 +308,7 @@ clean-integration-compose: ## Tear down leftover integration shard×topology com
 	}; \
 	for t in $(INTEGRATION_TOPOLOGIES) ; do \
 		cleanup_project rollups-node-integration-all-$$t ; \
-		for s in $(INTEGRATION_SHARDS) ; do \
+		for s in $(INTEGRATION_SHARDS) delivery-finalized ; do \
 			cleanup_project rollups-node-integration-$$s-$$t ; \
 		done ; \
 	done; \
@@ -342,6 +354,16 @@ integration-test: ## Execute e2e tests
 	else \
 		go test -count=1 -timeout 55m $(GO_BUILD_PARAMS) $(GO_TEST_FLAGS) -tags=endtoendtests ./test/integration/...; \
 	fi
+
+delivery-test: ## Run delivery release fixtures against an isolated PostgreSQL/Anvil deployment
+	@test -n "$$CARTESI_CLAIMER_CAPACITY_ADMIN_CONNECTION" || \
+		(echo 'Set CARTESI_CLAIMER_CAPACITY_ADMIN_CONNECTION to the isolated test database admin URL.' >&2; exit 1)
+	@CARTESI_TXSENDER_ANVIL_TEST=1 go test $(GO_BUILD_PARAMS) -tags=endtoendtests ./internal/txsender \
+		-run '^TestProviderAnvilProtectedPublicationAndLatestConsumption$$' -count=1 -v
+	@CARTESI_CLAIMER_ANVIL_TEST=1 go test $(GO_BUILD_PARAMS) -tags=endtoendtests ./internal/claimer \
+		-run '^TestAnvil(QuorumDecidingVoteGas|AuthorityAcceptanceRecoversFromOperationalFaults)$$' -count=1 -v
+	@CARTESI_PRT_ANVIL_TEST=1 go test $(GO_BUILD_PARAMS) -tags=endtoendtests ./internal/prt \
+		-run '^TestAnvilJoinGasAfterPeerJoin$$' -count=1 -v
 
 echo-dapp: applications/echo-dapp ## Echo dapp
 
@@ -439,19 +461,19 @@ applications/erc20-withdrawal-nvram-dapp: test/dapps/erc20-withdrawal/install.sh
 
 deploy-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
-	@./cartesi-rollups-cli deploy application echo-dapp applications/echo-dapp/
+	@bash scripts/dev-cli deploy application echo-dapp applications/echo-dapp/
 
 deploy-reject-dapp: applications/reject-dapp ## Deploy reject-dapp test application
 	@echo "Deploying reject-dapp test application"
-	@./cartesi-rollups-cli deploy application reject-dapp applications/reject-dapp/
+	@bash scripts/dev-cli deploy application reject-dapp applications/reject-dapp/
 
 deploy-exception-dapp: applications/exception-dapp ## Deploy exception-dapp test application
 	@echo "Deploying exception-dapp test application"
-	@./cartesi-rollups-cli deploy application exception-dapp applications/exception-dapp/
+	@bash scripts/dev-cli deploy application exception-dapp applications/exception-dapp/
 
 deploy-prt-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
-	@./cartesi-rollups-cli deploy application prt-echo-dapp applications/echo-dapp/ --prt
+	@bash scripts/dev-cli deploy application prt-echo-dapp applications/echo-dapp/ --prt
 
 deploy-erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## Deploy ERC-20 withdrawal test application
 	@set -e; \
@@ -466,12 +488,12 @@ deploy-erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## Deploy ERC-2
 		--argjson drive "$$DRIVE_START_INDEX" \
 		'{guardian:$$guardian,log2_leaves_per_account:0,log2_max_num_of_accounts:17,accounts_drive_start_index:$$drive,withdrawal_output_builder:$$builder}'); \
 	echo "Deploying $$APP with accounts-drive start index $$DRIVE_START_INDEX"; \
-	./cartesi-rollups-cli deploy application "$$APP" applications/erc20-withdrawal-dapp \
+	bash scripts/dev-cli deploy application "$$APP" applications/erc20-withdrawal-dapp \
 		--salt "$$(openssl rand -hex 32)" \
 		--withdrawal-config "$$WITHDRAWAL_CONFIG" \
 		--enable=false; \
-	./cartesi-rollups-cli app execution-parameters set "$$APP" snapshot_policy EVERY_EPOCH; \
-	./cartesi-rollups-cli app status "$$APP" enabled --yes
+	bash scripts/dev-cli app execution-parameters set "$$APP" snapshot_policy EVERY_EPOCH; \
+	bash scripts/dev-cli app status "$$APP" enabled --yes
 
 fund-wallet: ## Fund the default Anvil wallet with ETH and TestUsdc
 	@set -e; \
@@ -491,7 +513,7 @@ withdraw-wallet: cartesi-rollups-cli ## Send a test withdrawal request from the 
 	AMOUNT=$${AMOUNT:-25}; \
 	PAYLOAD=$$(printf '0x01%016x' "$$AMOUNT"); \
 	echo "Sending withdrawal request to $$APP: amount=$$AMOUNT payload=$$PAYLOAD"; \
-	./cartesi-rollups-cli send "$$APP" "$$PAYLOAD" --hex --yes --json
+	bash scripts/dev-cli send "$$APP" "$$PAYLOAD" --hex --yes --json
 
 # Temporary test dependencies target while we are not using distribution packages
 DOWNLOADS_DIR = test/downloads
@@ -645,7 +667,7 @@ check-license: ## Verify license headers on Go source files
 # and test-managed node); tests within a shard stay sequential. The anchors
 # (^...$$) are load-bearing: go test -run matches unanchored, and several test
 # names are prefixes of others (Foreclose / ForecloseReplay / ForeclosePrt).
-# Every top-level test must match exactly one shard; this is enforced by
+# Every top-level test must match exactly one ordinary shard; this is enforced by
 # `make integration-test-shard-check`.
 #
 # Shards are grouped by semantic family, not balanced by runtime: `withdrawal`
@@ -658,13 +680,21 @@ check-license: ## Verify license headers on Go source files
 # dependency for the check to build on the CI setup runner.
 INTEGRATION_SHARDS := basic quorum prt replay restart withdrawal awskms
 
-INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMachineStates|MultiApp|EchoAuthorityStaging|IntegrationCLI|IntegrationLogScanner)$$
+INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMachineStates|MultiApp|EchoAuthorityStaging|IntegrationCLI|IntegrationLogScanner|TransactionFeeReplacement)$$
 INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
-INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt|PrtPassiveDisputeObserver|PrtRecoveryFixtureConfig|SparseDisputeCommitment(MatchesDenseTrees|CanonicalGeometry|RejectsOutOfRangeRequests)|PassiveObserver(CleanupPreservesRestoreOrder|Config(PreservesOriginalAndUnrelatedFields|RejectsMissingFieldsAndInvalidJSON)))$$
+INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt|PrtPassiveDisputeObserver|PrtRecoveryFixtureConfig|ReaderConfigClearsSignerAndCanRestoreExactSubmittingRecord|RecoveryFixturePreservesFinalizedProfileAndParentLimits|SparseDisputeCommitment(MatchesDenseTrees|CanonicalGeometry|RejectsOutOfRangeRequests)|PassiveObserver(CleanupPreservesRestoreOrder|Config(PreservesOriginalAndUnrelatedFields|RejectsMissingFieldsAndInvalidJSON)))$$
 INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim)$$
-INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess)$$
+INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess|ManagedNodeDeadlineStopsChildrenBeforeProcessExit)$$
 INTEGRATION_SHARD_withdrawal := ^Test(WithdrawalLifecycle|RefundLifecycle|AccountsDriveStartIndex_MemoryRanges_ReturnsStartIndex)$$
 INTEGRATION_SHARD_awskms     := ^TestLocalStackAWSIntegration$$
+
+# This profile exercises the finality-sensitive paths with a longer lag while
+# keeping its full suites within the existing job budget. The complete ordinary
+# matrix still covers every integration test.
+# Keep its members here:
+# the guard verifies every named suite exists, as well as the complete pattern.
+INTEGRATION_DELIVERY_FINALIZED_TESTS := EchoAuthorityStaging EchoPrt DivergentClaim
+INTEGRATION_SHARD_delivery-finalized = ^Test($(subst $(space),|,$(INTEGRATION_DELIVERY_FINALIZED_TESTS)))$$
 
 # -----------------------------------------------------------------------------
 # Node topology axis — orthogonal to shards.
@@ -690,6 +720,7 @@ INTEGRATION_SHARDS_multiprocess := $(filter-out awskms,$(INTEGRATION_SHARDS))
 
 # The CI matrix is the set of (shard, topology) cells, encoded "shard:topology".
 INTEGRATION_CELLS := $(foreach t,$(INTEGRATION_TOPOLOGIES),$(foreach s,$(INTEGRATION_SHARDS_$(t)),$(s):$(t)))
+INTEGRATION_FINALIZED_CELLS := $(foreach t,$(INTEGRATION_TOPOLOGIES),delivery-finalized:$(t))
 
 COMPOSE_PROJECT ?= rollups-node-integration
 INTEGRATION_LOGS ?= integration-logs.txt
@@ -705,9 +736,9 @@ space := $(empty) $(empty)
 # Selected topologies: NODE_TOPOLOGY (default standalone), a space-separated
 # list, or the sugar value `all`.
 TOPOLOGIES_SELECTED = $(if $(filter all,$(NODE_TOPOLOGY)),$(INTEGRATION_TOPOLOGIES),$(NODE_TOPOLOGY))
-# shards_for(topology): the SHARD filter (or all) intersected with what the
-# topology supports (INTEGRATION_SHARDS_<topology>).
-shards_for = $(filter $(if $(strip $(SHARD)),$(SHARD),$(INTEGRATION_SHARDS_$(1))),$(INTEGRATION_SHARDS_$(1)))
+# The delivery profile is an explicit selection alias. Ordinary defaults and
+# exact-one shard coverage exclude it because it overlaps three ordinary shards.
+shards_for = $(filter $(if $(strip $(SHARD)),$(SHARD),$(INTEGRATION_SHARDS_$(1))),$(INTEGRATION_SHARDS_$(1)) delivery-finalized)
 # run_pattern(topology): the selected shards' -run regexes as one alternation.
 run_pattern = $(subst $(space),|,$(strip $(foreach s,$(call shards_for,$(1)),$(INTEGRATION_SHARD_$(s)))))
 # compose_profiles(topology): activate optional infrastructure required by the
@@ -718,12 +749,12 @@ SELECTED_CELLS = $(foreach t,$(TOPOLOGIES_SELECTED),$(foreach s,$(call shards_fo
 # Label for project/log names: the SHARD filter joined by '-', or "all".
 SUITE_LABEL = $(if $(strip $(SHARD)),$(subst $(space),-,$(strip $(SHARD))),all)
 
-# Validate NODE_TOPOLOGY / SHARD at parse time for the two entry points so a
+# Validate NODE_TOPOLOGY / SHARD at parse time for integration entry points so a
 # bad invocation fails before any prerequisite work (downloading images, etc).
 ifneq ($(filter integration-test-with-compose integration-test-local,$(MAKECMDGOALS)),)
 $(if $(strip $(TOPOLOGIES_SELECTED)),,$(error NODE_TOPOLOGY must select at least one topology. Known topologies: $(INTEGRATION_TOPOLOGIES)))
 $(foreach t,$(TOPOLOGIES_SELECTED),$(if $(filter $(t),$(INTEGRATION_TOPOLOGIES)),,$(error unknown topology '$(t)'. Known topologies: $(INTEGRATION_TOPOLOGIES))))
-$(foreach s,$(SHARD),$(if $(filter $(s),$(INTEGRATION_SHARDS)),,$(error unknown shard '$(s)'. Known shards: $(INTEGRATION_SHARDS))))
+$(foreach s,$(SHARD),$(if $(filter $(s),$(INTEGRATION_SHARDS) delivery-finalized),,$(error unknown shard '$(s)'. Known shards: $(INTEGRATION_SHARDS) delivery-finalized)))
 endif
 
 # PARALLEL is compose-only: the host node binds fixed ports. Fail at parse time,
@@ -739,10 +770,12 @@ endif
 #   NODE_TOPOLOGY  one topology (default standalone), a list, or `all`
 #   SHARD          restrict to a subset of shards (default: all applicable)
 #   PARALLEL       =true runs cells concurrently (compose only)
+#   DEFAULT_BLOCK  latest (default), safe or finalized; local uses the running
+#                  chain, while Compose uses a 64-block lag with finalized.
 # A requested-but-inapplicable (shard, topology) is skipped with a message.
 # =============================================================================
 
-integration-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run integration tests via docker compose (NODE_TOPOLOGY=, SHARD=, PARALLEL=true)
+integration-test-with-compose: $(CARTESI_TEST_MACHINE_IMAGES) ## Run integration tests via docker compose (NODE_TOPOLOGY=, SHARD=, DEFAULT_BLOCK=, PARALLEL=true)
 ifeq ($(PARALLEL),true)
 ifeq ($(strip $(SELECTED_CELLS)),)
 	@echo "skip: no applicable integration cells selected"
@@ -759,7 +792,7 @@ _compose-topology-%:
 		if [ -z "$$pattern" ]; then echo "skip: no applicable shards for topology '$*' (SHARD filter excludes all)"; exit 0; fi; \
 		COMPOSE_PROJECT='$(if $(filter rollups-node-integration,$(COMPOSE_PROJECT)),rollups-node-integration-$(SUITE_LABEL)-$*,$(COMPOSE_PROJECT))' \
 		INTEGRATION_LOGS='integration-logs-$(SUITE_LABEL)-$*.txt' \
-		TEST_PATTERN="$$pattern" SHARD_NAME='$(SUITE_LABEL)-$*' NODE_TOPOLOGY='$*' \
+		TEST_PATTERN="$$pattern" SHARD_NAME='$(SUITE_LABEL)' NODE_TOPOLOGY='$*' \
 		COMPOSE_PROFILES='$(call compose_profiles,$*)' \
 		GOTESTSUM_FORMAT='$(COMPOSE_TOPOLOGY_GOTESTSUM_FORMAT)' \
 		scripts/compose-integration-run.sh
@@ -777,15 +810,21 @@ _compose-cell-%:
 
 integration-test-shard-check: ## Verify every integration test belongs to exactly one shard
 	@scripts/check-integration-shards.sh \
-		$(foreach s,$(INTEGRATION_SHARDS),'$(s)=$(INTEGRATION_SHARD_$(s))')
+		$(foreach s,$(INTEGRATION_SHARDS),'$(s)=$(INTEGRATION_SHARD_$(s))') \
+		'--profile=delivery-finalized=$(INTEGRATION_SHARD_delivery-finalized)' \
+		$(foreach t,$(INTEGRATION_DELIVERY_FINALIZED_TESTS),'--profile-test=delivery-finalized=Test$(t)')
 
 list-integration-shards: ## Print integration shard names as a JSON array
 	@echo '[$(subst $(space),$(comma),$(patsubst %,"%",$(INTEGRATION_SHARDS)))]'
 
-list-integration-cells: ## Print shard×topology cells as a JSON array of {shard,topology} (for the CI matrix)
+list-integration-cells: ## Print ordinary and finalized shard×topology cells for the CI matrix
 	@printf '['; sep=''; \
 		for cell in $(INTEGRATION_CELLS); do \
-			printf '%s{"shard":"%s","topology":"%s"}' "$$sep" "$${cell%%:*}" "$${cell##*:}"; \
+			printf '%s{"shard":"%s","topology":"%s","default_block":"latest"}' "$$sep" "$${cell%%:*}" "$${cell##*:}"; \
+			sep=','; \
+		done; \
+		for cell in $(INTEGRATION_FINALIZED_CELLS); do \
+			printf '%s{"shard":"%s","topology":"%s","default_block":"finalized"}' "$$sep" "$${cell%%:*}" "$${cell##*:}"; \
 			sep=','; \
 		done; \
 		printf ']\n'
@@ -794,7 +833,7 @@ test-with-compose: ## Run all tests using docker compose with auto-shutdown
 	@$(MAKE) unit-test-with-compose
 	@$(MAKE) integration-test-with-compose
 
-integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp halt-loop-dapp mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps erc20-withdrawal-dapp erc20-withdrawal-nvram-dapp ## Run integration tests on the host (NODE_TOPOLOGY=, SHARD=; requires: make start && eval $$(make env); CLEAN_STALE_LOCAL_NODE=true to stop test-port listeners)
+integration-test-local: build cartesi-rollups-machine-tool echo-dapp reject-loop-dapp exception-loop-dapp halt-loop-dapp mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps erc20-withdrawal-dapp erc20-withdrawal-nvram-dapp ## Run integration tests on the host (NODE_TOPOLOGY=, SHARD=, DEFAULT_BLOCK=; requires: make start && eval $$(make env); CLEAN_STALE_LOCAL_NODE=true to stop test-port listeners)
 	@set -e; first=1; for t in $(TOPOLOGIES_SELECTED); do \
 		if [ "$$first" = 1 ]; then first=0; else echo "=== resetting dev DB + devnet between topologies ==="; $(MAKE) restart; fi; \
 		$(MAKE) _local-topology-$$t; \
@@ -842,11 +881,11 @@ _local-topology-%:
 
 deploy-load-test-apps: applications/echo-dapp ## Deploy 3 echo-dapp instances for load testing
 	@echo "Deploying load-test apps (3 echo-dapps with different salts)..."
-	@./cartesi-rollups-cli deploy application load-test-flood applications/echo-dapp/ \
+	@bash scripts/dev-cli deploy application load-test-flood applications/echo-dapp/ \
 		--salt=0000000000000000000000000000000000000000000000000000000000000A01
-	@./cartesi-rollups-cli deploy application load-test-trickle-1 applications/echo-dapp/ \
+	@bash scripts/dev-cli deploy application load-test-trickle-1 applications/echo-dapp/ \
 		--salt=0000000000000000000000000000000000000000000000000000000000000A02
-	@./cartesi-rollups-cli deploy application load-test-trickle-2 applications/echo-dapp/ \
+	@bash scripts/dev-cli deploy application load-test-trickle-2 applications/echo-dapp/ \
 		--salt=0000000000000000000000000000000000000000000000000000000000000A03
 	@echo "Done. 3 apps deployed: load-test-flood, load-test-trickle-1, load-test-trickle-2"
 

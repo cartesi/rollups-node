@@ -148,6 +148,7 @@ func TestDeploymentRecipe_AccountsRangeValidation(t *testing.T) {
 			workDir := t.TempDir()
 			copyRepositoryFile(t, root, workDir, "Makefile")
 			copyRepositoryFile(t, root, workDir, "scripts/accounts-drive-start-index")
+			copyRepositoryFile(t, root, workDir, "scripts/dev-cli")
 			writeFixture(t, filepath.Join(workDir, "applications/erc20-withdrawal-dapp/config.json"),
 				`{"config":{"nvram":[{"start":3221225472,"length":4194304}]}}`, fixtureMode)
 			cliLog := filepath.Join(workDir, "cli-calls")

@@ -44,6 +44,14 @@ linters:
         - pattern: '^factory\.NewRepositoryFromConnectionString$'
           pkg: '^github\.com/cartesi/rollups-node/internal/repository/factory$'
           msg: 'Use cli.OpenRepository for typed database connections.'
+        - pattern: '^.*\.(SubmitClaim|AcceptClaim|JoinTournament|StageTournamentResult|AcceptStagedTournamentResult|TryRecoveringBond|Transact|RawTransact|Transfer)$'
+          msg: 'Service delivery must use txsender for every publication.'
+        - pattern: '^ethclient\.Client\.SendTransaction$'
+          pkg: '^github\.com/ethereum/go-ethereum/ethclient$'
+          msg: 'Service delivery must use txsender for every publication.'
+        - pattern: '^rpc\.Client\.Call(Context)?$'
+          pkg: '^github\.com/ethereum/go-ethereum/rpc$'
+          msg: 'Service delivery must use txsender for every publication.'
   exclusions:
     generated: lax
     presets:
@@ -52,6 +60,12 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      # CLI publication and low-level transport have separate ownership rules.
+      # These delivery rules cover the two service packages and their adapters.
+      - path-except: '^internal/(claimer|prt)/'
+        text: 'Service delivery must use txsender for every publication.'
+        linters:
+          - forbidigo
       # Tests use synthetic URLs and in-process RPC connections to exercise the boundaries.
       - path: '_test\.go$'
         linters:

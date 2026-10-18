@@ -17,6 +17,16 @@ import (
 // These tests run without endtoendtests. The fake CLI checks the actual
 // subprocess arguments and environment without starting a node or using L1.
 func TestIntegrationCLI(t *testing.T) {
+	t.Run("failed command retains diagnostics", func(t *testing.T) {
+		installTestCLI(t, `printf '%s\n' 'U: chain history incomplete'
+printf '%s\n' 'Error: application obligations are not discharged' >&2
+exit 1`)
+		out, err := runCLI(t.Context(), "app", "remove", "app", "--yes")
+		require.Equal(t, "U: chain history incomplete\n", out)
+		require.True(t, isCLIExitError(err))
+		require.ErrorContains(t, err, "application obligations are not discharged")
+	})
+
 	t.Run("signers", func(t *testing.T) {
 		installTestCLI(t, `printf '%s\n' "$CARTESI_AUTH_KIND" "$CARTESI_AUTH_MNEMONIC" \
 "$CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX" "$CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX" \
@@ -60,6 +70,20 @@ func TestIntegrationCLI(t *testing.T) {
 				require.Equal(t, before, os.Environ(), "CLI execution must not change the node environment")
 			})
 		}
+	})
+
+	t.Run("delivery profile", func(t *testing.T) {
+		installTestCLI(t, `printf '%s\n' "$CARTESI_BLOCKCHAIN_DEFAULT_BLOCK" "$CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS"`)
+		t.Setenv("CARTESI_BLOCKCHAIN_DEFAULT_BLOCK", "")
+		t.Setenv("CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS", "")
+		out, err := runCLI(t.Context(), "app", "remove", "app", "--yes")
+		require.NoError(t, err)
+		require.Equal(t, "latest\n\n", out)
+		out, err = runCLIWithEnv(t.Context(), []string{
+			"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK=finalized", "CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS=123",
+		}, "app", "remove", "app", "--yes")
+		require.NoError(t, err)
+		require.Equal(t, "finalized\n123\n", out, "explicit fixture overrides remain last")
 	})
 
 	t.Run("deployment", func(t *testing.T) {

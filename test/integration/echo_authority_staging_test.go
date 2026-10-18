@@ -69,6 +69,9 @@ func (s *EchoAuthorityStagingSuite) TearDownTest() {
 // observe CLAIM_STAGED before interval mining can make the claim acceptable.
 // The test then advances the chain to the acceptance boundary.
 func (s *EchoAuthorityStagingSuite) TestEchoAuthorityStagingPath() {
+	// Anvil can briefly miss historical state while manual and interval mining overlap.
+	// The full acceptance, proof and output checks below still require recovery.
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 	r := s.Require()
 	dappPath := envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp")
 	s.appName = uniqueAppName("echo-authority-staging")

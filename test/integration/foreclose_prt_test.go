@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/cli"
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/common"
@@ -362,8 +364,35 @@ func (s *ForeclosePrtSuite) TestForeclosePrtReregisterReplay() {
 		"A did not record PRT foreclosure")
 	forecloseCancel()
 
+	// Removal confirms foreclosure at the configured policy. Latest mode must
+	// not pay a separate finalized wait before checking the running-root risks.
+	dsn, err := config.GetDatabaseConnection()
+	r.NoError(err, "get database connection for A foreclosure")
+	repo, err := cli.OpenRepository(s.ctx, dsn)
+	r.NoError(err, "open repository for A foreclosure")
+	app, err := repo.GetApplication(s.ctx, appAName)
+	repo.Close()
+	r.NoError(err, "read A foreclosure block")
+	r.NotNil(app)
+	r.NotZero(app.ForecloseBlock)
+	policy, err := config.GetBlockchainDefaultBlock()
+	r.NoError(err)
+	confirmedCtx, confirmedCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
+	err = pollUntil(confirmedCtx, time.Second, func() (bool, error) {
+		return confirmedBlockAtLeast(confirmedCtx, s.ethClient.HeaderByNumber, policy, app.ForecloseBlock)
+	})
+	confirmedCancel()
+	r.NoError(err, "A foreclosure must be confirmed at the selected policy before acknowledging only running-root risks")
+
 	r.NoError(disableApplication(s.ctx, appAName), "disable A before remove")
-	r.NoError(removeApplication(s.ctx, appAName), "remove A")
+	// Acceptance seals the next root, which the node can join before foreclosure.
+	// Foreclosure waives D1, but removal still abandons that running root's D2
+	// protection. Acknowledge only that expected risk in this replay fixture.
+	removalOutput, err := runCLI(s.ctx, "app", "remove", appAName, "--yes", "--allow-abandonment")
+	r.NoError(err, "remove A after acknowledging its running root; guard output:\n%s", removalOutput)
+	r.NotRegexp(`(?m)^(D1|S|U)(\s|$)`, removalOutput,
+		"the acknowledgment must not hide join, status or unknown-chain risks")
+	s.T().Logf("A removal output:\n%s", removalOutput)
 	s.appName = ""
 
 	s.appName = uniqueAppName("foreclose-prt-replay-b")
