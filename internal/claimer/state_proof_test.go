@@ -5,18 +5,12 @@ package claimer
 
 import (
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
-	"io"
-	"log/slog"
+	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
 	"math/big"
 	"testing"
-
-	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
-
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/stretchr/testify/require"
 )
 
 func TestConsensusMachineValidityProofUsesContractFieldOrder(t *testing.T) {
@@ -35,50 +29,30 @@ func TestConsensusMachineValidityProofUsesContractFieldOrder(t *testing.T) {
 		"the contract proof must own its sibling storage")
 }
 
-func TestSubmitClaimUsesMachineRootAndOutputsRoot(t *testing.T) {
+func TestClaimCallUsesMachineRootAndCompleteProof(t *testing.T) {
 	app := makeApplication()
 	epoch := makeComputedEpoch(app, 3)
 	proof, err := epoch.StateProof()
 	require.NoError(t, err)
-	capture := &claimSubmitterCapture{}
-	blockchain := &claimerBlockchain{
-		txOptsFactory: ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{}),
-		logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
-
-	txHash, err := blockchain.submitClaimToBlockchain(t.Context(), capture, app, epoch, proof)
+	call, err := claimCall(app, epoch, proof, true)
 	require.NoError(t, err)
-	require.Equal(t, capture.tx.Hash(), txHash)
-	require.Equal(t, app.IApplicationAddress, capture.appContract)
-	require.Equal(t, new(big.Int).SetUint64(epoch.LastBlock), capture.lastProcessedBlockNumber)
-	require.Equal(t, [32]byte(proof.MachineHash), capture.machineMerkleRoot)
-	require.Equal(t, [32]byte(proof.IflagsYDataBlock), capture.proof.IflagsYProof.DataBlock)
-	require.Equal(t, proof.IflagsYProof, capture.proof.IflagsYProof.Siblings)
-	require.Equal(t, [32]byte(proof.HtifTohostDataBlock), capture.proof.HtifTohostProof.DataBlock)
-	require.Equal(t, proof.HtifTohostProof, capture.proof.HtifTohostProof.Siblings)
-	require.Equal(t, [32]byte(proof.TxBufferDataBlock), capture.proof.TxBufferProof.DataBlock)
-	require.Equal(t, proof.TxBufferProof, capture.proof.TxBufferProof.Siblings)
-}
-
-type claimSubmitterCapture struct {
-	tx                       *types.Transaction
-	appContract              common.Address
-	lastProcessedBlockNumber *big.Int
-	machineMerkleRoot        [32]byte
-	proof                    iconsensus.MachineValidityProof
-}
-
-func (c *claimSubmitterCapture) SubmitClaim(
-	_ *bind.TransactOpts,
-	appContract common.Address,
-	lastProcessedBlockNumber *big.Int,
-	machineMerkleRoot [32]byte,
-	proof iconsensus.MachineValidityProof,
-) (*types.Transaction, error) {
-	c.tx = types.NewTx(&types.LegacyTx{Nonce: 7})
-	c.appContract = appContract
-	c.lastProcessedBlockNumber = new(big.Int).Set(lastProcessedBlockNumber)
-	c.machineMerkleRoot = machineMerkleRoot
-	c.proof = proof
-	return c.tx, nil
+	parsed, err := iconsensus.IConsensusMetaData.GetAbi()
+	require.NoError(t, err)
+	values, err := parsed.Methods[claimSubmitMethod].Inputs.Unpack(call.request.Data[4:])
+	require.NoError(t, err)
+	require.Equal(t, app.IApplicationAddress, values[0])
+	require.Equal(t, new(big.Int).SetUint64(epoch.LastBlock), values[1])
+	require.Equal(t, [32]byte(proof.MachineHash), values[2])
+	wire := *abi.ConvertType(values[3], new(iconsensus.MachineValidityProof)).(*iconsensus.MachineValidityProof)
+	require.Equal(t, consensusMachineValidityProof(proof), wire)
+	require.Equal(t, app.IConsensusAddress, call.request.To)
+	require.Equal(t, submitClaimKind, call.action.Kind)
+	changed := *epoch
+	root := common.HexToHash("0x1234")
+	changed.MachineHash = &root
+	changedProof := proof
+	changedProof.MachineHash = root
+	other, err := claimCall(app, &changed, changedProof, true)
+	require.NoError(t, err)
+	require.NotEqual(t, call.action, other.action, "changed protocol content must have a new identity")
 }

@@ -15,11 +15,10 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/service"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -29,10 +28,9 @@ func TestDoNothing(t *testing.T) {
 	m, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
-	prevEpochs := makeEpochMap()
 	currEpochs := makeEpochMap()
 
-	transitions, err := m.submitClaimsAndUpdateDatabase(context.Background(), prevEpochs, currEpochs, makeApplicationMap(), big.NewInt(0))
+	transitions, err := m.submitClaimsAndUpdateDatabase(context.Background(), currEpochs, makeApplicationMap(), big.NewInt(0))
 	assert.NoError(t, err)
 	assert.Equal(t, 0, transitions, "no transitions when no epochs to process")
 }
@@ -55,8 +53,9 @@ func TestTickInterleavesStagesWithPinnedBlockAndReschedulesOnProgress(t *testing
 
 	b.On("getDefaultBlockNumber", mock.Anything).
 		Return(tickBlock, nil).Once()
-	r.On("SelectClaimsToSubmitPerApp", mock.Anything).
-		Return(makeEpochMap(), makeEpochMap(currEpoch), makeApplicationMap(app), nil).Once()
+	r.On("SelectClaimsToSubmitPerApp", mock.Anything).Return(
+		makeEpochMap(currEpoch), makeApplicationMap(app), nil).
+		Once()
 	b.On("getConsensusAddress", mock.Anything, app, tickBlock).
 		Return(app.IConsensusAddress, nil).Once()
 	expectNoForeignClaimAccepted(b, app, currEpoch, currEpoch.LastBlock+1, tickBlock.Uint64())
@@ -65,10 +64,12 @@ func TestTickInterleavesStagesWithPinnedBlockAndReschedulesOnProgress(t *testing
 	r.On("UpdateEpochWithSubmittedClaim", mock.Anything, app.ID, currEpoch.Index, currEvent.Raw.TxHash).
 		Return(nil).Once()
 
-	r.On("SelectClaimsToStagePerApp", mock.Anything).
-		Return(makeEpochMap(), makeEpochMap(), makeApplicationMap(), nil).Once()
-	r.On("SelectClaimsToAcceptPerApp", mock.Anything).
-		Return(makeEpochMap(), makeEpochMap(), makeApplicationMap(), nil).Once()
+	r.On("SelectClaimsToStagePerApp", mock.Anything).Return(
+		makeEpochMap(), makeApplicationMap(), nil).
+		Once()
+	r.On("SelectClaimsToAcceptPerApp", mock.Anything).Return(
+		makeEpochMap(), makeApplicationMap(), nil).
+		Once()
 	r.On("ListApplications", mock.Anything, mock.MatchedBy(func(f repository.ApplicationFilter) bool {
 		return f.Enabled != nil &&
 			*f.Enabled &&
@@ -95,21 +96,34 @@ func TestTickCancellationRequiresCanceledServiceContext(t *testing.T) {
 				m, r, b := newServiceMock(t)
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
-				if canceled {
-					cancel()
-				}
 				failure := fmt.Errorf("dependency: %w", context.Canceled)
 				var rpcErr error
 				if stage == 0 {
 					rpcErr = failure
 				}
-				b.On(stages[0], mock.Anything).Return(big.NewInt(100), rpcErr).Once()
-				for i := 1; i <= stage; i++ {
-					var queryErr error
-					if i == stage {
-						queryErr = failure
+				blockCall := b.On(stages[0], mock.Anything).Return(big.NewInt(100), rpcErr).Once()
+				if canceled && stage == 0 {
+					blockCall.Run(func(mock.Arguments) { cancel() })
+				}
+				if stage > 0 {
+					last := len(stages) - 1
+					if canceled {
+						last = stage
 					}
-					r.On(stages[i], mock.Anything).Return(makeEpochMap(), makeEpochMap(), makeApplicationMap(), queryErr).Once()
+					for i := 1; i <= last; i++ {
+						var queryErr error
+						if i == stage {
+							queryErr = failure
+						}
+						call := r.On(stages[i], mock.Anything).Return(makeEpochMap(), makeApplicationMap(), queryErr).Once()
+						if canceled && i == stage {
+							call.Run(func(mock.Arguments) { cancel() })
+						}
+					}
+					if !canceled && stage != 3 {
+						r.On("ListApplications", mock.Anything, mock.Anything, repository.Pagination{}, false).
+							Return([]*model.Application{}, 0, nil).Once()
+					}
 				}
 				reschedule, err := m.Tick(ctx)
 				require.False(t, reschedule)
@@ -137,10 +151,12 @@ func TestTickShutdownErrorClassification(t *testing.T) {
 			{"cancellation", context.Canceled, true},
 			{"wrapped cancellation", fmt.Errorf("query: %w", context.Canceled), true},
 			{"joined cancellations", errors.Join(context.Canceled, fmt.Errorf("query: %w", context.Canceled)), true},
+			{"wait joined with cancellation", errors.Join(txsender.ErrInconclusive, context.Canceled), true},
 			{"database failure", dbErr, false},
 			{"deadline", context.DeadlineExceeded, false},
 			{"cancellation and deadline", errors.Join(context.Canceled, context.DeadlineExceeded), false},
 			{"cancellation and database failure", errors.Join(context.Canceled, dbErr), false},
+			{"wait, cancellation and database failure", errors.Join(txsender.ErrInconclusive, context.Canceled, dbErr), false},
 			{"nested database failure", fmt.Errorf("read: %w", errors.Join(context.Canceled, dbErr)), false},
 		} {
 			t.Run(state+"/"+test.name, func(t *testing.T) {
@@ -155,7 +171,7 @@ func TestTickShutdownErrorClassification(t *testing.T) {
 					ctx, deadlineCancel = context.WithDeadline(ctx, time.Now().Add(-time.Second))
 					defer deadlineCancel()
 				}
-				blockchain.On("getDefaultBlockNumber", ctx).Return(big.NewInt(100), test.err).Once()
+				blockchain.On("getDefaultBlockNumber", mock.Anything).Return(big.NewInt(100), test.err).Once()
 
 				reschedule, err := m.Tick(ctx)
 
@@ -169,6 +185,24 @@ func TestTickShutdownErrorClassification(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestClaimObserverKeepsUnhealthyApplicationsInEveryPageSource(t *testing.T) {
+	s, repo, blockchain := newServiceMock(t)
+	blockchain.On("getDefaultBlockNumber", mock.Anything).Return(big.NewInt(100), nil).Once()
+	for _, source := range []string{"SelectClaimsToSubmitPerApp", "SelectClaimsToStagePerApp", "SelectClaimsToAcceptPerApp"} {
+		repo.On(source, mock.Anything).Return(makeEpochMap(), makeApplicationMap(), nil).Once()
+	}
+	repo.On("ListApplications", mock.Anything, mock.Anything, repository.Pagination{}, false).
+		Return([]*model.Application{}, 0, nil).Once()
+	_, err := s.Tick(t.Context())
+	require.NoError(t, err)
+	require.Len(t, repo.pageReads, 3)
+	for _, cursor := range repo.pageReads {
+		require.False(t, cursor.HealthyOnly, "only publisher pages may filter stopped or foreclosed applications")
+	}
+	repo.AssertExpectations(t)
+	blockchain.AssertExpectations(t)
 }
 
 // Exercise the receipt-to-database path that shutdown interrupted in the
@@ -196,40 +230,29 @@ func TestTickStagingWriteShutdown(t *testing.T) {
 				var logs bytes.Buffer
 				m.Logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 				app := makeApplication()
-				epoch := makeComputedEpoch(app, 3)
-				computed := makeEpochMap(epoch)
-				txHash := common.HexToHash("0x10")
-				pending := inFlightTx{txHash: txHash}
-				m.claimsInFlight[app.ID] = pending
+				epoch := makeSubmittedEpoch(app, 3)
+				submitted := makeEpochMap(epoch)
 				tickBlock := big.NewInt(100)
-				stagedLog := makeClaimStagedLog(app, epoch)
-				stagedLog.BlockNumber = epoch.LastBlock + 1
-				blockchain.On("getDefaultBlockNumber", ctx).Return(tickBlock, nil).Once()
-				repo.On("SelectClaimsToSubmitPerApp", ctx).
-					Return(makeEpochMap(), computed, makeApplicationMap(app), nil).Once()
-				blockchain.On("pollTransaction", ctx, txHash, tickBlock).
-					Return(true, &types.Receipt{
-						TxHash: txHash, Status: types.ReceiptStatusSuccessful,
-						BlockNumber: new(big.Int).SetUint64(stagedLog.BlockNumber),
-						Logs:        []*types.Log{&stagedLog},
-					}, nil).Once()
-				repo.On("UpdateEpochThroughStaging", ctx, app.ID, epoch.Index, txHash, stagedLog.BlockNumber).
-					Run(func(mock.Arguments) { cancel() }).Return(test.writeErr).Once()
-				var queryErr error
-				if test.queryFails {
-					queryErr = context.Canceled
-				}
-				repo.On("SelectClaimsToStagePerApp", ctx).
-					Return(makeEpochMap(), makeEpochMap(), makeApplicationMap(), queryErr).Once()
-				if !test.queryFails {
-					repo.On("SelectClaimsToAcceptPerApp", ctx).
-						Return(makeEpochMap(), makeEpochMap(), makeApplicationMap(), nil).Once()
-					repo.On("ListApplications", ctx, mock.Anything, repository.Pagination{}, false).
-						Return([]*model.Application{}, 0, nil).Once()
-				}
+				staged := makeStagedEvent(app, epoch)
+				completedWrite := false
+				blockchain.On("getDefaultBlockNumber", mock.Anything).Return(tickBlock, nil).Once()
+				repo.On("SelectClaimsToSubmitPerApp", mock.Anything).Return(
+					makeEpochMap(), makeApplicationMap(), nil).
+					Once()
+				repo.On("SelectClaimsToStagePerApp", mock.Anything).Return(
+					submitted, makeApplicationMap(app), nil).
+					Once()
+				blockchain.On("getConsensusAddress", mock.Anything, app, tickBlock).
+					Return(app.IConsensusAddress, nil).Once()
+				blockchain.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, epoch.LastBlock+1, tickBlock.Uint64()).
+					Return(&iconsensus.IConsensus{}, staged, (*iconsensus.IConsensusClaimStaged)(nil), nil).Once()
+				repo.On("UpdateEpochToStaged", mock.Anything, app.ID, epoch.Index, staged.Raw.BlockNumber).
+					Run(func(mock.Arguments) { completedWrite = test.writeErr == nil; cancel() }).Return(test.writeErr).Once()
+				// The independent observer stops after cancellation of this commit;
+				// no unrelated stage query runs during shutdown.
 
 				if throughServe {
-					require.ErrorIs(t, m.Serve(ctx), context.Canceled)
+					require.ErrorIs(t, m.TickServiceTemplate.Serve(ctx), context.Canceled)
 					if test.wantErr == nil {
 						require.NotContains(t, logs.String(), "level=ERROR")
 					} else {
@@ -238,7 +261,7 @@ func TestTickStagingWriteShutdown(t *testing.T) {
 					}
 				} else {
 					reschedule, err := m.Tick(ctx)
-					require.False(t, reschedule)
+					require.Equal(t, test.writeErr == nil, reschedule)
 					if test.wantErr == nil {
 						require.NoError(t, err)
 					} else {
@@ -246,11 +269,9 @@ func TestTickStagingWriteShutdown(t *testing.T) {
 					}
 				}
 				if test.writeErr == nil {
-					require.NotContains(t, m.claimsInFlight, app.ID)
-					require.NotContains(t, computed, app.ID)
+					require.True(t, completedWrite, "the staging write completed before shutdown")
 				} else {
-					require.Equal(t, pending, m.claimsInFlight[app.ID], "keep tracking until the database write succeeds")
-					require.Contains(t, computed, app.ID)
+					require.Equal(t, model.EpochStatus_ClaimSubmitted, epoch.Status, "restart retries the uncommitted staging transition")
 				}
 				repo.AssertExpectations(t)
 				blockchain.AssertExpectations(t)
@@ -281,21 +302,23 @@ func TestTickPreservesEarlierErrorsOnShutdown(t *testing.T) {
 			} else {
 				computed = makeEpochMap(makeComputedEpoch(app, 3))
 			}
-			blockchain.On("getDefaultBlockNumber", ctx).Return(big.NewInt(100), nil).Once()
-			blockchain.On("getConsensusAddress", ctx, app, big.NewInt(100)).
+			blockchain.On("getDefaultBlockNumber", mock.Anything).Return(big.NewInt(100), nil).Once()
+			blockchain.On("getConsensusAddress", mock.Anything, app, big.NewInt(100)).
 				Return(app.IConsensusAddress, workErr).Once()
-			repo.On("SelectClaimsToSubmitPerApp", ctx).
-				Return(makeEpochMap(), computed, makeApplicationMap(app), nil).Once()
+			repo.On("SelectClaimsToSubmitPerApp", mock.Anything).Return(
+				computed, makeApplicationMap(app), nil).
+				Once()
 			if test.cancelAccept {
-				repo.On("SelectClaimsToStagePerApp", ctx).
-					Return(makeEpochMap(), submitted, makeApplicationMap(app), nil).Once()
-				repo.On("SelectClaimsToAcceptPerApp", ctx).
+				repo.On("SelectClaimsToStagePerApp", mock.Anything).Return(
+					submitted, makeApplicationMap(app), nil).
+					Once()
+				repo.On("SelectClaimsToAcceptPerApp", mock.Anything).
 					Run(func(mock.Arguments) { cancel() }).
-					Return(makeEpochMap(), makeEpochMap(), makeApplicationMap(), context.Canceled).Once()
+					Return(makeEpochMap(), makeApplicationMap(), context.Canceled).Once()
 			} else {
-				repo.On("SelectClaimsToStagePerApp", ctx).
+				repo.On("SelectClaimsToStagePerApp", mock.Anything).
 					Run(func(mock.Arguments) { cancel() }).
-					Return(makeEpochMap(), makeEpochMap(), makeApplicationMap(), context.Canceled).Once()
+					Return(makeEpochMap(), makeApplicationMap(), context.Canceled).Once()
 			}
 
 			reschedule, err := m.Tick(ctx)

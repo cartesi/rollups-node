@@ -5,6 +5,7 @@ package claimer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -14,7 +15,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/lmittmann/tint"
 
@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,10 +68,6 @@ func newServiceMock(t *testing.T) (*Service, *claimerRepositoryMock, *claimerBlo
 
 	claimer := &Service{
 		submissionEnabled: true,
-		claimsInFlight:    map[int64]inFlightTx{},
-		acceptsInFlight:   map[int64]inFlightTx{},
-		acceptAttempts:    map[acceptAttemptKey]uint64{},
-		maxAcceptAttempts: defaultMaxAcceptAttempts,
 		repository:        repository,
 		blockchain:        blockchain,
 	}
@@ -250,131 +247,6 @@ func makeAcceptedEvent(app *model.Application, epoch *model.Epoch) *iconsensus.I
 	}
 }
 
-// rpcDataError simulates an RPC error with revert data, as returned by
-// eth_estimateGas when the contract reverts.
-type rpcDataError struct {
-	code int
-	msg  string
-	data any
-}
-
-func (e *rpcDataError) Error() string  { return e.msg }
-func (e *rpcDataError) ErrorCode() int { return e.code }
-func (e *rpcDataError) ErrorData() any { return e.data }
-
-// notFirstClaimError creates an error that mimics a NotFirstClaim revert
-// from eth_estimateGas, with the ABI error selector as revert data.
-func notFirstClaimError() error {
-	parsed, _ := iconsensus.IConsensusMetaData.GetAbi()
-	id := parsed.Errors["NotFirstClaim"].ID
-	selector := fmt.Sprintf("0x%x", id[:4])
-	return &rpcDataError{
-		code: 3,
-		msg:  executionRevertedErrorMessage,
-		data: selector + "000000000000000000000000" +
-			"01000000000000000000000000000000000000000000000000000000000000" +
-			"0000000000000000000000000000000000000000000000000000000000000027",
-	}
-}
-
-// consensusRevertError creates a typed revert with only the 4-byte selector —
-// sufficient for the classifier to match by name. Looks up the error in
-// IConsensus first, then IQuorum for Quorum-only errors such as
-// CallerIsNotValidator.
-func consensusRevertError(errorName string) error {
-	consensusABI, _ := iconsensus.IConsensusMetaData.GetAbi()
-	quorumABI, _ := iquorum.IQuorumMetaData.GetAbi()
-	var id common.Hash
-	if e, ok := consensusABI.Errors[errorName]; ok {
-		id = e.ID
-	} else if e, ok := quorumABI.Errors[errorName]; ok {
-		id = e.ID
-	} else {
-		panic(fmt.Sprintf("unknown typed error: %s", errorName))
-	}
-	return &rpcDataError{
-		code: 3,
-		msg:  executionRevertedErrorMessage,
-		data: fmt.Sprintf("0x%x", id[:4]),
-	}
-}
-
-// appRevertDataError creates an ApplicationReverted or
-// IllformedApplicationReturnData revert carrying the given application
-// returndata, ABI-encoded as the contract would emit it.
-func appRevertDataError(errorName string, returndata []byte) error {
-	parsed, err := iconsensus.IConsensusMetaData.GetAbi()
-	if err != nil {
-		panic(err)
-	}
-	abiErr, ok := parsed.Errors[errorName]
-	if !ok {
-		panic(fmt.Sprintf("unknown typed error: %s", errorName))
-	}
-	packed, err := abiErr.Inputs.Pack(
-		common.HexToAddress("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
-		returndata,
-	)
-	if err != nil {
-		panic(err)
-	}
-	payload := append(append([]byte{}, abiErr.ID[:4]...), packed...)
-	return &rpcDataError{
-		code: 3,
-		msg:  executionRevertedErrorMessage,
-		data: fmt.Sprintf("0x%x", payload),
-	}
-}
-
-// notPastBlockError creates a NotPastBlock revert carrying the contract's
-// (lastProcessedBlockNumber, upperBound) arguments, ABI-encoded as the
-// contract would emit it.
-func notPastBlockError(lastProcessed, upperBound uint64) error {
-	parsed, err := iconsensus.IConsensusMetaData.GetAbi()
-	if err != nil {
-		panic(err)
-	}
-	abiErr := parsed.Errors["NotPastBlock"]
-	packed, err := abiErr.Inputs.Pack(
-		new(big.Int).SetUint64(lastProcessed),
-		new(big.Int).SetUint64(upperBound),
-	)
-	if err != nil {
-		panic(err)
-	}
-	payload := append(append([]byte{}, abiErr.ID[:4]...), packed...)
-	return &rpcDataError{
-		code: 3,
-		msg:  executionRevertedErrorMessage,
-		data: fmt.Sprintf("0x%x", payload),
-	}
-}
-
-// claimNotStagedError creates a typed ClaimNotStaged revert carrying the
-// given on-chain claim status, ABI-encoded as the contract would emit it.
-func claimNotStagedError(status uint8) error {
-	parsed, err := iconsensus.IConsensusMetaData.GetAbi()
-	if err != nil {
-		panic(err)
-	}
-	abiErr := parsed.Errors["ClaimNotStaged"]
-	packed, err := abiErr.Inputs.Pack(
-		common.HexToAddress("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
-		big.NewInt(42),
-		[32]byte(common.HexToHash("0xabcd")),
-		status,
-	)
-	if err != nil {
-		panic(err)
-	}
-	payload := append(append([]byte{}, abiErr.ID[:4]...), packed...)
-	return &rpcDataError{
-		code: 3,
-		msg:  executionRevertedErrorMessage,
-		data: fmt.Sprintf("0x%x", payload),
-	}
-}
-
 // withForeclosed returns a copy with the foreclosure block and transaction set.
 func withForeclosed(app *model.Application, block uint64) *model.Application {
 	foreclosed := *app
@@ -413,4 +285,35 @@ func buildClaimStagedLog(app *model.Application, epoch *model.Epoch,
 		},
 		Data: data,
 	}
+}
+
+const claimSubmittedEventName = "ClaimSubmitted"
+
+func claimEventLog(app *model.Application, epoch *model.Epoch, name string) *types.Log {
+	parsed, err := iconsensus.IConsensusMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	event := parsed.Events[name]
+	args := []any{new(big.Int).SetUint64(epoch.LastBlock), [32]byte(*epoch.TxBufferDataBlock), [32]byte(*epoch.MachineHash)}
+	topics := []common.Hash{event.ID, common.BytesToHash(app.IApplicationAddress.Bytes())}
+	if name == claimSubmittedEventName {
+		topics = []common.Hash{event.ID, common.BytesToHash(common.HexToAddress("0x1").Bytes()),
+			common.BytesToHash(app.IApplicationAddress.Bytes())}
+	}
+	data, err := event.Inputs.NonIndexed().Pack(args...)
+	if err != nil {
+		panic(err)
+	}
+	return &types.Log{Address: app.IConsensusAddress, Topics: topics, Data: data, BlockNumber: 99}
+}
+
+func failClaimObservation(t *testing.T, s *Service) {
+	t.Helper()
+	chain := s.blockchain.(*claimerBlockchainMock)
+	cause := errors.New("observation provider unavailable")
+	chain.On("getDefaultBlockNumber", mock.Anything).Return((*big.Int)(nil), cause).Once()
+	_, err := s.Tick(t.Context())
+	require.ErrorIs(t, err, cause)
+	require.Nil(t, s.failure.Load())
 }
