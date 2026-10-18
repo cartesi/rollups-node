@@ -8,7 +8,20 @@ import (
 	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
 )
+
+func structuralEventCounts(counts repository.TournamentEventCounts) StructuralEventCounts {
+	return StructuralEventCounts{
+		CommitmentJoined:   new(big.Int).SetUint64(counts.CommitmentJoined),
+		MatchCreated:       new(big.Int).SetUint64(counts.MatchCreated),
+		MatchAdvanced:      new(big.Int).SetUint64(counts.MatchAdvanced),
+		LeafMatchSealed:    new(big.Int).SetUint64(counts.LeafMatchSealed),
+		MatchDeleted:       new(big.Int).SetUint64(counts.MatchDeleted),
+		NewInnerTournament: new(big.Int).SetUint64(counts.NewInnerTournament),
+	}
+}
 
 const (
 	tournamentEventCommitmentJoined   = "CommitmentJoined"
@@ -36,7 +49,8 @@ func zeroStructuralEventCounts() StructuralEventCounts {
 func validateTournamentFinancialEvents(before, after model.BondDisposition, events *TournamentEvents) error {
 	expectedRefunds := len(events.MatchAdvanced) + len(events.LeafMatchSealed) + len(events.MatchDeleted) + len(events.NewInnerTournament)
 	if len(events.PartialBondRefund) != expectedRefunds {
-		return fmt.Errorf("PartialBondRefund event count mismatch: expected %d, fetched %d", expectedRefunds, len(events.PartialBondRefund))
+		return fmt.Errorf("%w: PartialBondRefund event count mismatch: expected %d, fetched %d",
+			txsender.ErrInconclusive, expectedRefunds, len(events.PartialBondRefund))
 	}
 	if before == model.BondDispositionRecovered && after != model.BondDispositionRecovered {
 		return fmt.Errorf("bond recovery disposition regressed from RECOVERED to %s", after)
@@ -46,7 +60,8 @@ func validateTournamentFinancialEvents(before, after model.BondDisposition, even
 		expectedRecoveries = 1
 	}
 	if len(events.BondRecovered) != expectedRecoveries {
-		return fmt.Errorf("BondRecovered event count mismatch: expected %d, fetched %d", expectedRecoveries, len(events.BondRecovered))
+		return fmt.Errorf("%w: BondRecovered event count mismatch: expected %d, fetched %d",
+			txsender.ErrInconclusive, expectedRecoveries, len(events.BondRecovered))
 	}
 	return nil
 }
@@ -79,7 +94,8 @@ func validateTournamentEventCounts(before, after StructuralEventCounts, events *
 			return fmt.Errorf("%s count decreased from %s to %s", stream.name, previous, current)
 		}
 		if expected.Cmp(big.NewInt(int64(stream.fetched))) != 0 {
-			return fmt.Errorf("%s event count mismatch: expected %s, fetched %d", stream.name, expected, stream.fetched)
+			return fmt.Errorf("%w: %s event count mismatch: expected %s, fetched %d",
+				txsender.ErrInconclusive, stream.name, expected, stream.fetched)
 		}
 	}
 	return nil

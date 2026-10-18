@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"time"
 
@@ -18,15 +19,17 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
-	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 type prtRepository interface {
+	repository.DeliveryRepository
+	GetApplication(ctx context.Context, address string) (*Application, error)
 	ListApplications(ctx context.Context, f repository.ApplicationFilter,
 		p repository.Pagination, descending bool) ([]*Application, uint64, error)
 	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
@@ -39,16 +42,12 @@ type prtRepository interface {
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	GetLastNonOpenEpochIndex(ctx context.Context, nameOrAddress string) (*uint64, error)
 	UpdateEpochReconciledStaged(ctx context.Context, applicationID int64, index uint64, stagedAtBlock uint64) error
+	UpdateEpochStagingBlock(ctx context.Context, applicationID int64, index, expectedOldBlock, newBlock uint64) error
 	UpdateEpochWithAcceptedClaim(ctx context.Context, applicationID int64, index uint64, txHash *common.Hash) error
 
 	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)
 	ListTournaments(ctx context.Context, nameOrAddress string, f repository.TournamentFilter,
 		p repository.Pagination, descending bool) ([]*Tournament, uint64, error)
-	ListRecoverableRootBonds(ctx context.Context, appID int64, claimer common.Address,
-		observedBlock uint64, afterEpoch *uint64, throughEpoch, limit uint64) ([]repository.RootBondRecoveryCandidate, error)
-
-	StoreTournamentEvents(ctx context.Context, appID int64, batches []*repository.TournamentEventBatch, lastBlock uint64) error
-
 	GetCommitment(ctx context.Context, nameOrAddress string, epochIndex uint64,
 		tournamentAddress string, commitmentHex string) (*Commitment, error)
 	ListCommitments(ctx context.Context, nameOrAddress string, filter repository.CommitmentFilter,
@@ -56,8 +55,6 @@ type prtRepository interface {
 	ListMatches(ctx context.Context, nameOrAddress string, filter repository.MatchFilter,
 		pagination repository.Pagination, descending bool) ([]*Match, uint64, error)
 
-	InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
-	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
 
@@ -90,17 +87,6 @@ func (f *DefaultAdapterFactory) CreateDaveConsensusAdapter(addr common.Address) 
 	return NewDaveConsensusAdapter(addr, f.client)
 }
 
-// getObservableApplications includes unhealthy apps so tournament and dispute
-// observation can continue. Later health gates stop local claim reconciliation
-// and transaction submission; they must not remove these apps from observation.
-func getObservableApplications(ctx context.Context, r prtRepository) ([]*Application, uint64, error) {
-	filter := repository.ApplicationFilter{
-		Enabled:       new(true),
-		ConsensusType: new(Consensus_PRT),
-	}
-	return r.ListApplications(ctx, filter, repository.Pagination{}, false)
-}
-
 func getTournamentObservationEpochs(ctx context.Context, r prtRepository, nameOrAddress string) ([]*Epoch, uint64, error) {
 	f := repository.EpochFilter{HasTournament: new(true)}
 	return r.ListEpochs(ctx, nameOrAddress, f, repository.Pagination{}, false)
@@ -109,6 +95,14 @@ func getTournamentObservationEpochs(ctx context.Context, r prtRepository, nameOr
 // getDefaultBlockNumber selects the block used for stored chain state. Live
 // transaction checks use a separate latest block and cannot advance this view.
 func (s *Service) getDefaultBlockNumber(ctx context.Context) (uint64, error) {
+	header, err := s.getDefaultBlockHeader(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return header.Number.Uint64(), nil
+}
+
+func (s *Service) getDefaultBlockHeader(ctx context.Context) (*types.Header, error) {
 	var tag rpc.BlockNumber
 	switch s.defaultBlock {
 	case DefaultBlock_Pending:
@@ -120,16 +114,16 @@ func (s *Service) getDefaultBlockNumber(ctx context.Context) (uint64, error) {
 	case DefaultBlock_Safe:
 		tag = rpc.SafeBlockNumber
 	default:
-		return 0, fmt.Errorf("default block %v not supported", s.defaultBlock)
+		return nil, fmt.Errorf("default block %v not supported", s.defaultBlock)
 	}
 	header, err := s.client.HeaderByNumber(ctx, big.NewInt(tag.Int64()))
 	if err != nil {
-		return 0, fmt.Errorf("fetching %s block header: %w", tag, err)
+		return nil, fmt.Errorf("fetching %s block header: %w", tag, err)
 	}
-	if header == nil {
-		return 0, fmt.Errorf("returned %s block header is nil", tag)
+	if header == nil || header.Number == nil || !header.Number.IsUint64() {
+		return nil, fmt.Errorf("returned %s block header is invalid", tag)
 	}
-	return checkedUint64(header.Number, "configured block number")
+	return header, nil
 }
 
 func getAllSubTournaments(
@@ -150,12 +144,6 @@ func (s *Service) setApplicationDiverged(ctx context.Context, app *Application, 
 
 func (s *Service) setApplicationCorrupted(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
 	return appstatus.SetCorruptedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
-}
-
-// setApplicationFailed marks the app FAILED (recoverable by operator action).
-// Like appstatus.SetFailedf, it returns nil on success.
-func (s *Service) setApplicationFailed(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetFailedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
 }
 
 func (s *Service) readTournament(
@@ -394,107 +382,10 @@ func (s *Service) updateTournamentStanding(
 	return nil
 }
 
-// checkEpochs commits a complete event window before accepting any epoch.
 // A failed RPC read or database write leaves the shared cursor unchanged.
-// The first return value asks the caller to defer later PRT actions.
-func (s *Service) checkEpochs(ctx context.Context, app *Application, mostRecentBlock uint64) (bool, error) {
-	epochs, consensus, err := s.observeApplicationTournaments(ctx, app, mostRecentBlock)
-	if err != nil {
-		return true, err
-	}
-	if app.Status != ApplicationStatus_OK {
-		return true, nil
-	}
-	return s.reconcileAcceptedEpochs(ctx, app, epochs, consensus, mostRecentBlock)
-}
-
-// observeApplicationTournaments indexes chain facts without consulting local
-// claim readiness or changing application health. The returned roots are also
-// used by the separate local claim reconciliation after publication.
-func (s *Service) observeApplicationTournaments(
-	ctx context.Context, app *Application, mostRecentBlock uint64,
-) ([]*Epoch, DaveConsensusAdapter, error) {
-	epochs, _, err := getTournamentObservationEpochs(ctx, s.repository, app.Name)
-	if err != nil {
-		s.logErrorUnlessShutdown(ctx, "failed to list epochs", err, "application", app.Name)
-		return nil, nil, err
-	}
-	if len(epochs) == 0 {
-		s.Logger.Debug("No tournament roots to observe", "application", app.Name)
-		return epochs, nil, nil
-	}
-
-	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
-	if err != nil {
-		s.Logger.Error("failed to bind dave consensus contract", "application", app.Name,
-			"consensus_address", app.IConsensusAddress.String(), "error", err)
-		return nil, nil, err
-	}
-	windowEnd := min(mostRecentBlock, app.LastEpochCheckBlock)
-	if app.ForecloseBlock != 0 && app.LastEpochCheckBlock >= app.ForecloseBlock {
-		// Foreclosure ends root creation, not the existing tournament trees.
-		// Once every pre-foreclosure root is known, their events remain live.
-		windowEnd = mostRecentBlock
-	}
-
-	if windowEnd > app.LastTournamentCheckBlock {
-		if err := s.observeTournamentWindow(ctx, app, epochs, consensus, windowEnd); err != nil {
-			s.recordTournamentObservationFailure(ctx, app, mostRecentBlock, windowEnd, err)
-			return nil, nil, err
-		}
-		s.clearTournamentObservationFailure(app.ID)
-	}
-
-	return epochs, consensus, nil
-}
-
-// observeTournamentWindow publishes projections, events, and their cursor in
-// one transaction. Acceptance reconciliation and transactions are not part of
-// this operation or its readiness signal.
-func (s *Service) observeTournamentWindow(
-	ctx context.Context, app *Application, epochs []*Epoch, consensus DaveConsensusAdapter, windowEnd uint64,
-) error {
-	var roots []*Epoch
-	for _, epoch := range epochs {
-		if epoch.TournamentAddress != nil && epoch.LastBlock <= windowEnd {
-			roots = append(roots, epoch)
-		}
-	}
-	var levelCount uint64
-	if len(roots) > 0 {
-		var err error
-		levelCount, err = consensus.TournamentLevelCount(pinnedCallOpts(ctx, windowEnd))
-		if err != nil {
-			return fmt.Errorf("fetching tournament level count: %w", err)
-		}
-		if levelCount == 0 {
-			return errors.New("tournament level count is zero")
-		}
-	}
-	var batches []*repository.TournamentEventBatch
-	for _, epoch := range roots {
-		rootBatches, err := s.gatherTournamentData(ctx, app, epoch, RootLevel, nil, nil,
-			*epoch.TournamentAddress, levelCount, windowEnd)
-		if err != nil {
-			return fmt.Errorf("gathering epoch %d tournament events: %w", epoch.Index, err)
-		}
-		batches = append(batches, rootBatches...)
-	}
-	if err := s.repository.StoreTournamentEvents(ctx, app.ID, batches, windowEnd); err != nil {
-		return fmt.Errorf("storing application tournament event window: %w", err)
-	}
-	app.LastTournamentCheckBlock = windowEnd
-	return nil
-}
-
 func (s *Service) reconcileAcceptedEpochs(
 	ctx context.Context, app *Application, epochs []*Epoch, consensus DaveConsensusAdapter, mostRecentBlock uint64,
 ) (bool, error) {
-	if mostRecentBlock < app.LastTournamentCheckBlock {
-		// A stored projection from a later head cannot decide local status at
-		// this older configured head. Keep it and wait for the head to catch up.
-		return true, nil
-	}
 	for _, epoch := range epochs {
 		if epoch.Status != EpochStatus_ClaimComputed && epoch.Status != EpochStatus_ClaimStaged {
 			continue
@@ -512,7 +403,8 @@ func (s *Service) reconcileAcceptedEpochs(
 			return true, fmt.Errorf("loading epoch %d observed tournament: %w", epoch.Index, err)
 		}
 		if tournament == nil || tournament.Snapshot.FinishedAtBlock == 0 ||
-			tournament.Snapshot.FinishedAtBlock > app.LastTournamentCheckBlock {
+			tournament.Snapshot.FinishedAtBlock > tournament.Snapshot.AsOfBlock ||
+			tournament.Snapshot.AsOfBlock > mostRecentBlock {
 			return false, nil
 		}
 		if tournament.Snapshot.WinnerCommitment != nil && *tournament.Snapshot.WinnerCommitment != *epoch.Commitment {
@@ -541,7 +433,12 @@ func (s *Service) reconcileAcceptedEpochs(
 		if err != nil {
 			return true, fmt.Errorf("epoch %d: %w", epoch.Index, err)
 		}
-		observedBlock := min(mostRecentBlock, app.LastTournamentCheckBlock)
+		observedBlock := min(mostRecentBlock, tournament.Snapshot.AsOfBlock)
+		// A retired root's winner is immutable. Its older certificate remains
+		// sufficient while DaveConsensus stages and accepts the result later.
+		if tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, mostRecentBlock) {
+			observedBlock = mostRecentBlock
+		}
 		if receiptBlock > observedBlock {
 			s.Logger.Debug("Acceptance transaction is newer than the published tournament window",
 				"application", app.Name,
@@ -550,6 +447,9 @@ func (s *Service) reconcileAcceptedEpochs(
 				"receipt_block", receiptBlock,
 				"snapshot_block", observedBlock)
 			return true, nil
+		}
+		if err := s.validateAcceptanceReceipt(ctx, receipt); err != nil {
+			return true, fmt.Errorf("epoch %d: %w", epoch.Index, err)
 		}
 
 		if receipt.Status != types.ReceiptStatusSuccessful {
@@ -561,7 +461,8 @@ func (s *Service) reconcileAcceptedEpochs(
 		expectedEventEpoch.Add(expectedEventEpoch, common.Big1)
 		for _, vLog := range receipt.Logs {
 			if vLog == nil || vLog.Address != app.IConsensusAddress ||
-				vLog.TxHash != *epoch.ClaimTransactionHash || vLog.BlockNumber != receiptBlock {
+				vLog.TxHash != *epoch.ClaimTransactionHash || vLog.BlockNumber != receiptBlock ||
+				vLog.BlockHash != receipt.BlockHash || vLog.Removed {
 				continue
 			}
 			candidate, parseErr := consensus.ParseEpochSealed(*vLog)
@@ -573,7 +474,7 @@ func (s *Service) reconcileAcceptedEpochs(
 			break
 		}
 		if event == nil {
-			return true, fmt.Errorf("epoch %d: failed to find EpochSealed event in receipt logs", epoch.Index)
+			return true, fmt.Errorf("%w: epoch %d: failed to find EpochSealed event in receipt logs", txsender.ErrInconclusive, epoch.Index)
 		}
 
 		if *epoch.MachineHash != event.InitialMachineStateHash {
@@ -587,7 +488,7 @@ func (s *Service) reconcileAcceptedEpochs(
 				epoch.Index, epoch.TxBufferDataBlock.String(), hexutil.Encode(event.OutputsMerkleRoot[:]))
 		}
 
-		s.Logger.Info("Found finalized epoch. OutputsMerkleRoot matched. Setting claim as accepted",
+		s.Logger.Info("Observed accepted epoch at selected block policy; outputs root matched",
 			"application", app.Name,
 			"epoch", epoch.Index,
 			"event_block_number", event.Raw.BlockNumber,
@@ -605,21 +506,13 @@ func (s *Service) reconcileAcceptedEpochs(
 	return false, nil
 }
 
-// gatherTournamentData reads a complete subtree without storing projections,
-// events, or cursors. The returned batches have parents before their children.
+// gatherTournamentData reads one tournament and only newly discovered
+// descendants. Already stored children receive their own independent turn.
 func (s *Service) gatherTournamentData(
-	ctx context.Context,
-	app *Application,
-	epoch *Epoch,
-	level TournamentLevel,
-	parentMatchIDHash *common.Hash,
-	parentTournamentAddress *common.Address,
-	tournamentAddress common.Address,
-	levelCount uint64,
-	mostRecentBlock uint64,
+	ctx context.Context, app *Application, epoch *Epoch, level TournamentLevel,
+	parentMatchIDHash *common.Hash, parentTournamentAddress *common.Address,
+	tournamentAddress common.Address, levelCount, mostRecentBlock uint64,
 ) ([]*repository.TournamentEventBatch, error) {
-	s.Logger.Debug("Fetching tournament data", "level", level, "application", app.Name, "tournament", tournamentAddress.String())
-
 	t, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), tournamentAddress.Hex())
 	if err != nil {
 		s.logErrorUnlessShutdown(ctx, "failed to load tournament from database", err, "level", level, "application", app.Name,
@@ -627,14 +520,18 @@ func (s *Service) gatherTournamentData(
 		return nil, err
 	}
 	created := t == nil
+	var previousAsOf uint64
+	previousBondDisposition := BondDispositionTournamentRunning
+	if !created {
+		previousAsOf = t.Snapshot.AsOfBlock
+		previousBondDisposition = t.Snapshot.BondRecovery.Disposition
+	}
 	if !created {
 		if t.MaxLevel != levelCount || t.Level != uint64(level) {
 			return nil, fmt.Errorf("tournament %s database geometry does not match observed hierarchy", tournamentAddress)
 		}
-		if tournamentObservationComplete(t, app.LastTournamentCheckBlock, mostRecentBlock) {
-			// Retirement belongs to this clone only. Its children can still
-			// expire or recover bonds after the parent stops changing.
-			return s.gatherInnerTournamentData(ctx, app, epoch, t, &TournamentEvents{}, mostRecentBlock)
+		if t.Snapshot.AsOfBlock >= mostRecentBlock || tournamentObservationComplete(t, t.Snapshot.AsOfBlock, mostRecentBlock) {
+			return nil, nil
 		}
 	}
 	adapter, err := s.adapterFactory.CreateTournamentAdapter(tournamentAddress)
@@ -670,7 +567,14 @@ func (s *Service) gatherTournamentData(
 		}
 	}
 
-	nextSearchBlock := max(t.StartInstant, app.LastTournamentCheckBlock+1)
+	nextSearchBlock := t.StartInstant
+	if !created {
+		if previousAsOf == math.MaxUint64 {
+			return nil, errors.New("tournament cursor overflow")
+		}
+		nextSearchBlock = max(t.StartInstant, previousAsOf+1)
+	}
+
 	if created {
 		// First observation must include the clone's history even if its
 		// creation is below this application's existing checkpoint.
@@ -682,8 +586,7 @@ func (s *Service) gatherTournamentData(
 		s.Logger.Debug("Searching for tournament events", "level", level, "application", app.Name,
 			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(),
 			"next_search_block", nextSearchBlock, "end_block", endBlock)
-		opts := &bind.FilterOpts{Context: ctx, Start: nextSearchBlock, End: &endBlock}
-		events, err = adapter.RetrieveAllEvents(opts)
+		events, err = adapter.RetrieveAllEvents(&bind.FilterOpts{Context: ctx, Start: nextSearchBlock, End: &endBlock})
 		if err != nil {
 			return nil, fmt.Errorf("retrieving tournament %s events: %w", tournamentAddress, err)
 		}
@@ -701,18 +604,14 @@ func (s *Service) gatherTournamentData(
 		"newInnerTournament", len(events.NewInnerTournament))
 
 	previousCounts := zeroStructuralEventCounts()
-	previousBondDisposition := BondDispositionTournamentRunning
 	if !created && nextSearchBlock > t.StartInstant {
-		previousOpts := pinnedCallOpts(ctx, nextSearchBlock-1)
-		previousCounts, err = adapter.StructuralEventCounts(previousOpts)
-		if err != nil {
-			return nil, fmt.Errorf("reading previous tournament event counts: %w", err)
+		// Committed event identities preserve the cumulative baseline even when
+		// the provider has pruned state at the previous observation block.
+		counts, countErr := s.repository.GetTournamentEventCounts(ctx, app.ID, epoch.Index, tournamentAddress, previousAsOf)
+		if countErr != nil {
+			return nil, fmt.Errorf("reading committed tournament event counts: %w", countErr)
 		}
-		previousBond, err := adapter.BondRecovery(previousOpts)
-		if err != nil {
-			return nil, fmt.Errorf("reading previous tournament bond recovery: %w", err)
-		}
-		previousBondDisposition = previousBond.Disposition
+		previousCounts = structuralEventCounts(counts)
 	}
 	currentCounts, err := adapter.StructuralEventCounts(pinnedCallOpts(ctx, endBlock))
 	if err != nil {
@@ -732,9 +631,16 @@ func (s *Service) gatherTournamentData(
 	if err != nil {
 		return nil, err
 	}
-	batches := make([]*repository.TournamentEventBatch, 0, 1+len(children))
-	batches = append(batches, batch)
-	return append(batches, children...), nil
+	return append([]*repository.TournamentEventBatch{batch}, children...), nil
+}
+
+// rootObservationCovers separates immutable tournament facts from later
+// DaveConsensus stage/accept transitions. Retirement never advances a cursor.
+func rootObservationCovers(root *Tournament, head uint64) bool {
+	if root == nil || root.Snapshot.AsOfBlock > head {
+		return false
+	}
+	return root.Snapshot.AsOfBlock == head || tournamentObservationComplete(root, root.Snapshot.AsOfBlock, head)
 }
 
 // Finished clones reject joins and all match mutations. Once their winner can
@@ -760,86 +666,43 @@ func tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
 }
 
 func (s *Service) gatherInnerTournamentData(
-	ctx context.Context, app *Application, epoch *Epoch, t *Tournament, events *TournamentEvents, mostRecentBlock uint64,
+	ctx context.Context, app *Application, epoch *Epoch, t *Tournament, events *TournamentEvents, head uint64,
 ) ([]*repository.TournamentEventBatch, error) {
-	var batches []*repository.TournamentEventBatch
-
 	if t.Level+1 >= t.MaxLevel {
-		return batches, nil // no inner tournaments
+		return nil, nil
 	}
-
-	level, levelCount, tournamentAddress := TournamentLevel(t.Level), t.MaxLevel, t.Address
-	nextLevel := level + 1
-	innerTournaments, _, err := getAllSubTournaments(ctx, s.repository, app.Name, epoch.Index, &tournamentAddress, level+1)
-	if err != nil {
-		s.logErrorUnlessShutdown(ctx, "failed to list inner tournaments", err, "level", level, "application", app.Name,
-			"epoch", epoch.Index, "tournament_address", tournamentAddress.String())
-		return nil, err
-	}
-
-	seen := make(map[common.Address]*Tournament, len(innerTournaments)+len(events.NewInnerTournament))
-	for _, i := range innerTournaments {
-		if i.ParentMatchIDHash == nil || i.ParentTournamentAddress == nil || *i.ParentTournamentAddress != tournamentAddress {
-			return nil, fmt.Errorf("child tournament %s has an invalid parent link", i.Address)
+	seen := make(map[common.Address]bool)
+	var batches []*repository.TournamentEventBatch
+	for _, event := range events.NewInnerTournament {
+		if seen[event.ChildTournament] {
+			return nil, fmt.Errorf("duplicate child creation for %s", event.ChildTournament)
 		}
-		s.Logger.Debug("Fetching data for previous open tournament", "level", nextLevel,
-			"parent_match_id_hash", i.ParentMatchIDHash.String(),
-			"parent_tournament_address", i.ParentTournamentAddress.String(),
-			"address", i.Address.String())
-
-		childBatches, err := s.gatherTournamentData(ctx, app, epoch, nextLevel, i.ParentMatchIDHash,
-			&tournamentAddress, i.Address, levelCount, mostRecentBlock)
+		seen[event.ChildTournament] = true
+		stored, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), event.ChildTournament.Hex())
 		if err != nil {
-			s.logErrorUnlessShutdown(ctx, "failed to fetch tournament data", err,
-				"level", nextLevel, "application", app.Name,
-				"tournament", i.Address.String())
 			return nil, err
 		}
-		batches = append(batches, childBatches...)
-		storedChild := *i
-		seen[i.Address] = &storedChild
-		for _, childBatch := range childBatches {
-			if childBatch.Tournament.Address == i.Address {
-				seen[i.Address] = childBatch.Tournament
-				break
-			}
-		}
-	}
-
-	for _, newInner := range events.NewInnerTournament {
-		hashID := (common.Hash)(newInner.MatchIdHash)
-		childAddress := newInner.ChildTournament
-		if child := seen[childAddress]; child != nil {
-			// A retired child already has this immutable creation tuple. Do
-			// not modify its repository-owned projection during validation.
-			projection := *child
-			if err := applyTournamentCreationEvent(&projection, newInner); err != nil {
+		if stored != nil {
+			projection := *stored
+			if err = applyTournamentCreationEvent(&projection, event); err != nil {
 				return nil, err
 			}
-			child.CreationEvent = projection.CreationEvent
 			continue
 		}
-
-		s.Logger.Info("NewInnerTournament event", "id_hash", hashID.String(), "tournament_address", childAddress.String())
-
-		childBatches, err := s.gatherTournamentData(ctx, app, epoch, nextLevel, &hashID,
-			&tournamentAddress, childAddress, levelCount, mostRecentBlock)
+		hash := common.Hash(event.MatchIdHash)
+		children, err := s.gatherTournamentData(ctx, app, epoch, TournamentLevel(t.Level+1), &hash, &t.Address,
+			event.ChildTournament, t.MaxLevel, head)
 		if err != nil {
-			s.logErrorUnlessShutdown(ctx, "failed to fetch tournament data", err,
-				"level", nextLevel, "application", app.Name,
-				"tournament", childAddress.String())
 			return nil, err
 		}
-		if len(childBatches) == 0 || childBatches[0].Tournament.Address != childAddress {
-			return nil, fmt.Errorf("new child tournament %s has no initial observation", childAddress)
+		if len(children) == 0 {
+			return nil, fmt.Errorf("new child tournament %s has no initial observation", event.ChildTournament)
 		}
-		if err := applyTournamentCreationEvent(childBatches[0].Tournament, newInner); err != nil {
+		if err = applyTournamentCreationEvent(children[0].Tournament, event); err != nil {
 			return nil, err
 		}
-		batches = append(batches, childBatches...)
-		seen[childAddress] = childBatches[0].Tournament
+		batches = append(batches, children...)
 	}
-
 	return batches, nil
 }
 
@@ -856,346 +719,4 @@ func applyTournamentCreationEvent(child *Tournament, event *itournament.ITournam
 	}
 	child.CreationEvent = creation
 	return nil
-}
-
-// reactToTournament reports true only when the commitment is already joined.
-// A deferred or newly broadcast join must not permit a new bond refund this tick.
-func (s *Service) reactToTournament(ctx context.Context, app *Application, epoch *Epoch, mostRecentBlock uint64) (bool, error) {
-	if epoch == nil || epoch.Status != EpochStatus_ClaimComputed {
-		s.Logger.Debug("Application sync has not finished. Skipping join tournament", "application", app.Name)
-		return false, nil
-	}
-
-	if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
-		epoch.MachineHash == nil || epoch.CommitmentProof == nil {
-		return false, s.setApplicationCorrupted(ctx, app,
-			"epoch %d has missing required fields for tournament reaction", epoch.Index)
-	}
-
-	commitment, err := s.repository.GetCommitment(ctx, app.IApplicationAddress.Hex(), epoch.Index,
-		epoch.TournamentAddress.Hex(), epoch.Commitment.String())
-	if err != nil {
-		s.logErrorUnlessShutdown(ctx, "failed to get commitment from repository", err, "application", app.Name,
-			"epoch_index", epoch.Index, "tournament", epoch.TournamentAddress.Hex(),
-			"commitment", epoch.Commitment.Hex())
-		return false, err
-	}
-	if commitment != nil {
-		s.Logger.Debug("Commitment already joined. Skipping JoinTournament", "application", app.Name,
-			"epoch_index", epoch.Index, "tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
-		return true, nil
-	}
-
-	tournamentAdapter, err := s.adapterFactory.CreateTournamentAdapter(*epoch.TournamentAddress)
-	if err != nil {
-		s.Logger.Error("failed to create tournament adapter", "application", app.Name,
-			"tournament", epoch.TournamentAddress.String(), "error", err)
-		return false, err
-	}
-
-	callOpts := pinnedCallOpts(ctx, mostRecentBlock)
-
-	// Check on-chain if the commitment was already joined (e.g., after a node
-	// restart where the pending transaction was lost and the DB event sync hasn't caught up).
-	commitmentStanding, err := tournamentAdapter.CommitmentStanding(callOpts, *epoch.Commitment)
-	if err != nil {
-		s.logErrorUnlessShutdown(ctx, "failed to check commitment on-chain", err, "application", app.Name,
-			"epoch_index", epoch.Index, "tournament", epoch.TournamentAddress.Hex(),
-			"commitment", epoch.Commitment.Hex())
-		return false, err
-	}
-	if commitmentStanding.Joined {
-		if err := s.validateJoinedCommitment(ctx, app, epoch, commitmentStanding); err != nil {
-			return false, err
-		}
-		s.Logger.Info("Commitment already joined on-chain, waiting for event sync",
-			"application", app.Name, "epoch_index", epoch.Index,
-			"tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
-		return true, nil
-	}
-
-	descriptor, err := tournamentAdapter.Descriptor(callOpts)
-	if err != nil {
-		return false, fmt.Errorf("reading root tournament geometry before joining: %w", err)
-	}
-	if descriptor.Level != uint64(RootLevel) || descriptor.Height != Log2EpochComputationHashLeafCount {
-		return false, s.setApplicationFailed(ctx, app,
-			"Cannot join tournament %s: root level %d and commitment height %d are required; got level %d and height %d. "+
-				"Check the tournament factory and node versions before re-enabling.",
-			epoch.TournamentAddress, RootLevel, Log2EpochComputationHashLeafCount, descriptor.Level, descriptor.Height)
-	}
-
-	bondValue, err := tournamentAdapter.BondValue(callOpts)
-	if err != nil {
-		s.logErrorUnlessShutdown(ctx, "failed to fetch tournament bond value", err, "application", app.Name,
-			"epoch_index", epoch.Index, "tournament", epoch.TournamentAddress.Hex())
-		return false, err
-	}
-
-	txCtx, cancel := context.WithTimeout(ctx, s.submissionTimeout)
-	defer cancel()
-	txOpts, err := s.txOptsFactory.NewTransactOpts(txCtx)
-	if err != nil {
-		return false, fmt.Errorf("creating transaction options for joining tournament: %w", err)
-	}
-	txOptsWithValue := *txOpts
-	txOptsWithValue.Value = bondValue
-
-	idx := uint64(1<<Log2EpochComputationHashLeafCount) - 1
-	leftNode, rightNode, err := merkle.RootChildrenFromProof(*epoch.MachineHash, epoch.CommitmentProof, idx)
-	if err != nil {
-		s.Logger.Error("failed to compute left and right nodes from commitment proof",
-			"application", app.Name, "epoch_index", epoch.Index, "error", err)
-		return false, err
-	}
-
-	s.Logger.Info("Joining tournament", "application", app.Name, "epoch_index", epoch.Index,
-		"commitment", epoch.Commitment, "left_node", leftNode.String(), "right_node", rightNode.String())
-
-	tx, err := tournamentAdapter.JoinTournament(&txOptsWithValue, *epoch.MachineHash,
-		hashSliceToByteSlice(epoch.CommitmentProof), leftNode, rightNode)
-	if err != nil {
-		return false, s.handleJoinTournamentRevert(ctx, app, epoch, tournamentAdapter, err)
-	}
-	s.pendingTransactions[app.ID] = pendingTournamentTransaction{
-		Action: tournamentActionJoin, Hash: tx.Hash(), EpochIndex: epoch.Index,
-	}
-	s.Logger.Info("Sent tournament join transaction", "application", app.Name,
-		"epoch_index", epoch.Index, "tournament", epoch.TournamentAddress.Hex(), "tx", tx.Hash())
-
-	return false, nil
-}
-
-func (s *Service) validateJoinedCommitment(
-	ctx context.Context,
-	app *Application,
-	epoch *Epoch,
-	standing CommitmentStanding,
-) error {
-	if epoch.MachineHash == nil {
-		return s.setApplicationCorrupted(ctx, app,
-			"epoch %d has no machine hash for joined commitment reconciliation", epoch.Index)
-	}
-	if standing.FinalState != *epoch.MachineHash {
-		return fmt.Errorf(
-			"epoch %d commitment has inconsistent final state between off-chain (%s) and on-chain (%s)",
-			epoch.Index, epoch.MachineHash.String(), standing.FinalState.String())
-	}
-	return nil
-}
-
-// handleJoinTournamentRevert classifies a JoinTournament error and performs
-// the matching state change. The known tournament reverts:
-//
-//   - ClockAlreadyInitialized: this commitment already joined — after a
-//     restart when the IsCommitmentJoined pre-check used a slightly stale
-//     block number. Wait for event sync.
-//   - TournamentIsClosed: the join window is closed. The contract checks the
-//     window before the already-joined clock check, so this also fires for a
-//     commitment that DID join before the window closed; re-check
-//     CommitmentStanding at the latest block to tell the two apart. Truly
-//     unjoined must also be confirmed at the configured block before marking
-//     the app FAILED. (TournamentIsFinished is handled identically as a
-//     backstop, though join's window check fires first on a finished
-//     tournament, so it should be unreachable from join.)
-//   - CommitmentStateMismatch / CommitmentProofWrongSize: the locally stored
-//     commitment proof does not reconstruct the commitment root — local data
-//     corruption; CORRUPTED.
-//
-// JSON-RPC "nonce too low" broadcast rejections retry next tick; unknown
-// errors are returned to the caller unchanged, with the decoded revert name
-// in the log when one of the known ABIs declares it.
-func (s *Service) handleJoinTournamentRevert(
-	ctx context.Context,
-	app *Application,
-	epoch *Epoch,
-	tournamentAdapter TournamentAdapter,
-	err error,
-) error {
-	switch {
-	case isTournamentError(err, "ClockAlreadyInitialized"):
-		s.Logger.Info("Commitment already joined on-chain (detected via revert), waiting for event sync",
-			"application", app.Name, "epoch_index", epoch.Index,
-			"tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
-		return nil
-
-	case isTournamentError(err, "TournamentIsClosed"), isTournamentError(err, "TournamentIsFinished"):
-		revertName := "TournamentIsClosed"
-		if isTournamentError(err, "TournamentIsFinished") {
-			revertName = "TournamentIsFinished"
-		}
-		// The window check precedes the already-joined check on chain, so a
-		// commitment that joined just before the window closed reverts with
-		// the window error on a rebroadcast (e.g. after a restart with a
-		// stale CommitmentStanding read). Re-check at the latest block before
-		// declaring the join missed.
-		standing, joinedErr := tournamentAdapter.CommitmentStanding(
-			&bind.CallOpts{Context: ctx}, *epoch.Commitment)
-		if joinedErr != nil {
-			s.Logger.Warn("JoinTournament reverted with "+revertName+" but the "+
-				"already-joined re-check failed; retrying next tick",
-				"application", app.Name, "epoch_index", epoch.Index,
-				"tournament", epoch.TournamentAddress.Hex(),
-				"check_error", joinedErr)
-			return err
-		}
-		if standing.Joined {
-			if err := s.validateJoinedCommitment(ctx, app, epoch, standing); err != nil {
-				return err
-			}
-			s.Logger.Info("Commitment already joined on-chain (window closed after the join), "+
-				"waiting for event sync",
-				"application", app.Name, "epoch_index", epoch.Index,
-				"tournament", epoch.TournamentAddress.Hex(), "commitment", epoch.Commitment.Hex())
-			return nil
-		}
-		// The revert and latest read can refer to unfinalized state. Confirm
-		// both closure and the missing join before stopping this application.
-		confirmedBlock, confirmErr := s.getDefaultBlockNumber(ctx)
-		if confirmErr != nil {
-			return confirmErr
-		}
-		confirmedOpts := pinnedCallOpts(ctx, confirmedBlock)
-		confirmedStanding, confirmErr := tournamentAdapter.Standing(confirmedOpts)
-		if confirmErr != nil {
-			return fmt.Errorf("confirming closed join window: %w", confirmErr)
-		}
-		if confirmedStanding.AcceptsJoins {
-			return nil
-		}
-		confirmedCommitment, confirmErr := tournamentAdapter.CommitmentStanding(confirmedOpts, *epoch.Commitment)
-		if confirmErr != nil {
-			return fmt.Errorf("confirming missing commitment after join window closed: %w", confirmErr)
-		}
-		if confirmedCommitment.Joined {
-			return nil
-		}
-		return s.setApplicationFailed(ctx, app,
-			"JoinTournament reverted with %s for epoch %d "+
-				"(tournament %s): the tournament no longer accepts new "+
-				"commitments — the join window closed before this node joined, "+
-				"so it cannot defend its claim. Investigate node downtime or a "+
-				"lagging RPC endpoint before re-enabling.",
-			revertName, epoch.Index, epoch.TournamentAddress.Hex())
-
-	case isTournamentError(err, "CommitmentStateMismatch"):
-		return s.setApplicationCorrupted(ctx, app,
-			"JoinTournament reverted with CommitmentStateMismatch for epoch %d "+
-				"(tournament %s) — the commitment proof stored locally does not "+
-				"reconstruct the commitment root.",
-			epoch.Index, epoch.TournamentAddress.Hex())
-
-	case isTournamentError(err, "CommitmentProofWrongSize"):
-		return s.setApplicationCorrupted(ctx, app,
-			"JoinTournament reverted with CommitmentProofWrongSize for epoch %d "+
-				"(tournament %s) — the commitment proof stored locally has the "+
-				"wrong length for the tournament's tree height.",
-			epoch.Index, epoch.TournamentAddress.Hex())
-
-	case ethutil.IsNonceTooLowError(err):
-		// Transient broadcast race: a tx with this EOA's nonce is already
-		// mined. The next tick's CommitmentStanding check will reconcile
-		// against the propagated chain state and short-circuit if our prior
-		// JoinTournament landed; otherwise a new broadcast goes out with a
-		// fresh nonce.
-		s.Logger.Info(
-			"JoinTournament broadcast rejected with 'nonce too low'; "+
-				"deferring to the next tick's CommitmentStanding reconciliation",
-			"application", app.Name,
-			"epoch_index", epoch.Index,
-			"tournament", epoch.TournamentAddress.Hex(),
-			"commitment", epoch.Commitment.Hex())
-		return nil
-	}
-	s.logErrorUnlessShutdown(ctx, "failed to send join tournament transaction", err, "application", app.Name,
-		"epoch_index", epoch.Index,
-		"decoded_revert", describeKnownRevert(err))
-	return err
-}
-
-func (s *Service) validateApplication(ctx context.Context, app *Application, confirmedBlock uint64) error {
-	s.Logger.Debug("Syncing PRT tournaments", "application", app.Name)
-	s.warnZeroStagingPeriod(app)
-	deferActions, err := s.checkEpochs(ctx, app, confirmedBlock)
-	if err != nil {
-		return err
-	}
-	if deferActions {
-		return nil
-	}
-	latestBlock := confirmedBlock
-	if s.submissionEnabled {
-		latestBlock, err = s.client.BlockNumber(ctx)
-		if err != nil {
-			return fmt.Errorf("fetching latest block for PRT actions: %w", err)
-		}
-		if latestBlock < confirmedBlock {
-			return fmt.Errorf("latest block %d is behind configured block %d", latestBlock, confirmedBlock)
-		}
-	}
-	joinEpoch, recoveryAllowed, err := s.progressTournamentResult(ctx, app, confirmedBlock, latestBlock)
-	if err != nil {
-		return err
-	}
-	if !s.submissionEnabled || app.Status != ApplicationStatus_OK {
-		return nil
-	}
-	if joinEpoch != nil {
-		joined, err := s.reactToTournament(ctx, app, joinEpoch, latestBlock)
-		if err != nil {
-			return err
-		}
-		// The current claim's join action has priority over bond recovery.
-		recoveryAllowed = joined
-	}
-	if !recoveryAllowed {
-		return nil
-	}
-	// Claim actions keep priority. During a known wait, find owned recoverable
-	// roots from published state, including already accepted epochs after restart.
-	return s.recoverPublishedRootBonds(ctx, app, confirmedBlock, latestBlock)
-}
-
-// isDaveConsensusError matches a typed Solidity error declared in the
-// IDaveConsensus ABI against an RPC revert.
-func isDaveConsensusError(err error, name string) bool {
-	return ethutil.IsCustomError(err, idaveconsensus.IDaveConsensusMetaData, name)
-}
-
-// isTournamentError matches a typed Solidity error declared in the
-// ITournament ABI against an RPC revert.
-func isTournamentError(err error, name string) bool {
-	return ethutil.IsCustomError(err, itournament.ITournamentMetaData, name)
-}
-
-// decodeIncorrectEpochNumber reads the arguments from an IncorrectEpochNumber
-// revert:
-//
-//	error IncorrectEpochNumber(uint256 receivedEpochNumber, uint256 actualEpochNumber);
-//
-// received < actual means the chain accepted past us;
-// received > actual means the local epoch index is ahead of the chain.
-func decodeIncorrectEpochNumber(err error) (received, actual *big.Int, ok bool) {
-	values, ok := ethutil.UnpackRevert(err, idaveconsensus.IDaveConsensusMetaData, "IncorrectEpochNumber")
-	if !ok || len(values) < 2 {
-		return nil, nil, false
-	}
-	received, okReceived := values[0].(*big.Int)
-	actual, okActual := values[1].(*big.Int)
-	if !okReceived || !okActual {
-		return nil, nil, false
-	}
-	return received, actual, true
-}
-
-// describeKnownRevert renders the revert carried by err against the ABIs this
-// service interacts with, for the unknown-error log lines. Returns "" when
-// nothing matches.
-func describeKnownRevert(err error) string {
-	desc, ok := ethutil.DescribeRevert(err,
-		idaveconsensus.IDaveConsensusMetaData, itournament.ITournamentMetaData)
-	if !ok {
-		return ""
-	}
-	return desc
 }
