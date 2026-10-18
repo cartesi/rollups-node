@@ -5,7 +5,6 @@ package claimer
 
 import (
 	"context"
-	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -14,30 +13,10 @@ import (
 )
 
 type iclaimerRepository interface {
-	// key is model.Application.ID
-	SelectClaimsToSubmitPerApp(ctx context.Context) (
-		map[int64]*model.Epoch,
-		map[int64]*model.Epoch,
-		map[int64]*model.Application,
-		error,
-	)
-
-	// key is model.Application.ID
-	SelectClaimsToStagePerApp(ctx context.Context) (
-		map[int64]*model.Epoch,
-		map[int64]*model.Epoch,
-		map[int64]*model.Application,
-		error,
-	)
-
-	// key is model.Application.ID. The accepted map stores the newest accepted
-	// epoch per app. The staged map stores the oldest staged epoch per app.
-	SelectClaimsToAcceptPerApp(ctx context.Context) (
-		map[int64]*model.Epoch,
-		map[int64]*model.Epoch,
-		map[int64]*model.Application,
-		error,
-	)
+	ListApplicationsByID(context.Context, repository.ApplicationFilter, int64, int64, uint64) ([]*model.Application, error)
+	SelectClaimsToSubmitPage(context.Context, repository.ClaimCursor, uint64) (repository.ClaimPage, error)
+	SelectClaimsToStagePage(context.Context, repository.ClaimCursor, uint64) (repository.ClaimPage, error)
+	SelectClaimsToAcceptPage(context.Context, repository.ClaimCursor, uint64) (repository.ClaimPage, error)
 
 	UpdateEpochWithSubmittedClaim(
 		ctx context.Context,
@@ -45,19 +24,14 @@ type iclaimerRepository interface {
 		index uint64,
 		transactionHash common.Hash,
 	) error
+	RefreshClaimObservation(
+		ctx context.Context, expected *model.Epoch, transactionHash *common.Hash, stagedAtBlock *uint64,
+	) error
 
 	UpdateEpochToStaged(
 		ctx context.Context,
 		applicationID int64,
 		index uint64,
-		stagedAtBlock uint64,
-	) error
-
-	UpdateEpochThroughStaging(
-		ctx context.Context,
-		applicationID int64,
-		index uint64,
-		transactionHash common.Hash,
 		stagedAtBlock uint64,
 	) error
 
@@ -97,18 +71,4 @@ type iclaimerRepository interface {
 	HasUndrainedEpochsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
 	HasUnreconciledClaimsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
 	ForecloseUnacceptedEpochsAtOrAfterBlock(ctx context.Context, appID int64, blockBound uint64) (int64, error)
-
-	// ListApplications is used to find enabled, foreclosed Authority/Quorum
-	// apps that no longer have pending claim work. processForeclosedApps still
-	// needs those apps so operators can see drain progress.
-	ListApplications(
-		ctx context.Context,
-		f repository.ApplicationFilter,
-		p repository.Pagination,
-		descending bool,
-	) ([]*model.Application, uint64, error)
-
-	InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
-	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
-	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }

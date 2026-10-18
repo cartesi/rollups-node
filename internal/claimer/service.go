@@ -8,23 +8,27 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type CreateInfo struct {
-	Config     config.ClaimerConfig
-	Logger     *slog.Logger
-	EthConn    *ethclient.Client
-	Repository repository.Repository
+	Config              config.ClaimerConfig
+	Logger              *slog.Logger
+	EthConn             *ethclient.Client
+	Repository          repository.Repository
+	TransactOptsFactory ethutil.TransactOptsFactory
 }
 
 type Service struct {
@@ -33,25 +37,11 @@ type Service struct {
 	repository iclaimerRepository
 	blockchain iclaimerBlockchain
 
-	// submitClaim transactions waiting for confirmation from the blockchain.
-	// Tick is the only caller, so this map does not need a lock.
-	// Key: application ID. There is at most one entry per app.
-	claimsInFlight map[int64]inFlightTx
-
-	// acceptClaim transactions waiting for confirmation. This has the same map
-	// shape as claimsInFlight. It is separate because one app can have a submit
-	// transaction for a newer epoch and an accept transaction for an older one.
-	acceptsInFlight map[int64]inFlightTx
-
-	// acceptAttempts counts repeated acceptClaim attempts for one app and epoch.
-	// When the count is greater than maxAcceptAttempts, the app is marked
-	// FAILED. This prevents the node from spending gas forever on the same
-	// failing claim. The map is in memory only; restart clears it.
-	acceptAttempts map[acceptAttemptKey]uint64
-
-	// maxAcceptAttempts limits the counter above. It comes from
-	// CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS. The default is 5.
-	maxAcceptAttempts uint64
+	// publisher owns all volatile transaction state. PostgreSQL is the only
+	// handoff to the observer's independent domain traversal.
+	publisher           *claimPublisher
+	pageCursors         [3]repository.ClaimCursor
+	foreclosePageCursor int64
 
 	// consensusAddressChecks memoizes consensus-address drift checks during one
 	// Tick. An app can move through multiple claim stages in a single tick, and
@@ -59,13 +49,14 @@ type Service struct {
 	// block-pinned, so one result per (app, block) is enough.
 	consensusAddressChecks map[consensusAddressCheckKey]error
 
-	submissionEnabled bool
-	submissionTimeout time.Duration
+	submissionEnabled       bool
+	defaultBlock            model.DefaultBlock
+	observationHardWarnedAt time.Time
+	failure                 atomic.Pointer[error]
+	publicationReady        atomic.Bool
+	deliveryRepository      repository.DeliveryRepository
+	signer                  common.Address
 }
-
-// defaultMaxAcceptAttempts is used only when config is not supplied, mainly in
-// tests. The real env var also defaults to 5.
-const defaultMaxAcceptAttempts uint64 = 5
 
 const ClaimerConfigKey = "claimer"
 
@@ -126,33 +117,53 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	if err := config.CheckNetworkChainID(chainID, c.Config.BlockchainId); err != nil {
 		return nil, err
 	}
-	nodeConfig, err := setupPersistentConfig(ctx, s.Logger, c.Repository, &c.Config)
+	var txOptsFactory ethutil.TransactOptsFactory
+	if c.Config.FeatureClaimSubmissionEnabled {
+		if c.Config.BlockchainHttpRequestTimeout <= 0 {
+			return nil, fmt.Errorf("BlockchainHttpRequestTimeout must be positive")
+		}
+		txOptsFactory = c.TransactOptsFactory
+		if txOptsFactory == nil {
+			txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainID)
+			if err != nil {
+				return nil, fmt.Errorf("getting transaction options: %w", err)
+			}
+		}
+		s.signer = txOptsFactory.From()
+		s.Logger.Info("Claim submitter identity", "address", s.signer)
+	}
+	nodeConfig, err := setupPersistentConfig(ctx, s.Logger, c.Repository, &c.Config, s.signer)
 	if err != nil {
 		return nil, fmt.Errorf("setting up persistent config: %w", err)
 	}
 	s.submissionEnabled = nodeConfig.ClaimSubmissionEnabled
-	s.claimsInFlight = map[int64]inFlightTx{}
-	s.acceptsInFlight = map[int64]inFlightTx{}
-	s.acceptAttempts = map[acceptAttemptKey]uint64{}
-	s.maxAcceptAttempts = c.Config.ClaimerMaxAcceptAttempts
-	if s.maxAcceptAttempts == 0 {
-		s.maxAcceptAttempts = defaultMaxAcceptAttempts
+	s.defaultBlock = nodeConfig.DefaultBlock
+	if nodeConfig.DefaultBlock == model.DefaultBlock_Latest || nodeConfig.DefaultBlock == model.DefaultBlock_Safe {
+		s.Logger.Warn("Claim observation stores provisional chain facts; reorg rollback is unsupported",
+			"default_block", nodeConfig.DefaultBlock)
 	}
-
-	var txOptsFactory ethutil.TransactOptsFactory
+	s.deliveryRepository = c.Repository
+	backend := txsender.ProtectedClient{Client: ethClient}
 	if s.submissionEnabled {
-		s.submissionTimeout = c.Config.BlockchainHttpRequestTimeout
-		if s.submissionTimeout == 0 {
-			return nil, fmt.Errorf("BlockchainHttpRequestTimeout must be different from zero")
+		policy, policyErr := txsender.NewPolicy(txsender.FinancialConfig{
+			MaxFeePerGas:   c.Config.BlockchainTxMaxFeePerGas,
+			Legacy:         c.Config.BlockchainLegacyEnabled,
+			SigningTimeout: c.Config.BlockchainHttpRequestTimeout,
+		})
+		if policyErr != nil {
+			return nil, policyErr
 		}
-		txOptsFactory, err = auth.GetTransactOptsFactory(ctx, chainID)
+		publisher := &claimPublisher{
+			repository: c.Repository, lookup: c.Repository, backend: backend,
+			signer: s.signer, Logger: s.Logger, interval: c.Config.ClaimerPollingInterval,
+			failure: &s.failure, cooldowns: map[claimAction]time.Time{},
+		}
+		publisher.sender, err = txsender.New[claimAction](backend, txOptsFactory, chainID.Uint64(), policy,
+			s.guardClaimPublication, s.Logger)
 		if err != nil {
-			return nil, fmt.Errorf("getting transaction options: %w", err)
+			return nil, err
 		}
-		if c.Config.BlockchainLegacyEnabled {
-			txOptsFactory = ethutil.WithLegacyFees(txOptsFactory, ethClient)
-		}
-		s.Logger.Info("Claim submitter identity", "address", txOptsFactory.From())
+		s.publisher = publisher
 	}
 
 	s.repository = c.Repository
@@ -161,6 +172,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 		client:        ethClient,
 		txOptsFactory: txOptsFactory,
 		defaultBlock:  nodeConfig.DefaultBlock,
+		backend:       backend,
 	}
 
 	s.Logger.Info("Created", "config", c.Config)
@@ -171,33 +183,19 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 func setupPersistentConfig(
 	ctx context.Context,
 	logger *slog.Logger,
-	repo iclaimerRepository,
+	repo repository.DeliveryRepository,
 	c *config.ClaimerConfig,
+	signer common.Address,
 ) (*PersistentConfig, error) {
 	requested := PersistentConfig{
 		DefaultBlock: c.BlockchainDefaultBlock, ChainID: c.BlockchainId,
 		ClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
+		ResolvedSignerAddress:  signer,
 	}
-	if err := requested.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid claimer config: %w", err)
+	saved, err := repo.RegisterSubmitter(ctx, ClaimerConfigKey, requested)
+	if err != nil {
+		return nil, err
 	}
-	config, err := repository.LoadNodeConfig[PersistentConfig](ctx, repo, ClaimerConfigKey)
-	if config == nil && errors.Is(err, repository.ErrNotFound) {
-		nc := model.NodeConfig[PersistentConfig]{
-			Key:   ClaimerConfigKey,
-			Value: requested,
-		}
-		logger.Info("Initializing claimer persistent config", "config", nc.Value)
-		config, err = repository.InitializeNodeConfig(ctx, repo, &nc)
-	}
-	if err == nil {
-		if err := config.Value.CheckRequested(requested); err != nil {
-			return nil, fmt.Errorf("claimer persistent config: %w", err)
-		}
-		logger.Info("Claimer persistent config matches requested config", "config", config.Value)
-		return &config.Value, nil
-	}
-
-	logger.Error("Could not retrieve persistent config from Database.", "error", err)
-	return nil, err
+	logger.Info("Claimer persistent config matches requested config", "config", saved)
+	return &saved, nil
 }
