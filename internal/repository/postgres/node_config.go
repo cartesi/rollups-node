@@ -15,6 +15,8 @@ import (
 	"github.com/go-jet/jet/v2/postgres"
 )
 
+// InitializeNodeConfigRaw provisions test fixtures. Production services use the
+// merging registration methods instead of this whole-value initializer.
 func (r *PostgresRepository) InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
 	stmt := table.NodeConfig.
 		INSERT(table.NodeConfig.Key, table.NodeConfig.Value).
@@ -25,6 +27,8 @@ func (r *PostgresRepository) InitializeNodeConfigRaw(ctx context.Context, key st
 	return err
 }
 
+// SaveNodeConfigRaw replaces a test fixture value. Production repository
+// interfaces do not expose this whole-value writer.
 func (r *PostgresRepository) SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
 
 	insertStmt := table.NodeConfig.

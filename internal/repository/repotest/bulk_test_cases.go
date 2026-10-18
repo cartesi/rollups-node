@@ -785,8 +785,8 @@ func (s *BulkOperationsSuite) TestStoreTournamentEvents() {
 			WithCommitmentTwo(commitment2.Commitment).
 			Build()
 
-		err = s.Repo.StoreTournamentEvents(
-			s.Ctx, app.ID,
+		err = StoreTournamentEvents(
+			s.Ctx, s.Repo, app.ID,
 			[]*repository.TournamentEventBatch{{Tournament: tournament,
 				Commitments: []*Commitment{commitment1, commitment2}, Matches: []*Match{match}}}, joinedEventScanEnd)
 		s.Require().NoError(err)
@@ -823,8 +823,8 @@ func (s *BulkOperationsSuite) TestStoreTournamentEvents() {
 			Build()
 		ts.tournament.Snapshot.AsOfBlock = advancedEventScanEnd
 
-		err := s.Repo.StoreTournamentEvents(
-			s.Ctx, ts.app.ID,
+		err := StoreTournamentEvents(
+			s.Ctx, s.Repo, ts.app.ID,
 			[]*repository.TournamentEventBatch{{Tournament: ts.tournament, MatchAdvances: []*MatchAdvanced{ma}}}, advancedEventScanEnd)
 		s.Require().NoError(err)
 
@@ -852,8 +852,8 @@ func (s *BulkOperationsSuite) TestStoreTournamentEvents() {
 		}
 		ts.tournament.Snapshot.AsOfBlock = deletedEventScanEnd
 
-		err := s.Repo.StoreTournamentEvents(
-			s.Ctx, ts.app.ID,
+		err := StoreTournamentEvents(
+			s.Ctx, s.Repo, ts.app.ID,
 			[]*repository.TournamentEventBatch{{Tournament: ts.tournament, Matches: []*Match{&deletedMatch}}}, deletedEventScanEnd)
 		s.Require().NoError(err)
 
@@ -1202,8 +1202,8 @@ func (s *BulkOperationsSuite) TestStoreTournamentEventsRollback() {
 			WithCommitmentTwo(UniqueHash()).
 			Build()
 
-		err := s.Repo.StoreTournamentEvents(
-			s.Ctx, app.ID,
+		err := StoreTournamentEvents(
+			s.Ctx, s.Repo, app.ID,
 			[]*repository.TournamentEventBatch{{Tournament: tournament,
 				Commitments: []*Commitment{commitment}, Matches: []*Match{match}}}, failedWindowEnd)
 		s.Require().Error(err)
@@ -1233,8 +1233,8 @@ func (s *BulkOperationsSuite) TestStoreTournamentEventsRollback() {
 			WithWinner(WinnerCommitment_ONE).
 			WithDeletion(MatchDeletionReason_TIMEOUT, failedWindowEnd, UniqueHash()).Build()
 
-		err := s.Repo.StoreTournamentEvents(
-			s.Ctx, app.ID,
+		err := StoreTournamentEvents(
+			s.Ctx, s.Repo, app.ID,
 			[]*repository.TournamentEventBatch{{Tournament: tournament,
 				Commitments: []*Commitment{newCommitment}, Matches: []*Match{deletedMatch}}}, failedWindowEnd)
 		s.Require().Error(err)
@@ -1264,8 +1264,8 @@ func (s *BulkOperationsSuite) TestStoreTournamentEventsRollback() {
 			WithIDHash(UniqueHash()). // match doesn't exist
 			Build()
 
-		err := s.Repo.StoreTournamentEvents(
-			s.Ctx, app.ID,
+		err := StoreTournamentEvents(
+			s.Ctx, s.Repo, app.ID,
 			[]*repository.TournamentEventBatch{{Tournament: tournament,
 				Commitments: []*Commitment{newCommitment}, MatchAdvances: []*MatchAdvanced{bogusMA}}}, failedWindowEnd)
 		s.Require().Error(err)
