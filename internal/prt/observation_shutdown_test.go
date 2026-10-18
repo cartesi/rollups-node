@@ -8,19 +8,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"log/slog"
 	"math/big"
 	"strings"
 	"testing"
-
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -30,61 +28,28 @@ const (
 	runningCancellationCase   = "running cancellation"
 )
 
-func TestTournamentPublicationShutdown(t *testing.T) {
-	dbErr := errors.New("database write failed")
-	for _, test := range []struct {
-		name    string
-		cause   error
-		wantErr bool
-	}{
-		{"canceled write", fmt.Errorf("write: %w", context.Canceled), false},
-		{"database failure", dbErr, true},
-		{"mixed failure", errors.Join(context.Canceled, dbErr), true},
-		{"deadline", context.DeadlineExceeded, true},
-	} {
-		for _, throughServe := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/serve=%t", test.name, throughServe), func(t *testing.T) {
-				ctx, cancel := context.WithCancel(t.Context())
-				defer cancel()
-				f := newObserverCheckpointFixture(t)
-				var logs bytes.Buffer
-				require.NoError(t, service.InitTickServiceTemplate(&f.s.TickServiceTemplate, &service.TickServiceConfigs{
-					BaseConfigs: service.BaseConfigs{Name: "prt", Logger: slog.New(slog.NewTextHandler(&logs, nil))},
-				}, f.s))
-				f.s.defaultBlock = model.DefaultBlock_Finalized
-				f.repo.On("ListApplications", ctx, mock.Anything, repository.Pagination{}, false).
-					Return([]*model.Application{f.app}, uint64(1), nil).Once()
-				f.client.On("HeaderByNumber", ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
-					Return(&types.Header{Number: big.NewInt(100)}, nil).Once()
-				epoch := checkpointEpoch(0, "0x100")
-				f.epochs(epoch)
-				f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(2), nil).Once()
-				root := f.tournament(epoch, *epoch.TournamentAddress, 0, 2, 0, 100, &TournamentEvents{}, nil)
-				f.children(epoch, root)
-				f.repo.On("StoreTournamentEvents", ctx, f.app.ID, mock.Anything, uint64(100)).
-					Run(func(mock.Arguments) { cancel() }).Return(test.cause).Once()
-				pending := pendingTournamentTransaction{Action: tournamentActionStage, Hash: common.HexToHash("0x999")}
-				f.s.pendingTransactions[f.app.ID] = pending
+const standingReadName = "standing"
 
-				if throughServe {
-					require.ErrorIs(t, f.s.Serve(ctx), context.Canceled)
-					require.Equal(t, test.wantErr, strings.Contains(logs.String(), "level=ERROR msg=Tick"), logs.String())
-				} else {
-					reschedule, err := f.s.Tick(ctx)
-					require.False(t, reschedule)
-					if test.wantErr {
-						require.ErrorIs(t, err, test.cause)
-					} else {
-						require.NoError(t, err)
-					}
-				}
-				require.Equal(t, uint64(50), f.app.LastTournamentCheckBlock, "an interrupted write must not publish its cursor")
-				require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
-				require.Equal(t, model.EpochStatus_ClaimComputed, epoch.Status)
-				require.Equal(t, pending, f.s.pendingTransactions[f.app.ID], "failed observation must not release a pending action")
-				require.Equal(t, test.wantErr, len(f.s.observationFailures) == 1)
-			})
+func TestPRTObserverShutdownKeepsJoinedRealFailuresVisible(t *testing.T) {
+	failure := errors.New("database unavailable")
+	for _, mixed := range []bool{false, true} {
+		s, repo := newPRTServiceMock()
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		causes := []error{repository.ErrTournamentIntervalStale, txsender.ErrInconclusive, context.Canceled}
+		if mixed {
+			causes = append(causes, failure)
 		}
+		repo.On("GetApplicationIDBoundary", mock.Anything, mock.Anything).
+			Run(func(mock.Arguments) { cancel() }).Return(int64(0), errors.Join(causes...)).Once()
+		reschedule, err := s.Tick(ctx)
+		require.False(t, reschedule)
+		if mixed {
+			require.ErrorIs(t, err, failure)
+		} else {
+			require.NoError(t, err, "shutdown waits must not reach the tick template as operational errors")
+		}
+		repo.AssertExpectations(t)
 	}
 }
 
@@ -106,7 +71,7 @@ func TestTournamentObservationShutdownLogs(t *testing.T) {
 	} {
 		for _, operation := range []string{
 			"new descriptor", "stored descriptor", "new standing", "stored standing", "new result", "stored result",
-			"projection load", "children list", "epochs list", "acceptance receipt", "acceptance update",
+			"projection load", "participant list", "epochs list", "acceptance receipt", "acceptance header", "acceptance update",
 		} {
 			t.Run(test.name+"/"+operation, func(t *testing.T) {
 				s, repo := newPRTServiceMock()
@@ -128,6 +93,7 @@ func TestTournamentObservationShutdownLogs(t *testing.T) {
 					cancel()
 				}
 				err := runObservationWithIOError(ctx, t, f, operation, test.cause)
+				f.s.logErrorUnlessShutdown(ctx, "PRT observation", err, "application", f.app.Name)
 				require.ErrorIs(t, err, test.cause)
 				require.Equal(t, test.wantLog, strings.Contains(output.String(), "level=ERROR"), output.String())
 				if test.wantLog {
@@ -144,12 +110,18 @@ func runObservationWithIOError(ctx context.Context, t *testing.T, f *observerChe
 	if operation == "epochs list" {
 		f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, repository.Pagination{}, false).
 			Return([]*model.Epoch{}, uint64(0), cause).Once()
-		_, err := f.s.checkEpochs(ctx, f.app, 100)
+		_, err := observeEpochsForTest(ctx, f.s, f.app, 100)
 		return err
 	}
 	if strings.HasPrefix(operation, "acceptance") {
+		if operation == "acceptance header" {
+			header := &types.Header{Number: big.NewInt(50)}
+			f.client.On("HeaderByNumber", mock.Anything, header.Number).Return((*types.Header)(nil), cause).Once()
+			return f.s.validateAcceptanceReceipt(ctx, &types.Receipt{BlockHash: header.Hash(), BlockNumber: header.Number})
+		}
 		epoch.ClaimTransactionHash = new(common.HexToHash("0x900"))
-		tournament := &model.Tournament{Address: *epoch.TournamentAddress, Snapshot: model.TournamentSnapshot{FinishedAtBlock: 50}}
+		tournament := &model.Tournament{Address: *epoch.TournamentAddress,
+			Snapshot: model.TournamentSnapshot{FinishedAtBlock: 50, AsOfBlock: 50}}
 		if operation == "acceptance update" {
 			f.app.LastTournamentCheckBlock = 100
 			f.acceptance(epoch, tournament, cause)
@@ -168,7 +140,8 @@ func runObservationWithIOError(ctx context.Context, t *testing.T, f *observerChe
 	t.Cleanup(func() { adapter.AssertExpectations(t) })
 	var stored *model.Tournament
 	if !strings.HasPrefix(operation, "new ") {
-		stored = &model.Tournament{Address: address, Level: 1, MaxLevel: 3, Kind: model.TournamentKindNonLeaf}
+		stored = &model.Tournament{Address: address, Level: 1, MaxLevel: 3, Kind: model.TournamentKindNonLeaf,
+			Snapshot: model.TournamentSnapshot{AsOfBlock: 50}}
 	}
 	var loadError error
 	if operation == "projection load" {
@@ -185,7 +158,7 @@ func runObservationWithIOError(ctx context.Context, t *testing.T, f *observerChe
 		adapter.On("Descriptor", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(descriptor, descriptorError).Once()
 		if descriptorError == nil {
 			var standingError error
-			if strings.HasSuffix(operation, "standing") {
+			if strings.HasSuffix(operation, standingReadName) {
 				standingError = cause
 			}
 			standing := TournamentStanding{State: model.TournamentStandingAwaitingClosure}
@@ -197,117 +170,60 @@ func runObservationWithIOError(ctx context.Context, t *testing.T, f *observerChe
 			}
 			adapter.On("Standing", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(standing, standingError).Once()
 		}
-		if operation == "children list" {
+		if operation == "participant list" {
 			expectTournamentAuxiliaryReads(adapter, mock.MatchedBy(resultCallOptsAtBlock(100)), 1, model.TournamentStandingAwaitingClosure)
 			adapter.On("RetrieveAllEvents", mock.Anything).Return(&TournamentEvents{}, nil).Once()
-			adapter.On("StructuralEventCounts", mock.MatchedBy(resultCallOptsAtBlock(50))).Return(zeroStructuralEventCounts(), nil).Once()
-			adapter.On("BondRecovery", mock.MatchedBy(resultCallOptsAtBlock(50))).
-				Return(canonicalBondRecovery(model.BondDispositionTournamentRunning, common.Address{}, 0), nil).Once()
 			adapter.On("StructuralEventCounts", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(zeroStructuralEventCounts(), nil).Once()
-			f.emptyParticipants(epoch, address)
-			f.repo.On("ListTournaments", mock.Anything, f.app.Name, mock.Anything, repository.Pagination{}, false).
-				Return([]*model.Tournament{}, uint64(0), cause).Once()
+			addressString := address.Hex()
+			f.repo.On("ListCommitments", mock.Anything, f.app.Name,
+				repository.CommitmentFilter{EpochIndex: &epoch.Index, TournamentAddress: &addressString}, repository.Pagination{}, false).
+				Return([]*model.Commitment{}, uint64(0), nil).Once()
+			f.repo.On("ListMatches", mock.Anything, f.app.Name,
+				repository.MatchFilter{EpochIndex: &epoch.Index, TournamentAddress: &addressString}, repository.Pagination{}, false).
+				Return([]*model.Match{}, uint64(0), cause).Once()
 		}
 	}
 	_, err := f.s.gatherTournamentData(ctx, f.app, epoch, 1, nil, nil, address, 3, 100)
 	return err
 }
 
-func TestTournamentSubmissionShutdownLogs(t *testing.T) {
-	dbErr := errors.New("database unavailable")
-	for _, action := range []struct {
-		name string
-		run  func(*Service, context.Context, *model.Application, *model.Epoch, error) error
-	}{
-		{"join", func(s *Service, ctx context.Context, app *model.Application, epoch *model.Epoch, err error) error {
-			return s.handleJoinTournamentRevert(ctx, app, epoch, nil, err)
-		}},
-		{"stage", (*Service).handleStageTournamentResultRevert},
-		{"accept", (*Service).handleAcceptTournamentResultRevert},
-	} {
-		for _, test := range []struct {
-			name     string
-			stopping bool
-			cause    error
-			wantLog  bool
-		}{
-			{shutdownCancellationCase, true, context.Canceled, false},
-			{"shutdown mixed failure", true, errors.Join(context.Canceled, dbErr), true},
-			{shutdownDeadlineCase, true, context.DeadlineExceeded, true},
-			{shutdownMixedDeadlineCase, true, errors.Join(context.Canceled, context.DeadlineExceeded), true},
-			{runningCancellationCase, false, context.Canceled, true},
-		} {
-			t.Run(action.name+"/"+test.name, func(t *testing.T) {
-				s, _ := newPRTServiceMock()
-				var output bytes.Buffer
-				s.Logger = slog.New(slog.NewTextHandler(&output, nil))
-				ctx, cancel := context.WithCancel(t.Context())
-				defer cancel()
-				if test.stopping {
-					cancel()
+func TestTournamentJoinReadsPreserveDependencyErrors(t *testing.T) {
+	for _, operation := range []string{"commitment standing", "descriptor", standingReadName, "bond value"} {
+		for _, cause := range []error{context.Canceled, context.DeadlineExceeded, errors.New("database unavailable")} {
+			t.Run(operation+"/"+cause.Error(), func(t *testing.T) {
+				f := newDeliveryFixture(t)
+				view := resultTestSnapshot(f.epoch, false)
+				view.stage.IsFinished = false
+				f.snapshot(view)
+				adapter := &tournamentAdapterMock{}
+				f.factory.On("CreateTournamentAdapter", *f.epoch.TournamentAddress).Return(adapter, nil)
+				var readErr error
+				if operation == "commitment standing" {
+					readErr = cause
 				}
-				err := action.run(s, ctx, prtRevertTestApp(), prtRevertTestEpoch(), test.cause)
-				require.ErrorIs(t, err, test.cause)
-				require.Equal(t, test.wantLog, strings.Contains(output.String(), "level=ERROR"), output.String())
-			})
-		}
-	}
-}
-
-func TestTournamentJoinReadsShutdownLogs(t *testing.T) {
-	dbErr := errors.New("database unavailable")
-	for _, operation := range []string{"commitment record", "commitment standing", "bond value"} {
-		for _, test := range []struct {
-			name     string
-			stopping bool
-			cause    error
-			wantLog  bool
-		}{
-			{shutdownCancellationCase, true, context.Canceled, false},
-			{"shutdown mixed failure", true, errors.Join(context.Canceled, dbErr), true},
-			{shutdownDeadlineCase, true, context.DeadlineExceeded, true},
-			{shutdownMixedDeadlineCase, true, errors.Join(context.Canceled, context.DeadlineExceeded), true},
-			{runningCancellationCase, false, context.Canceled, true},
-		} {
-			t.Run(operation+"/"+test.name, func(t *testing.T) {
-				s, repo := newPRTServiceMock()
-				app, epoch := prtRevertTestApp(), resultTestEpoch(model.EpochStatus_ClaimComputed)
-				epoch.CommitmentProof = make([]common.Hash, model.Log2EpochComputationHashLeafCount)
-				var output bytes.Buffer
-				s.Logger = slog.New(slog.NewTextHandler(&output, nil))
-				ctx, cancel := context.WithCancel(t.Context())
-				defer cancel()
-				if test.stopping {
-					cancel()
-				}
-				var recordErr error
-				if operation == "commitment record" {
-					recordErr = test.cause
-				}
-				repo.On("GetCommitment", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index,
-					epoch.TournamentAddress.Hex(), epoch.Commitment.Hex()).Return((*model.Commitment)(nil), recordErr).Once()
-				if recordErr == nil {
-					factory := &adapterFactoryMock{}
-					adapter := &tournamentAdapterMock{}
-					s.adapterFactory = factory
-					factory.On("CreateTournamentAdapter", *epoch.TournamentAddress).Return(adapter, nil).Once()
-					var standingErr error
-					if operation == "commitment standing" {
-						standingErr = test.cause
+				adapter.On("CommitmentStanding", mock.Anything, [32]byte(*f.epoch.Commitment)).Return(CommitmentStanding{}, readErr)
+				if readErr == nil {
+					if operation == "descriptor" {
+						readErr = cause
 					}
-					opts := mock.MatchedBy(resultCallOptsAtBlock(100))
-					adapter.On("CommitmentStanding", opts, [32]byte(*epoch.Commitment)).Return(CommitmentStanding{}, standingErr).Once()
-					if standingErr == nil {
-						adapter.On("Descriptor", opts).
-							Return(TournamentDescriptor{Height: model.Log2EpochComputationHashLeafCount}, nil).Once()
-						adapter.On("BondValue", opts).Return((*big.Int)(nil), test.cause).Once()
-					}
-					t.Cleanup(func() { factory.AssertExpectations(t); adapter.AssertExpectations(t) })
+					adapter.On("Descriptor", mock.Anything).Return(TournamentDescriptor{Height: model.Log2EpochComputationHashLeafCount,
+						StartInstant: 100, Allowance: 30}, readErr)
 				}
-				_, err := s.reactToTournament(ctx, app, epoch, 100)
-				require.ErrorIs(t, err, test.cause)
-				require.Equal(t, test.wantLog, strings.Contains(output.String(), "level=ERROR"), output.String())
-				repo.AssertExpectations(t)
+				if readErr == nil {
+					if operation == standingReadName {
+						readErr = cause
+					}
+					adapter.On("Standing", mock.Anything).Return(TournamentStanding{AcceptsJoins: true}, readErr)
+				}
+				if readErr == nil {
+					adapter.On("BondValue", mock.Anything).Return((*big.Int)(nil), cause)
+				}
+				call, err := f.d.planAction(t.Context(), f.app, joinTournament, f.block, observerFacts(100))
+				require.ErrorIs(t, err, cause)
+				require.Nil(t, call)
+				require.Empty(t, f.backend.published)
+				require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
+				f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			})
 		}
 	}

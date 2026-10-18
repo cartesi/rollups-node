@@ -4,6 +4,7 @@
 package prt
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -12,37 +13,38 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/spf13/viper"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-func TestSetupPersistentConfigChecksInitializedValue(t *testing.T) {
+func TestSetupPersistentConfigUsesSerializedRegistration(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		for _, concurrent := range []bool{false, true} {
 			t.Run(fmt.Sprintf("enabled=%t/concurrent=%t", enabled, concurrent), func(t *testing.T) {
-				s, repo := newPRTServiceMock()
+				s, _ := newPRTServiceMock()
+				repo := &prtBlockPolicyCreateRepository{}
+				var signer common.Address
+				if enabled {
+					signer = common.HexToAddress("0x600")
+				}
 				requested := PersistentConfig{
 					DefaultBlock: model.DefaultBlock_Finalized, ChainID: 42, ClaimSubmissionEnabled: enabled,
+					ResolvedSignerAddress: signer,
 				}
-				raw, err := json.Marshal(requested)
-				require.NoError(t, err)
 				stored := requested
 				if concurrent {
 					stored.ClaimSubmissionEnabled = !enabled
 				}
-				storedRaw, err := json.Marshal(stored)
-				require.NoError(t, err)
-				repo.On("LoadNodeConfigRaw", mock.Anything, PrtConfigKey).
-					Return(([]byte)(nil), time.Time{}, time.Time{}, repository.ErrNotFound).Once()
-				repo.On("InitializeNodeConfigRaw", mock.Anything, PrtConfigKey, raw).Return(nil).Once()
-				repo.On("LoadNodeConfigRaw", mock.Anything, PrtConfigKey).
-					Return(storedRaw, time.Time{}, time.Time{}, nil).Once()
+				registrationErr := stored.CheckRequested(requested)
+				repo.On("RegisterSubmitter", mock.Anything, PrtConfigKey, requested).
+					Return(stored, registrationErr).Once()
 				got, err := s.setupPersistentConfig(t.Context(), &config.PrtConfig{
 					BlockchainId: 42, BlockchainDefaultBlock: model.DefaultBlock_Finalized,
 					FeatureClaimSubmissionEnabled: enabled,
-				})
+				}, repo, signer)
 				if concurrent {
 					require.Nil(t, got)
 					require.ErrorContains(t, err, "claim submission mode mismatch")
@@ -50,39 +52,59 @@ func TestSetupPersistentConfigChecksInitializedValue(t *testing.T) {
 					require.NoError(t, err)
 					require.Equal(t, requested, *got)
 				}
-				repo.AssertNumberOfCalls(t, "SaveNodeConfigRaw", 0)
+				repo.AssertNotCalled(t, "LoadNodeConfigRaw", mock.Anything, mock.Anything)
+				repo.AssertNotCalled(t, "InitializeNodeConfigRaw", mock.Anything, mock.Anything, mock.Anything)
+				repo.AssertNotCalled(t, "SaveNodeConfigRaw", mock.Anything, mock.Anything, mock.Anything)
 				repo.AssertExpectations(t)
 			})
 		}
 	}
 }
 
-func TestCreateRejectsConfigBeforeSignerResolution(t *testing.T) {
-	viper.Set(config.PRT_AUTH_KIND, "invalid")
-	t.Cleanup(func() { viper.Set(config.PRT_AUTH_KIND, nil) })
+func TestCreateRejectsInvalidRegisteredConfig(t *testing.T) {
 	for _, test := range []struct {
 		name             string
 		raw              string
 		requestedEnabled bool
 		want             string
 	}{
-		{"chain mismatch", `{"ChainID":2,"DefaultBlock":"FINALIZED","ClaimSubmissionEnabled":true}`, true,
+		{"chain mismatch", `{"ChainID":2,"DefaultBlock":"FINALIZED","ClaimSubmissionEnabled":true,
+            "ResolvedSignerAddress":"0x0000000000000000000000000000000000000600"}`, true,
 			"chain ID mismatch: database=2, configured=42"},
-		{"policy mismatch", `{"ChainID":42,"DefaultBlock":"LATEST","ClaimSubmissionEnabled":true}`, true,
+		{"policy mismatch", `{"ChainID":42,"DefaultBlock":"LATEST","ClaimSubmissionEnabled":true,
+            "ResolvedSignerAddress":"0x0000000000000000000000000000000000000600"}`, true,
 			"observation policy mismatch: database=LATEST, configured=FINALIZED"},
 		{"enable submission", `{"ChainID":42,"DefaultBlock":"FINALIZED","ClaimSubmissionEnabled":false}`, true,
 			"claim submission mode mismatch: database=false, configured=true"},
-		{"disable submission", `{"ChainID":42,"DefaultBlock":"FINALIZED","ClaimSubmissionEnabled":true}`, false,
+		{"disable submission", `{"ChainID":42,"DefaultBlock":"FINALIZED","ClaimSubmissionEnabled":true,
+            "ResolvedSignerAddress":"0x0000000000000000000000000000000000000600"}`, false,
 			"claim submission mode mismatch: database=true, configured=false"},
 		{"missing mode", `{"ChainID":42,"DefaultBlock":"FINALIZED"}`, true, "non-null ClaimSubmissionEnabled"},
 		{"null mode", `{"ChainID":42,"DefaultBlock":"FINALIZED","ClaimSubmissionEnabled":null}`, true,
 			"non-null ClaimSubmissionEnabled"},
 		{"null config", `null`, true, "non-null DefaultBlock and ChainID"},
-		{"invalid policy", `{"ChainID":42,"DefaultBlock":"invalid","ClaimSubmissionEnabled":true}`, true, "invalid DefaultBlock"},
+		{"invalid policy", `{"ChainID":42,"DefaultBlock":"invalid","ClaimSubmissionEnabled":true,
+            "ResolvedSignerAddress":"0x0000000000000000000000000000000000000600"}`, true, "invalid DefaultBlock"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			repo := &prtBlockPolicyCreateRepository{}
-			repo.On("LoadNodeConfigRaw", mock.Anything, PrtConfigKey).Return([]byte(test.raw), nil).Once()
+			signer := common.HexToAddress("0x600")
+			registered := false
+			repo := &prtBlockPolicyCreateRepository{register: func(
+				_ context.Context, key string, requested PersistentConfig,
+			) (PersistentConfig, error) {
+				registered = true
+				require.Equal(t, PrtConfigKey, key)
+				if test.requestedEnabled {
+					require.Equal(t, signer, requested.ResolvedSignerAddress)
+				} else {
+					require.Zero(t, requested.ResolvedSignerAddress)
+				}
+				var stored PersistentConfig
+				if err := json.Unmarshal([]byte(test.raw), &stored); err != nil {
+					return stored, err
+				}
+				return stored, stored.CheckRequested(requested)
+			}}
 			client := &ethClientMock{}
 			client.On("ChainID", mock.Anything).Return(big.NewInt(42), nil).Once()
 			info := &CreateInfo{
@@ -92,10 +114,12 @@ func TestCreateRejectsConfigBeforeSignerResolution(t *testing.T) {
 					FeatureClaimSubmissionEnabled: test.requestedEnabled, BlockchainHttpRequestTimeout: time.Second,
 				},
 				EthClient: client, Repository: repo,
+				TransactOptsFactory: ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{From: signer}),
 			}
 			svc, err := Create(t.Context(), info)
 			require.Nil(t, svc)
 			require.ErrorContains(t, err, test.want)
+			require.True(t, registered)
 			repo.AssertExpectations(t)
 			client.AssertExpectations(t)
 		})

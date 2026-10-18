@@ -44,7 +44,7 @@ func TestTournamentEventBatchReusesCertifiedDeletionWithoutReadOrWrite(t *testin
 	before := *stored
 	commitment := &model.Commitment{Commitment: stored.CommitmentOne, FinalStateHash: common.HexToHash("0x66")}
 	f := newEventBatchFixture(t, []*model.Commitment{commitment}, []*model.Match{stored})
-	f.app.LastTournamentCheckBlock = 50
+	f.tournament.Snapshot.AsOfBlock = 50
 	f.adapter.On("CommitmentStanding", mock.MatchedBy(resultCallOptsAtBlock(100)), [32]byte(commitment.Commitment)).
 		Return(CommitmentStanding{Joined: true, FinalState: commitment.FinalStateHash, ClockAllowance: 7}, nil).Once()
 
@@ -62,7 +62,7 @@ func TestTournamentEventBatchReusesDeletionAtPublishedHead(t *testing.T) {
 	stored.DeletionBlockNumber, stored.Snapshot.AsOfBlock = 100, 100
 	before := *stored
 	f := newEventBatchFixture(t, nil, []*model.Match{stored})
-	f.app.LastTournamentCheckBlock = 100
+	f.tournament.Snapshot.AsOfBlock = 100
 
 	batch, err := f.project(&TournamentEvents{})
 	require.NoError(t, err)
@@ -92,7 +92,7 @@ func TestTournamentEventBatchValidatesFirstDeletionAtPinnedBlock(t *testing.T) {
 				Sealed: &model.MatchSealedSnapshot{}, TimeoutOutcome: model.MatchTimeoutNone}
 			before := *stored
 			f := newEventBatchFixture(t, nil, []*model.Match{stored})
-			f.app.LastTournamentCheckBlock = 50
+			f.tournament.Snapshot.AsOfBlock = 50
 			f.adapter.On("MatchSnapshot", mock.MatchedBy(resultCallOptsAtBlock(100)),
 				[32]byte(stored.CommitmentOne), [32]byte(stored.CommitmentTwo)).Return(test.view, nil).Once()
 
@@ -137,8 +137,11 @@ func TestTournamentEventBatchRefreshesUncertifiedDeletions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			stored := certifiedDeletedMatch()
 			f := newEventBatchFixture(t, nil, []*model.Match{stored})
-			f.app.LastTournamentCheckBlock = 50
+			f.tournament.Snapshot.AsOfBlock = 50
 			test.change(stored, f.app)
+			if test.name == "head below published cursor" {
+				f.tournament.Snapshot.AsOfBlock = 101
+			}
 			before := *stored
 			cause := errors.New("pinned snapshot unavailable")
 			f.adapter.On("MatchSnapshot", mock.MatchedBy(resultCallOptsAtBlock(100)),
@@ -164,7 +167,7 @@ func TestTournamentEventBatchKeepsNewFactsForCertifiedDeletion(t *testing.T) {
 			stored := certifiedDeletedMatch()
 			before := *stored
 			f := newEventBatchFixture(t, nil, []*model.Match{stored})
-			f.app.LastTournamentCheckBlock = 50
+			f.tournament.Snapshot.AsOfBlock = 50
 			events := &TournamentEvents{}
 			switch eventName {
 			case matchCreationEventName:
@@ -212,7 +215,7 @@ func TestTournamentEventBatchRejectsConflictingCertifiedDeletion(t *testing.T) {
 	stored := certifiedDeletedMatch()
 	before := *stored
 	f := newEventBatchFixture(t, nil, []*model.Match{stored})
-	f.app.LastTournamentCheckBlock = 50
+	f.tournament.Snapshot.AsOfBlock = 50
 	event := matchDeletionEvent(stored)
 	event.Raw.Index++
 	batch, err := f.project(&TournamentEvents{MatchDeleted: []*itournament.ITournamentMatchDeleted{event}})
@@ -225,25 +228,27 @@ func TestTournamentEventBatchRejectsConflictingCertifiedDeletion(t *testing.T) {
 func TestDeletedParentMatchStillObservesLiveChild(t *testing.T) {
 	f := newObserverCheckpointFixture(t)
 	epoch := checkpointEpoch(0, "0x100")
-	f.epochs(epoch)
+
 	f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(2), nil).Once()
 	stored := certifiedDeletedMatch()
 	before := *stored
 	parent, adapter := expectDeletedMatchTournament(t, f, epoch, *epoch.TournamentAddress, 0, []*model.Match{stored})
 	child, _ := expectDeletedMatchTournament(t, f, epoch, common.HexToAddress("0x101"), 1, nil)
 	f.children(epoch, parent, child)
-	f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID, mock.Anything, uint64(100)).
+	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, uint64(100)).
 		Run(func(args mock.Arguments) {
 			batches := args.Get(2).([]*repository.TournamentEventBatch)
-			require.Len(t, batches, 2)
-			require.Equal(t, parent.Address, batches[0].Tournament.Address)
-			require.Empty(t, batches[0].Matches)
-			require.Equal(t, child.Address, batches[1].Tournament.Address)
-			require.Equal(t, model.TournamentStandingMatchesActive, batches[1].Tournament.Snapshot.Standing)
-			require.Equal(t, uint64(100), batches[1].Tournament.Snapshot.AsOfBlock)
-		}).Return(nil).Once()
+			require.Len(t, batches, 1, "stored children commit independently of their parent")
+			if batches[0].Tournament.Address == parent.Address {
+				require.Empty(t, batches[0].Matches)
+			} else {
+				require.Equal(t, child.Address, batches[0].Tournament.Address)
+				require.Equal(t, model.TournamentStandingMatchesActive, batches[0].Tournament.Snapshot.Standing)
+			}
+			require.Equal(t, uint64(100), batches[0].Tournament.Snapshot.AsOfBlock)
+		}).Return(nil).Twice()
 
-	_, _, err := f.s.observeApplicationTournaments(t.Context(), f.app, 100)
+	err := f.s.delivery.observeWindow(t.Context(), f.app, []*model.Epoch{epoch}, f.consensus, observerFacts(100))
 	require.NoError(t, err)
 	require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 	require.Equal(t, before, *stored)
@@ -258,7 +263,8 @@ func expectDeletedMatchTournament(
 	if level == 1 {
 		kind = model.TournamentKindLeaf
 	}
-	tournament := &model.Tournament{Address: address, Level: level, MaxLevel: 2, Kind: kind, StartInstant: 10}
+	tournament := &model.Tournament{ApplicationID: f.app.ID, EpochIndex: epoch.Index, Address: address, Level: level,
+		MaxLevel: 2, Kind: kind, StartInstant: 10, Snapshot: model.TournamentSnapshot{AsOfBlock: 50}}
 	adapter := &tournamentAdapterMock{}
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), address.Hex()).Return(tournament, nil).Once()
 	f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()
@@ -276,10 +282,13 @@ func expectDeletedMatchTournament(
 		counts.MatchCreated.SetUint64(1)
 		counts.MatchDeleted.SetUint64(1)
 	}
-	adapter.On("StructuralEventCounts", mock.MatchedBy(resultCallOptsAtBlock(50))).Return(counts, nil).Once()
+	if f.repo.eventCounts == nil {
+		f.repo.eventCounts = map[common.Address]repository.TournamentEventCounts{}
+	}
+	f.repo.eventCounts[address] = repository.TournamentEventCounts{
+		MatchCreated: counts.MatchCreated.Uint64(), MatchDeleted: counts.MatchDeleted.Uint64(),
+	}
 	adapter.On("StructuralEventCounts", opts).Return(counts, nil).Once()
-	adapter.On("BondRecovery", mock.MatchedBy(resultCallOptsAtBlock(50))).
-		Return(canonicalBondRecovery(model.BondDispositionTournamentRunning, common.Address{}, 0), nil).Once()
 	filterAddress := address.Hex()
 	f.repo.On("ListCommitments", mock.Anything, f.app.Name,
 		repository.CommitmentFilter{EpochIndex: &epoch.Index, TournamentAddress: &filterAddress}, repository.Pagination{}, false).
