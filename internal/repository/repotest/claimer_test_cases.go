@@ -45,12 +45,40 @@ func (s *ClaimerSuite) createAppWithClaimComputedEpochForConsensus(c Consensus) 
 	return app
 }
 
-func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
+// oldestClaimsFromPages applies the existing selector assertions to the real
+// paged queries. It collects only each application's oldest row; deep-window
+// traversal is covered separately by the PostgreSQL paging fixtures.
+func (s *ClaimerSuite) oldestClaimsFromPages(
+	ctx context.Context,
+	query func(context.Context, repository.ClaimCursor, uint64) (repository.ClaimPage, error),
+) (map[int64]*Epoch, map[int64]*Application, error) {
+	epochs, apps := map[int64]*Epoch{}, map[int64]*Application{}
+	seen := map[int64]bool{}
+	cursor := repository.ClaimCursor{}
+	const minimumWindow = 2 // One oldest row and one later-row slot.
+	for {
+		page, err := query(ctx, cursor, minimumWindow)
+		if err != nil {
+			return nil, nil, err
+		}
+		if page.ApplicationID == 0 || seen[page.ApplicationID] {
+			return epochs, apps, nil
+		}
+		seen[page.ApplicationID] = true
+		if len(page.Work) != 0 {
+			first := page.Work[0]
+			epochs[first.Application.ID], apps[first.Application.ID] = first.Epoch, first.Application
+		}
+		cursor.AfterApplicationID = page.ApplicationID
+	}
+}
+
+func (s *ClaimerSuite) TestSelectClaimsToSubmitPages() {
 	s.Run("EmptyWhenNoClaimComputed", func() {
 		NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
-		// Returns: (acceptedOrSubmitted, computed, applications, error)
-		_, computed, apps, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		// Returns the oldest computed epoch and its application.
+		computed, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
 		s.Empty(computed)
 		s.Empty(apps)
@@ -59,8 +87,8 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 	s.Run("ReturnsPairWhenClaimComputed", func() {
 		app := s.createAppWithClaimComputedEpoch()
 
-		// Returns: (acceptedOrSubmitted, computed, applications, error)
-		_, computed, apps, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		// Returns the oldest computed epoch and its application.
+		computed, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
 		s.NotEmpty(computed)
 		s.NotEmpty(apps)
@@ -68,7 +96,7 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		s.Contains(apps, app.ID)
 	})
 
-	s.Run("LoadsCompleteStateProofForClaimAndBarrier", func() {
+	s.Run("LoadsCompleteStateProofForComputedClaim", func() {
 		const (
 			firstEpochLastBlock   uint64 = 9
 			secondEpochFirstBlock uint64 = 10
@@ -106,9 +134,8 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
 			app.IApplicationAddress.String(), epoch1, EpochStatus_ClaimComputed)
 
-		barriers, computed, _, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		computed, _, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
-		s.Require().Contains(barriers, app.ID)
 		s.Require().Contains(computed, app.ID)
 
 		assertStateProof := func(expected, actual *Epoch) {
@@ -122,10 +149,6 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 			s.Equal(expected.HtifTohostProof, actual.HtifTohostProof)
 		}
 
-		s.Equal(epoch0.Index, barriers[app.ID].Index)
-		s.Equal(EpochStatus_ClaimSubmitted, barriers[app.ID].Status)
-		assertStateProof(epoch0, barriers[app.ID])
-
 		s.Equal(epoch1.Index, computed[app.ID].Index)
 		s.Equal(EpochStatus_ClaimComputed, computed[app.ID].Status)
 		assertStateProof(epoch1, computed[app.ID])
@@ -136,7 +159,7 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		err := s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, 100, UniqueHash(), 100)
 		s.Require().NoError(err)
 
-		_, computed, apps, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		computed, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
 		s.Require().Contains(computed, app.ID)
 		s.Equal(EpochStatus_ClaimComputed, computed[app.ID].Status)
@@ -148,7 +171,7 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		app1 := s.createAppWithClaimComputedEpoch()
 		app2 := s.createAppWithClaimComputedEpoch()
 
-		_, computed, apps, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		computed, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
 		s.Len(computed, 2)
 		s.Len(apps, 2)
@@ -158,10 +181,9 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		s.Contains(apps, app2.ID)
 	})
 
-	s.Run("IncludesAcceptedOrSubmittedForMultipleApps", func() {
-		// Create two apps, each with a submitted epoch.
-		// SelectClaimsToSubmitPerApp returns the submit barriers:
-		// accepted, submitted, and staged predecessors.
+	s.Run("SubmittedOnlyAppsHaveNoComputedCandidate", func() {
+		// Submitted epochs have their own observation selector and do not occupy
+		// slots in the computed-claim selector.
 		app1 := s.createAppWithClaimComputedEpoch()
 		app2 := s.createAppWithClaimComputedEpoch()
 
@@ -174,14 +196,13 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		err = s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, app2.ID, 0, txHash2)
 		s.Require().NoError(err)
 
-		acceptedOrSubmitted, _, _, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		computed, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
-		s.Len(acceptedOrSubmitted, 2)
-		s.Contains(acceptedOrSubmitted, app1.ID)
-		s.Contains(acceptedOrSubmitted, app2.ID)
+		s.Empty(computed)
+		s.Empty(apps)
 	})
 
-	s.Run("IncludesStagedPredecessorAsSubmitBarrier", func() {
+	s.Run("StagedPredecessorDoesNotHideComputedCandidate", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		epoch0 := NewEpochBuilder(app.ID).
@@ -212,12 +233,8 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
 			app.IApplicationAddress.String(), epoch1, EpochStatus_ClaimComputed)
 
-		barriers, computed, apps, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		computed, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
-
-		s.Require().Contains(barriers, app.ID)
-		s.Equal(uint64(0), barriers[app.ID].Index)
-		s.Equal(EpochStatus_ClaimStaged, barriers[app.ID].Status)
 
 		s.Require().Contains(computed, app.ID)
 		s.Equal(uint64(1), computed[app.ID].Index)
@@ -230,7 +247,7 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		app1 := s.createAppWithClaimComputedEpoch()
 		app2 := s.createAppWithClaimComputedEpoch()
 
-		_, computed, apps, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		computed, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
 
 		for appID, epoch := range computed {
@@ -267,7 +284,7 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
 			app.IApplicationAddress.String(), epoch, EpochStatus_ClaimComputed)
 
-		_, computed, apps, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		computed, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
 		s.Empty(computed)
 		s.Empty(apps)
@@ -292,7 +309,7 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		err = s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false)
 		s.Require().NoError(err)
 
-		_, computed, apps, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		computed, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
 		s.Empty(computed)
 		s.Empty(apps)
@@ -302,23 +319,22 @@ func (s *ClaimerSuite) TestSelectClaimsToSubmitPerApp() {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		_, _, _, err := s.Repo.SelectClaimsToSubmitPerApp(ctx)
+		_, _, err := s.oldestClaimsFromPages(ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().Error(err)
 	})
 }
 
-func (s *ClaimerSuite) TestSelectClaimsToStagePerApp() {
+func (s *ClaimerSuite) TestSelectClaimsToStagePages() {
 	s.Run("EmptyWhenNoClaimSubmitted", func() {
 		NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
-		accepted, submitted, apps, err := s.Repo.SelectClaimsToStagePerApp(s.Ctx)
+		submitted, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToStagePage)
 		s.Require().NoError(err)
-		s.Empty(accepted)
 		s.Empty(submitted)
 		s.Empty(apps)
 	})
 
-	s.Run("ReturnsPairWhenClaimAccepted", func() {
+	s.Run("AcceptedOnlyAppHasNoStagingCandidate", func() {
 		app := s.createAppWithClaimComputedEpoch()
 
 		// Move to ClaimSubmitted
@@ -330,34 +346,33 @@ func (s *ClaimerSuite) TestSelectClaimsToStagePerApp() {
 		err = s.Repo.UpdateEpochWithAcceptedClaim(s.Ctx, app.ID, 0, nil)
 		s.Require().NoError(err)
 
-		accepted, _, _, err := s.Repo.SelectClaimsToStagePerApp(s.Ctx)
+		submitted, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToStagePage)
 		s.Require().NoError(err)
-		s.Len(accepted, 1)
-		s.Contains(accepted, app.ID)
+		s.Empty(submitted)
+		s.Empty(apps)
 	})
 
 	s.Run("MultipleAppsReturnsSeparateEntries", func() {
 		app1 := s.createAppWithClaimComputedEpoch()
 		app2 := s.createAppWithClaimComputedEpoch()
 
-		// Move both through submitted -> accepted
+		// Submit both applications.
 		for _, app := range []*Application{app1, app2} {
 			txHash := UniqueHash()
 			err := s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, app.ID, 0, txHash)
 			s.Require().NoError(err)
-			err = s.Repo.UpdateEpochWithAcceptedClaim(s.Ctx, app.ID, 0, nil)
-			s.Require().NoError(err)
 		}
 
-		accepted, _, _, err := s.Repo.SelectClaimsToStagePerApp(s.Ctx)
+		submitted, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToStagePage)
 		s.Require().NoError(err)
-		s.Len(accepted, 2)
-		s.Contains(accepted, app1.ID)
-		s.Contains(accepted, app2.ID)
+		want := len([]*Application{app1, app2})
+		s.Len(submitted, want)
+		s.Len(apps, want)
+		s.Contains(submitted, app1.ID)
+		s.Contains(submitted, app2.ID)
 	})
 
-	// Regression guard: verify accepted map keys match the actual
-	// epoch.ApplicationID, not a zero-value from an unscanned field.
+	// Regression guard: map keys must match each epoch's application ID.
 	s.Run("MultiAppMapKeysMatchEpochApplicationIDs", func() {
 		app1 := s.createAppWithClaimComputedEpoch()
 		app2 := s.createAppWithClaimComputedEpoch()
@@ -366,18 +381,11 @@ func (s *ClaimerSuite) TestSelectClaimsToStagePerApp() {
 			txHash := UniqueHash()
 			err := s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, app.ID, 0, txHash)
 			s.Require().NoError(err)
-			err = s.Repo.UpdateEpochWithAcceptedClaim(s.Ctx, app.ID, 0, nil)
-			s.Require().NoError(err)
 		}
 
-		accepted, submitted, apps, err := s.Repo.SelectClaimsToStagePerApp(s.Ctx)
+		submitted, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToStagePage)
 		s.Require().NoError(err)
 
-		for appID, epoch := range accepted {
-			s.NotEqual(int64(0), appID, "accepted map key must not be zero")
-			s.Equal(appID, epoch.ApplicationID,
-				"accepted epoch stored under wrong key")
-		}
 		for appID, epoch := range submitted {
 			s.NotEqual(int64(0), appID, "submitted map key must not be zero")
 			s.Equal(appID, epoch.ApplicationID,
@@ -389,8 +397,8 @@ func (s *ClaimerSuite) TestSelectClaimsToStagePerApp() {
 				"application stored under wrong key")
 		}
 
-		s.Contains(accepted, app1.ID)
-		s.Contains(accepted, app2.ID)
+		s.Contains(submitted, app1.ID)
+		s.Contains(submitted, app2.ID)
 	})
 
 	s.Run("ExcludesPRTApps", func() {
@@ -418,9 +426,8 @@ func (s *ClaimerSuite) TestSelectClaimsToStagePerApp() {
 		err = s.Repo.UpdateEpochWithAcceptedClaim(s.Ctx, app.ID, 0, nil)
 		s.Require().NoError(err)
 
-		accepted, submitted, apps, err := s.Repo.SelectClaimsToStagePerApp(s.Ctx)
+		submitted, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToStagePage)
 		s.Require().NoError(err)
-		s.Empty(accepted)
 		s.Empty(submitted)
 		s.Empty(apps)
 	})
@@ -451,14 +458,13 @@ func (s *ClaimerSuite) TestSelectClaimsToStagePerApp() {
 		err = s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false)
 		s.Require().NoError(err)
 
-		accepted, submitted, apps, err := s.Repo.SelectClaimsToStagePerApp(s.Ctx)
+		submitted, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToStagePage)
 		s.Require().NoError(err)
-		s.Empty(accepted)
 		s.Empty(submitted)
 		s.Empty(apps)
 	})
 
-	s.Run("ReturnsSubmittedMapWithBothEpochStates", func() {
+	s.Run("SubmittedCandidateIsIndependentOfAcceptedHistory", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
 		// Create two epochs with inputs
@@ -496,14 +502,8 @@ func (s *ClaimerSuite) TestSelectClaimsToStagePerApp() {
 		err = s.Repo.UpdateEpochWithSubmittedClaim(s.Ctx, app.ID, 1, txHash1)
 		s.Require().NoError(err)
 
-		accepted, submitted, apps, err := s.Repo.SelectClaimsToStagePerApp(s.Ctx)
+		submitted, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToStagePage)
 		s.Require().NoError(err)
-
-		// accepted contains epoch 0 (newest accepted)
-		s.Len(accepted, 1)
-		s.Contains(accepted, app.ID)
-		s.Equal(uint64(0), accepted[app.ID].Index)
-		s.Equal(EpochStatus_ClaimAccepted, accepted[app.ID].Status)
 
 		// submitted contains epoch 1 (oldest submitted)
 		s.Len(submitted, 1)
@@ -525,9 +525,8 @@ func (s *ClaimerSuite) TestSelectClaimsToStagePerApp() {
 		err = s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, 100, UniqueHash(), 100)
 		s.Require().NoError(err)
 
-		accepted, submitted, apps, err := s.Repo.SelectClaimsToStagePerApp(s.Ctx)
+		submitted, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToStagePage)
 		s.Require().NoError(err)
-		s.Empty(accepted)
 		s.Require().Contains(submitted, app.ID)
 		s.Equal(EpochStatus_ClaimSubmitted, submitted[app.ID].Status)
 		s.Require().Contains(apps, app.ID)
@@ -538,12 +537,12 @@ func (s *ClaimerSuite) TestSelectClaimsToStagePerApp() {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		_, _, _, err := s.Repo.SelectClaimsToStagePerApp(ctx)
+		_, _, err := s.oldestClaimsFromPages(ctx, s.Repo.SelectClaimsToStagePage)
 		s.Require().Error(err)
 	})
 }
 
-func (s *ClaimerSuite) TestSelectClaimsToAcceptPerApp() {
+func (s *ClaimerSuite) TestSelectClaimsToAcceptPages() {
 	s.Run("IncludesForeclosedStagedAppForTerminalization", func() {
 		app := s.createAppWithClaimComputedEpoch()
 		txHash := UniqueHash()
@@ -554,9 +553,8 @@ func (s *ClaimerSuite) TestSelectClaimsToAcceptPerApp() {
 		err = s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, 100, UniqueHash(), 100)
 		s.Require().NoError(err)
 
-		accepted, staged, apps, err := s.Repo.SelectClaimsToAcceptPerApp(s.Ctx)
+		staged, apps, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToAcceptPage)
 		s.Require().NoError(err)
-		s.Empty(accepted)
 		s.Require().Contains(staged, app.ID)
 		s.Equal(EpochStatus_ClaimStaged, staged[app.ID].Status)
 		s.Require().Contains(apps, app.ID)
@@ -564,9 +562,9 @@ func (s *ClaimerSuite) TestSelectClaimsToAcceptPerApp() {
 	})
 }
 
-//nolint:mnd // Explicit epoch and block values define the barrier ordering.
-func (s *ClaimerSuite) TestNewestBarrierFiltersStatusBeforeLimit() {
-	s.Run("PreservesProofsAndForeclosedBarriers", func() {
+//nolint:mnd // Explicit epoch and block values define the candidate ordering.
+func (s *ClaimerSuite) TestOldestClaimFiltersStatusBeforeLimit() {
+	s.Run("PreservesProofsAndForeclosedCandidates", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 		epochs := make([]*Epoch, 3)
 		inputs := make(map[*Epoch][]*Input, len(epochs))
@@ -588,18 +586,19 @@ func (s *ClaimerSuite) TestNewestBarrierFiltersStatusBeforeLimit() {
 		s.Require().NoError(s.Repo.UpdateEpochWithAcceptedClaim(s.Ctx, app.ID, 0, &acceptedTx))
 		s.Require().NoError(s.Repo.UpdateApplicationForeclosure(s.Ctx, app.ID, 100, UniqueHash(), 100))
 
-		submit, _, _, err := s.Repo.SelectClaimsToSubmitPerApp(s.Ctx)
+		submit, _, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToSubmitPage)
 		s.Require().NoError(err)
-		stage, _, _, err := s.Repo.SelectClaimsToStagePerApp(s.Ctx)
+		stage, _, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToStagePage)
 		s.Require().NoError(err)
-		accept, _, _, err := s.Repo.SelectClaimsToAcceptPerApp(s.Ctx)
+		accept, _, err := s.oldestClaimsFromPages(s.Ctx, s.Repo.SelectClaimsToAcceptPage)
 		s.Require().NoError(err)
+		s.Empty(stage, "accepted and staged epochs are not submitted candidates")
 		for _, result := range []struct {
-			barriers map[int64]*Epoch
-			index    uint64
-		}{{submit, 1}, {stage, 0}, {accept, 0}} {
-			s.Require().Contains(result.barriers, app.ID)
-			actual := result.barriers[app.ID]
+			candidates map[int64]*Epoch
+			index      uint64
+		}{{submit, 2}, {accept, 1}} {
+			s.Require().Contains(result.candidates, app.ID)
+			actual := result.candidates[app.ID]
 			expected, err := s.Repo.GetEpoch(s.Ctx, app.Name, result.index)
 			s.Require().NoError(err)
 			s.Equal(expected.Index, actual.Index)
