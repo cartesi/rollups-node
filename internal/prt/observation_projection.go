@@ -40,7 +40,7 @@ func (s *Service) tournamentEventBatch(
 	for _, stored := range matches {
 		projection := *stored
 		matchByHash[stored.IDHash] = &projection
-		if deletedMatchObservationComplete(stored, app.LastTournamentCheckBlock, block) {
+		if deletedMatchObservationComplete(stored, tournament.Snapshot.AsOfBlock, block) {
 			unchangedDeletedMatches[stored.IDHash] = true
 		}
 	}

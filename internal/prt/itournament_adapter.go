@@ -42,7 +42,7 @@ func NewITournamentAdapter(
 	client *ethclient.Client,
 	filter ethutil.Filter,
 ) (TournamentAdapter, error) {
-	tournamentContract, err := itournament.NewITournament(tournamentAddress, client)
+	tournamentContract, err := itournament.NewITournament(tournamentAddress, readOnlyBackend{Client: client})
 	if err != nil {
 		return nil, err
 	}
@@ -367,17 +367,6 @@ func (a *ITournamentAdapterImpl) StructuralEventCounts(opts *bind.CallOpts) (Str
 		}
 	}
 	return counts, nil
-}
-
-func (a *ITournamentAdapterImpl) JoinTournament(
-	opts *bind.TransactOpts, finalState [32]byte, proof [][32]byte,
-	leftNode [32]byte, rightNode [32]byte,
-) (*types.Transaction, error) {
-	return a.tournament.JoinTournament(opts, finalState, proof, leftNode, rightNode)
-}
-
-func (a *ITournamentAdapterImpl) TryRecoveringBond(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return a.tournament.TryRecoveringBond(opts)
 }
 
 var tournamentEventNames = [...]string{

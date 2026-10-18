@@ -9,50 +9,61 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/config/auth"
-	"github.com/cartesi/rollups-node/internal/errutil"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type CreateInfo struct {
-	Config         config.PrtConfig
-	Logger         *slog.Logger
-	Repository     repository.Repository
-	EthClient      EthClientInterface
-	AdapterFactory AdapterFactory
+	TransactOptsFactory ethutil.TransactOptsFactory
+	Config              config.PrtConfig
+	Logger              *slog.Logger
+	Repository          repository.Repository
+	EthClient           EthClientInterface
+	AdapterFactory      AdapterFactory
+	DeliveryBackend     txsender.Backend
 }
 
 type Service struct {
+	observationHardWarnedAt time.Time
 	service.TickServiceTemplate
+	delivery            *delivery
+	pollInterval        time.Duration
+	observerFacts       txsender.BlockRef
+	hardFailureReason   atomic.Pointer[prtFailure]
 	repository          prtRepository
 	client              EthClientInterface
 	adapterFactory      AdapterFactory
 	submissionEnabled   bool
+	publicationReady    atomic.Bool
 	defaultBlock        DefaultBlock
-	submissionTimeout   time.Duration
 	filter              ethutil.Filter
-	txOptsFactory       ethutil.TransactOptsFactory            // Set by Create whenever submission is enabled.
-	pendingTransactions map[int64]pendingTournamentTransaction // application.ID -> pending action
+	txOptsFactory       ethutil.TransactOptsFactory // Set by Create whenever submission is enabled.
 	disputeWarnings     map[common.Address]struct{}
 	zeroStagingWarnings map[int64]struct{}
-	// One active recovery per app. Transaction hashes are lost on restart.
-	rootBondRecoveries map[int64]*rootBondRecovery
-	// Checked payment blocks; discard when publication catches up.
-	paidRootBondObservations map[int64]map[common.Address]uint64
-	observationHealthMu      sync.RWMutex // Ready runs concurrently with the observation loop.
-	observationFailures      map[int64]tournamentObservationFailure
+	observationFailures map[int64]tournamentObservationFailure // Owned only by the observer; Ready does not read it.
+}
 
-	rootBondRecoveryScans  map[int64]*rootBondRecoveryScan
-	failedRootBondPayments map[rootBondRecoveryKey]struct{} // Failed payment pushes only; restart permits another attempt.
+type prtFailure struct{ err error }
+
+func (s *Service) stopPublication(err error) {
+	s.hardFailureReason.CompareAndSwap(nil, &prtFailure{err: err})
+}
+func (s *Service) publicationStopped() bool { return s.hardFailureReason.Load() != nil }
+
+func (s *Service) publicationFailure() error {
+	if reason := s.hardFailureReason.Load(); reason != nil {
+		return reason.err
+	}
+	return fmt.Errorf("%w: PRT protected publication prerequisite failed", txsender.ErrContent)
 }
 
 const PrtConfigKey = "prt"
@@ -71,7 +82,10 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 		return nil, fmt.Errorf("repository on prt service Create is nil")
 	}
 
-	s := &Service{}
+	s := &Service{pollInterval: c.Config.PrtPollingInterval}
+	if s.pollInterval <= 0 {
+		s.pollInterval = time.Minute
+	}
 	tickCfg := &service.TickServiceConfigs{
 		BaseConfigs: service.BaseConfigs{
 			Name:     config.ServicePrt,
@@ -115,7 +129,23 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 
 	s.repository = c.Repository
 
-	nodeConfig, err := s.setupPersistentConfig(ctx, &c.Config)
+	var signer common.Address
+	if c.Config.FeatureClaimSubmissionEnabled {
+		if c.Config.BlockchainHttpRequestTimeout <= 0 {
+			return nil, fmt.Errorf("BlockchainHttpRequestTimeout must be positive")
+		}
+		s.txOptsFactory = c.TransactOptsFactory
+		if s.txOptsFactory == nil {
+			s.txOptsFactory, err = auth.GetPrtTransactOptsFactory(ctx, chainID)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("PRT submission is enabled and requires signer configuration "+
+				"(CARTESI_PRT_AUTH_*); the standalone node always starts PRT: %w", err)
+		}
+		signer = s.txOptsFactory.From()
+		s.Logger.Info("PRT submitter identity", "address", signer)
+	}
+	nodeConfig, err := s.setupPersistentConfig(ctx, &c.Config, c.Repository, signer)
 	if err != nil {
 		return nil, err
 	}
@@ -123,41 +153,22 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	s.client = ethClient
 	s.submissionEnabled = nodeConfig.ClaimSubmissionEnabled
 	s.defaultBlock = nodeConfig.DefaultBlock
+	if s.defaultBlock != DefaultBlock_Finalized {
+		s.Logger.Warn("PRT stores provisional observations; reorg rollback is unsupported", "block_policy", s.defaultBlock)
+	}
 	s.filter = ethutil.Filter{
 		MinChunkSize: ethutil.DefaultMinChunkSize,
 		MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
 		Logger:       s.Logger,
 	}
-	if c.AdapterFactory != nil {
-		s.adapterFactory = c.AdapterFactory
-	} else {
-		concreteClient, ok := ethClient.(*ethclient.Client)
-		if !ok {
-			return nil, fmt.Errorf("EthClient must be *ethclient.Client when AdapterFactory is not provided")
-		}
-		s.adapterFactory = NewDefaultAdapterFactory(concreteClient, s.filter)
-	}
 
-	s.pendingTransactions = map[int64]pendingTournamentTransaction{}
 	s.disputeWarnings = map[common.Address]struct{}{}
 	s.zeroStagingWarnings = map[int64]struct{}{}
-	s.rootBondRecoveries = map[int64]*rootBondRecovery{}
 	s.observationFailures = map[int64]tournamentObservationFailure{}
 
-	if s.submissionEnabled {
-		s.submissionTimeout = c.Config.BlockchainHttpRequestTimeout
-		if s.submissionTimeout == 0 {
-			return nil, fmt.Errorf("BlockchainHttpRequestTimeout must be different from zero")
-		}
-		s.txOptsFactory, err = auth.GetPrtTransactOptsFactory(ctx, chainID)
-		if err != nil {
-			return nil, fmt.Errorf("PRT submission is enabled and requires signer configuration "+
-				"(CARTESI_PRT_AUTH_*); the standalone node always starts PRT: %w", err)
-		}
-		if c.Config.BlockchainLegacyEnabled {
-			s.txOptsFactory = ethutil.WithLegacyFees(s.txOptsFactory, ethClient)
-		}
-		s.Logger.Info("PRT submitter identity", "address", s.txOptsFactory.From())
+	s.delivery, err = newDelivery(ctx, c, s, nodeConfig, chainID)
+	if err != nil {
+		return nil, err
 	}
 
 	s.Logger.Info("Created", "config", c.Config)
@@ -165,135 +176,96 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	return s, nil
 }
 
-// logErrorUnlessShutdown keeps an in-flight shutdown cancellation from being
-// reported as an operational failure. DeadlineExceeded and cancellations while
-// the service is running remain errors.
+// logErrorUnlessShutdown suppresses shutdown cancellations and ordinary waits.
+// Any real failure or expired operation deadline remains visible.
 func (s *Service) logErrorUnlessShutdown(ctx context.Context, message string, err error, args ...any) {
-	if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
+	if txsender.ShutdownOnly(ctx, err, repository.ErrTournamentIntervalStale, txsender.ErrLimit) {
 		return
 	}
 	args = append(args, "error", err)
 	s.Logger.Error(message, args...)
 }
 
-// Tick observes PRT tournaments and maintains their pending actions.
+// Serve runs the PRT observer and publisher independently of Claimer.
+// Temporary publication failures retain the current transaction for the next pass.
+func (s *Service) Serve(ctx context.Context) error {
+	if !s.submissionEnabled {
+		return s.TickServiceTemplate.Serve(ctx)
+	}
+	if s.delivery == nil {
+		return errors.New("PRT delivery is not initialized")
+	}
+	if err := s.waitForObserver(ctx); err != nil {
+		return err
+	}
+	s.publicationReady.Store(true)
+	defer s.publicationReady.Store(false)
+	return s.serveLoops(ctx)
+}
+
+// Tick is the observer loop. The publisher runs independently in Serve.
 func (s *Service) Tick(ctx context.Context) (bool, error) {
-	// Check for shutdown before starting work, consistent with the advancer.
 	if err := ctx.Err(); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return false, nil
 		}
 		return false, err
 	}
-
-	apps, _, err := getObservableApplications(ctx, s.repository)
-	if err != nil {
-		// Only suppress context errors during shutdown; surface real DB errors.
-		if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
-			s.Logger.Debug("Tick interrupted by shutdown", "error", err)
+	if s.delivery == nil {
+		return false, errors.New("PRT delivery is not initialized")
+	}
+	err := s.observe(ctx)
+	if txsender.ShutdownOnly(ctx, err, repository.ErrTournamentIntervalStale, txsender.ErrLimit) {
+		return false, nil
+	}
+	if errors.Is(err, txsender.ErrFinality) || errors.Is(err, txsender.ErrContent) {
+		if !warningDue(s.observationHardWarnedAt) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to get observable applications: %w", err)
+		s.observationHardWarnedAt = time.Now()
 	}
-	s.pruneTournamentObservationFailures(apps)
-
-	// Resolve observation policy once, but only when a path needs it. In
-	// particular, an existing foreclosed recovery attempt does not require finality.
-	observationBlock := sync.OnceValues(func() (uint64, error) {
-		return s.getDefaultBlockNumber(ctx)
-	})
-	// validate each application
-	errs := []error{}
-	for idx := range apps {
-		if err := ctx.Err(); err != nil {
-			if !errors.Is(err, context.Canceled) {
-				errs = append(errs, err)
-			}
-			return false, errors.Join(errs...)
-		}
-		app := apps[idx]
-		// Foreclosed apps still observe tournaments. Only healthy apps also
-		// drain local claims and recover their root tournament bonds.
-		// EVM reader is the sole writer of ForecloseBlock.
-		if app.ForecloseBlock != 0 {
-			if ferr := s.handleForeclosedApp(ctx, app, observationBlock); ferr != nil {
-				if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(ferr) {
-					continue
-				}
-				errs = append(errs, fmt.Errorf("draining foreclosed PRT application %s: %w", app.IApplicationAddress, ferr))
-			}
-			continue
-		}
-		confirmedBlock, err := observationBlock()
-		if err != nil {
-			if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
-				return false, errors.Join(errs...)
-			}
-			errs = append(errs, fmt.Errorf("fetching configured block for application %s: %w", app.IApplicationAddress, err))
-			continue
-		}
-		if err := s.validateApplication(ctx, app, confirmedBlock); err != nil {
-			// During shutdown, in-flight L1 requests see context cancellation.
-			// Suppress these to avoid spurious ERR log entries.
-			if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
-				s.Logger.Debug("Tick interrupted by shutdown",
-					"application", app.IApplicationAddress, "error", err)
-				continue
-			}
-			errs = append(errs, fmt.Errorf("validating PRT application %s: %w", app.IApplicationAddress, err))
-		}
+	if deliveryWaitOnly(err) {
+		s.logDeliveryWait(err)
+		return false, nil
 	}
-	return false, errors.Join(errs...)
+	return false, err
 }
 
-// handleForeclosedApp observes a foreclosed application's tournaments and,
-// while local processing is healthy, drains its epochs to a terminal state.
-//
-// Once the app has ingested its pre-foreclosure sealed epochs and the advancer
-// has processed their inputs, each pre-foreclosure epoch is reconciled read-only
-// against the chain: an epoch whose accepted root result has our commitment
-// becomes CLAIM_ACCEPTED, and a mismatch marks the app DIVERGED (reproducing the
-// on-chain divergence). Every remaining epoch can no longer be accepted once the
-// app is foreclosed, so it is terminalized to CLAIM_FORECLOSED. Join, stage,
-// and accept transactions are not sent. Root bond recovery is independent of
-// consensus foreclosure and local claim reconciliation. A freshly bootstrapped
-// node therefore reaches the same epoch states as a node that ran in real time.
-func (s *Service) handleForeclosedApp(ctx context.Context, app *Application, observationBlock func() (uint64, error)) error {
-	if app.ForecloseBlock == 0 {
-		return nil
+// serveLoops waits for both workers before returning from service shutdown.
+func (s *Service) serveLoops(ctx context.Context) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	observerDone := make(chan error, 1)
+	go func() { observerDone <- s.TickServiceTemplate.Serve(runCtx) }()
+	ticker := time.NewTicker(s.pollInterval)
+	defer ticker.Stop()
+	for {
+		err := s.delivery.tick(runCtx)
+		if deliveryWaitOnly(err) {
+			s.logDeliveryWait(err)
+		} else if err != nil && !s.publicationStopped() {
+			s.delivery.reportPublicationError(runCtx, err)
+		}
+		select {
+		case <-ctx.Done():
+			cancel()
+			return errors.Join(ctx.Err(), <-observerDone)
+		case err := <-observerDone:
+			cancel()
+			return err
+		case <-ticker.C:
+		}
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	mostRecentBlock, observationErr := observationBlock()
-	var epochs []*Epoch
-	var consensus DaveConsensusAdapter
-	if observationErr == nil {
-		epochs, consensus, observationErr = s.observeApplicationTournaments(ctx, app, mostRecentBlock)
-	}
-	if app.Status != ApplicationStatus_OK {
-		return observationErr
-	}
-	if err := ctx.Err(); err != nil {
-		return errors.Join(observationErr, err)
-	}
-	if observationErr != nil {
-		mostRecentBlock = 0 // Maintain or retry an existing attempt; do not discover another root.
-	}
-	// Existing payment maintenance does not depend on a finalized-head read.
-	// A transaction wait or recovery failure must not prevent the database-only
-	// claim drain. Join the errors after both independent operations complete.
-	recoveryErr := s.recoverForeclosedRootBonds(ctx, app, mostRecentBlock)
-	if observationErr != nil || ctx.Err() != nil {
-		return errors.Join(observationErr, recoveryErr, ctx.Err())
-	}
-	return errors.Join(recoveryErr,
-		s.drainForeclosedClaims(ctx, app, epochs, consensus, mostRecentBlock))
 }
 
 func (s *Service) drainForeclosedClaims(
 	ctx context.Context, app *Application, epochs []*Epoch, consensus DaveConsensusAdapter, mostRecentBlock uint64,
 ) error {
+	// Another observer can have committed a newer foreclosure. Absence at our
+	// protected head cannot prove that a claim is no longer acceptable there.
+	if app.ForecloseBlock > mostRecentBlock {
+		return txsender.ErrInconclusive
+	}
 	// Bootstrap-readiness guard. The drain gate below answers "given the
 	// rows currently in the local input table, is there any pre-foreclosure
 	// input still status=NONE?". For a freshly registered PRT app against
@@ -358,32 +330,6 @@ func (s *Service) drainForeclosedClaims(
 	return s.foreclosePendingClaimEpochs(ctx, app)
 }
 
-func (s *Service) recoverForeclosedRootBonds(ctx context.Context, app *Application, observedBlock uint64) error {
-	if !s.submissionEnabled || app.Status != ApplicationStatus_OK ||
-		(observedBlock == 0 && s.rootBondRecoveries[app.ID] == nil) {
-		return nil
-	}
-	mostRecentBlock, err := s.client.BlockNumber(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching latest block for foreclosed app root bond recovery %s: %w",
-			app.IApplicationAddress, err)
-	}
-	blocked, err := s.waitForTournamentTransaction(ctx, app, mostRecentBlock)
-	if err != nil {
-		return fmt.Errorf("checking tournament transaction for foreclosed app %s: %w", app.IApplicationAddress, err)
-	}
-	if blocked {
-		return nil
-	}
-	if err := s.recoverPublishedRootBonds(ctx, app, observedBlock, mostRecentBlock); err != nil {
-		return fmt.Errorf("recovering root bonds for foreclosed app %s: %w", app.IApplicationAddress, err)
-	}
-	return nil
-}
-
-// foreclosePendingClaimEpochs terminalizes remaining pre-foreclosure epochs.
-// The caller must first confirm ingestion and input processing are complete.
-// Epochs with an acceptance transaction stay pending for claim reconciliation.
 func (s *Service) foreclosePendingClaimEpochs(ctx context.Context, app *Application) error {
 	filter := repository.EpochFilter{Status: NonTerminalEpochStatuses()}
 	epochs, _, err := s.repository.ListEpochs(ctx, app.Name, filter, repository.Pagination{}, false)
@@ -421,31 +367,18 @@ func (s *Service) foreclosePendingClaimEpochs(ctx context.Context, app *Applicat
 func (s *Service) setupPersistentConfig(
 	ctx context.Context,
 	c *config.PrtConfig,
+	repo repository.DeliveryRepository,
+	signer common.Address,
 ) (*PersistentConfig, error) {
 	requested := PersistentConfig{
 		DefaultBlock: c.BlockchainDefaultBlock, ChainID: c.BlockchainId,
 		ClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
+		ResolvedSignerAddress:  signer,
 	}
-	if err := requested.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid prt config: %w", err)
+	saved, err := repo.RegisterSubmitter(ctx, PrtConfigKey, requested)
+	if err != nil {
+		return nil, err
 	}
-	config, err := repository.LoadNodeConfig[PersistentConfig](ctx, s.repository, PrtConfigKey)
-	if config == nil && errors.Is(err, repository.ErrNotFound) {
-		nc := NodeConfig[PersistentConfig]{
-			Key:   PrtConfigKey,
-			Value: requested,
-		}
-		s.Logger.Info("Initializing PRT persistent config", "config", nc.Value)
-		config, err = repository.InitializeNodeConfig(ctx, s.repository, &nc)
-	}
-	if err == nil {
-		if err := config.Value.CheckRequested(requested); err != nil {
-			return nil, fmt.Errorf("prt persistent config: %w", err)
-		}
-		s.Logger.Info("PRT persistent config matches requested config", "config", config.Value)
-		return &config.Value, nil
-	}
-
-	s.Logger.Error("could not retrieve persistent config from database", "error", err)
-	return nil, err
+	s.Logger.Info("PRT persistent config matches requested config", "config", saved)
+	return &saved, nil
 }
