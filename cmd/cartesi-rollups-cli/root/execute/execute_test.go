@@ -178,6 +178,7 @@ func outputExecutedLog(t *testing.T, application common.Address, index uint64, o
 
 func setupExecuteRPC(t *testing.T, service *executeRPC) common.Address {
 	t.Helper()
+	config.SetDefaults()
 	rpcServer := rpc.NewServer()
 	require.NoError(t, rpcServer.RegisterName("eth", service))
 	server := httptest.NewServer(rpcServer)

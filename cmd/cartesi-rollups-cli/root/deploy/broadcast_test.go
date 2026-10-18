@@ -57,6 +57,7 @@ func TestDeploymentCLIProcess(t *testing.T) {
 	if os.Getenv(deploymentCLIProcessEnv) != "1" {
 		return
 	}
+	config.SetDefaults()
 	for i, arg := range os.Args {
 		if arg == "--" {
 			Cmd.SetArgs(os.Args[i+1:])

@@ -212,6 +212,7 @@ func (e *refundRevert) ErrorData() any { return e.data }
 
 func setupRPC(t *testing.T, service *refundRPC) common.Address {
 	t.Helper()
+	config.SetDefaults()
 	if service.logs == nil {
 		service.logs = []*types.Log{refundEventLog(t, common.HexToAddress(testApplication), big.NewInt(7), originalInput(t))}
 	}
@@ -423,6 +424,7 @@ func TestCommandDefaultOutputProcess(t *testing.T) {
 	if os.Getenv("CARTESI_TEST_REFUND_OUTPUT_PROCESS") != "1" {
 		return
 	}
+	config.SetDefaults()
 	cmd := newCommand()
 	for i, arg := range os.Args {
 		if arg == "--" {
