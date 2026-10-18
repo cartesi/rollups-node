@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/errutil"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -56,8 +57,9 @@ type EvmReaderRepository interface {
 	UpdateEventLastCheckBlock(ctx context.Context, appIDs []int64, event MonitoredEvent, blockNumber uint64) error
 	GetEventLastCheckBlock(ctx context.Context, appID int64, event MonitoredEvent) (uint64, error)
 
-	InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
-	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
+	RegisterObserver(
+		ctx context.Context, key string, requested config.PersistentChainConfig,
+	) (config.PersistentChainConfig, error)
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 
 	// Input monitor

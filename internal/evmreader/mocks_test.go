@@ -8,6 +8,8 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/config"
+
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
@@ -192,8 +194,8 @@ func newMockRepository() *MockRepository {
 }
 
 func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
-	m.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
-		Return([]byte(`{"DefaultBlock":"LATEST","ChainID":1}`), time.Time{}, time.Time{}, nil)
+	m.On("RegisterObserver", mock.Anything, EvmReaderConfigKey, mock.Anything).
+		Return(config.PersistentChainConfig{DefaultBlock: DefaultBlock_Latest, ChainID: 1}, nil)
 
 	apps := copyApplications(applications)
 	m.On("ListApplications",
@@ -297,6 +299,13 @@ func (m *MockRepository) ListApplications(
 func (m *MockRepository) InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error {
 	args := m.Called(ctx, key, rawJSON)
 	return args.Error(0)
+}
+
+func (m *MockRepository) RegisterObserver(
+	ctx context.Context, key string, requested config.PersistentChainConfig,
+) (config.PersistentChainConfig, error) {
+	args := m.Called(ctx, key, requested)
+	return args.Get(0).(config.PersistentChainConfig), args.Error(1)
 }
 
 func (m *MockRepository) SaveNodeConfigRaw(

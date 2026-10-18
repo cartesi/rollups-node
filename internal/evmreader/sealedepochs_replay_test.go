@@ -4,8 +4,10 @@
 package evmreader
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -47,8 +49,9 @@ func TestSealedEpochTransitionValidatesCompletePageBeforeWrites(t *testing.T) {
 			repo := newMockRepository()
 			dave := newMockDaveConsensus()
 			r := &Service{repository: repo}
-			r.Logger = testLogger(t)
-			app := newDaveAppContracts(nil, dave)
+			var output bytes.Buffer
+			r.Logger = slog.New(slog.NewTextHandler(&output, nil))
+			app := newDaveAppContracts(newMockInputBox(), dave)
 			app.application.LastEpochCheckBlock = block - 1
 			app.application.Status = model.ApplicationStatus_OK
 			events := make([]*idaveconsensus.IDaveConsensusEpochSealed, 0, len(test.indices))
@@ -59,14 +62,19 @@ func TestSealedEpochTransitionValidatesCompletePageBeforeWrites(t *testing.T) {
 				test.change(events[len(events)-1])
 			}
 			dave.On("GetCurrentSealedEpoch", blockRange(block-1, block)).
-				Return(makeSealedEpochResult(0, 0, 0, tournament), nil).Once()
+				Return(makeSealedEpochResult(0, 0, 0, tournament), nil).Twice()
 			dave.On("GetCurrentSealedEpoch", blockRange(block, block+1)).
-				Return(makeSealedEpochResult(3, 0, 0, tournament), nil).Twice()
+				Return(makeSealedEpochResult(3, 0, 0, tournament), nil).Times(4)
 			dave.On("RetrieveSealedEpochs", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 				return opts.Start == block && opts.End != nil && *opts.End == block
-			})).Return(events, nil).Once()
+			})).Return(events, nil).Twice()
 
-			require.Error(t, r.processApplicationSealedEpochs(t.Context(), app, block))
+			require.ErrorIs(t, r.processApplicationSealedEpochs(t.Context(), app, block), errInconclusiveEpochView)
+			output.Reset()
+			require.False(t, r.scanDaveConsensusEpochsAndInputs(t.Context(), []appContracts{app}, block))
+			require.Contains(t, output.String(), "level=WARN")
+			require.Contains(t, output.String(), "Sealed epoch reads disagree; retrying from the saved cursor")
+			require.NotContains(t, output.String(), "level=ERROR")
 			require.Empty(t, repo.Calls, "the entire page must be checked before any repository work")
 			require.Equal(t, block-1, app.application.LastEpochCheckBlock)
 			require.Equal(t, model.ApplicationStatus_OK, app.application.Status)
@@ -220,4 +228,53 @@ func TestSealedEpochReplayRejectsConflictingStoredFields(t *testing.T) {
 			repo.AssertExpectations(t)
 		})
 	}
+}
+
+func TestSealedEpochDisappearingTransitionRetriesWithoutProgress(t *testing.T) {
+	const block uint64 = 150
+	repo := newMockRepository()
+	dave := newMockDaveConsensus()
+	r := &Service{repository: repo}
+	r.Logger = testLogger(t)
+	app := newDaveAppContracts(newMockInputBox(), dave)
+	app.application.LastEpochCheckBlock = block - 1
+	app.application.IInputBoxBlock = 10
+	app.application.Status = model.ApplicationStatus_OK
+	tournament := common.HexToAddress("0x1234")
+	atTransition := blockRange(block, block+1)
+	page := mock.MatchedBy(func(opts *bind.FilterOpts) bool {
+		return opts.Start == block && opts.End != nil && *opts.End == block
+	})
+	dave.On("GetCurrentSealedEpoch", blockRange(block-1, block)).
+		Return(makeSealedEpochResult(0, 0, 0, tournament), nil).Twice()
+	dave.On("GetCurrentSealedEpoch", atTransition).
+		Return(makeSealedEpochResult(1, 0, 0, tournament), nil).Once()
+	// The transition found by the search disappears when its page is read.
+	dave.On("GetCurrentSealedEpoch", atTransition).
+		Return(makeSealedEpochResult(0, 0, 0, tournament), nil).Once()
+	dave.On("RetrieveSealedEpochs", page).Return([]*idaveconsensus.IDaveConsensusEpochSealed{}, nil).Once()
+
+	err := r.processApplicationSealedEpochs(t.Context(), app, block)
+	require.ErrorIs(t, err, errInconclusiveEpochView)
+	require.ErrorContains(t, err, "expected 0, got 0")
+	require.Empty(t, repo.Calls, "a disappearing transition cannot store epochs or advance a cursor")
+	require.Equal(t, block-1, app.application.LastEpochCheckBlock)
+	require.Equal(t, model.ApplicationStatus_OK, app.application.Status)
+
+	// A coherent next tick must recover from the same persisted boundary.
+	dave.On("GetCurrentSealedEpoch", atTransition).
+		Return(makeSealedEpochResult(1, 0, 0, tournament), nil).Twice()
+	dave.On("RetrieveSealedEpochs", page).Return([]*idaveconsensus.IDaveConsensusEpochSealed{
+		makeSealedEpochEvent(1, 0, 0, block, tournament),
+	}, nil).Once()
+	previous := &model.Epoch{Index: 0, LastBlock: 100, Status: model.EpochStatus_Closed}
+	repo.On("GetEpoch", t.Context(), app1Addr.Hex(), uint64(0)).Return(previous, nil).Once()
+	repo.On("UpdateEpochClaimTransactionHash", t.Context(), app1Addr.Hex(), previous).Return(nil).Once()
+	repo.On("GetEpoch", t.Context(), app1Addr.Hex(), uint64(1)).Return(nil, nil).Once()
+	repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, block-1).Return(nil).Once()
+	repo.On("UpdateEventLastCheckBlock", t.Context(), []int64{app.application.ID}, model.MonitoredEvent_EpochSealed, block).
+		Return(nil).Once()
+	require.NoError(t, r.processApplicationSealedEpochs(t.Context(), app, block))
+	repo.AssertExpectations(t)
+	dave.AssertExpectations(t)
 }
