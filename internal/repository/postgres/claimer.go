@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
@@ -18,333 +19,15 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 )
 
-// Retrieve the claim of each application with the smallest index.
-// The query may return either 0 or 1 entries per application.
-//
-// The returned model.Application is partially populated: the SELECT omits
-// LastEpochCheckBlock, LastTournamentCheckBlock, LastForecloseCheckBlock,
-// AccountsDriveProvedBlock, AccountsDriveProvedTransaction, and
-// AccountsDriveMerkleRoot. Callers within the claimer pipeline only need
-// the identity / consensus / status / foreclose-marker fields surfaced here;
-// callers that need the omitted fields must use GetApplication instead.
-func (r *PostgresRepository) selectOldestClaimPerApp(
-	ctx context.Context,
-	tx pgx.Tx,
-	epochStatus model.EpochStatus,
-) (
-	map[int64]*model.Epoch,
-	map[int64]*model.Application,
-	error,
-) {
-	if (epochStatus != model.EpochStatus_ClaimSubmitted) &&
-		(epochStatus != model.EpochStatus_ClaimComputed) &&
-		(epochStatus != model.EpochStatus_ClaimStaged) {
-		return nil, nil, fmt.Errorf("invalid epoch status: %v", epochStatus)
-	}
-
-	// NOTE(mpolitzer): DISTINCT ON is a postgres extension. To implement
-	// this in SQLite there is an alternative using GROUP BY and HAVING
-	// clauses instead.
-	stmt := table.Epoch.SELECT(
-		table.Epoch.ApplicationID,
-		table.Epoch.Index,
-		table.Epoch.FirstBlock,
-		table.Epoch.LastBlock,
-		table.Epoch.MachineHash,
-		table.Epoch.TxBufferDataBlock,
-		table.Epoch.TxBufferProof,
-		table.Epoch.IflagsYDataBlock,
-		table.Epoch.IflagsYProof,
-		table.Epoch.HtifTohostDataBlock,
-		table.Epoch.HtifTohostProof,
-		table.Epoch.ClaimTransactionHash,
-		table.Epoch.Status,
-		table.Epoch.StagedAtBlock,
-		table.Epoch.VirtualIndex,
-		table.Epoch.CreatedAt,
-		table.Epoch.UpdatedAt,
-
-		table.Application.ID,
-		table.Application.Name,
-		table.Application.IapplicationAddress,
-		table.Application.IconsensusAddress,
-		table.Application.IinputboxAddress,
-		table.Application.TemplateHash,
-		table.Application.TemplateURI,
-		table.Application.EpochLength,
-		table.Application.ClaimStagingPeriod,
-		table.Application.WithdrawalGuardian,
-		table.Application.WithdrawalLog2LeavesPerAccount,
-		table.Application.WithdrawalLog2MaxNumOfAccounts,
-		table.Application.WithdrawalAccountsDriveStartIndex,
-		table.Application.WithdrawalOutputBuilder,
-		table.Application.ConsensusType,
-		table.Application.Enabled,
-		table.Application.Status,
-		table.Application.Reason,
-		table.Application.IinputboxBlock,
-		table.Application.LastInputCheckBlock,
-		table.Application.LastOutputCheckBlock,
-		table.Application.ProcessedInputs,
-		table.Application.ForecloseBlock,
-		table.Application.ForecloseTransaction,
-		table.Application.CreatedAt,
-		table.Application.UpdatedAt,
-	).
-		DISTINCT(table.Epoch.ApplicationID).
-		FROM(
-			table.Epoch.
-				INNER_JOIN(
-					table.Application,
-					table.Epoch.ApplicationID.EQ(table.Application.ID),
-				),
-		).
-		WHERE(
-			table.Epoch.Status.EQ(postgres.NewEnumValue(epochStatus.String())).
-				AND(table.Application.Enabled.EQ(postgres.Bool(true))).
-				AND(claimableOrForeclosedApplication()).
-				AND(table.Application.ConsensusType.NOT_EQ(enum.Consensus.Prt)),
-		).
-		ORDER_BY(
-			table.Epoch.ApplicationID,
-			table.Epoch.Index.ASC(),
-		)
-
-	sqlStr, args := stmt.Sql()
-	rows, err := tx.Query(ctx, sqlStr, args...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("querying oldest claim per app (status=%v): %w", epochStatus, err)
-	}
-	defer rows.Close()
-
-	epochs := map[int64]*model.Epoch{}
-	applications := map[int64]*model.Application{}
-	for rows.Next() {
-		var application model.Application
-		var epoch model.Epoch
-		err := rows.Scan(
-			&epoch.ApplicationID,
-			&epoch.Index,
-			&epoch.FirstBlock,
-			&epoch.LastBlock,
-			&epoch.MachineHash,
-			&epoch.TxBufferDataBlock,
-			&epoch.TxBufferProof,
-			&epoch.IflagsYDataBlock,
-			&epoch.IflagsYProof,
-			&epoch.HtifTohostDataBlock,
-			&epoch.HtifTohostProof,
-			&epoch.ClaimTransactionHash,
-			&epoch.Status,
-			&epoch.StagedAtBlock,
-			&epoch.VirtualIndex,
-			&epoch.CreatedAt,
-			&epoch.UpdatedAt,
-
-			&application.ID,
-			&application.Name,
-			&application.IApplicationAddress,
-			&application.IConsensusAddress,
-			&application.IInputBoxAddress,
-			&application.TemplateHash,
-			&application.TemplateURI,
-			&application.EpochLength,
-			&application.ClaimStagingPeriod,
-			&application.WithdrawalConfig.Guardian,
-			&application.WithdrawalConfig.Log2LeavesPerAccount,
-			&application.WithdrawalConfig.Log2MaxNumOfAccounts,
-			&application.WithdrawalConfig.AccountsDriveStartIndex,
-			&application.WithdrawalConfig.WithdrawalOutputBuilder,
-			&application.ConsensusType,
-			&application.Enabled,
-			&application.Status,
-			&application.Reason,
-			&application.IInputBoxBlock,
-			&application.LastInputCheckBlock,
-			&application.LastOutputCheckBlock,
-			&application.ProcessedInputs,
-			&application.ForecloseBlock,
-			&application.ForecloseTransaction,
-			&application.CreatedAt,
-			&application.UpdatedAt,
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("scanning epoch/application row: %w", err)
-		}
-		epochs[application.ID] = &epoch
-		applications[application.ID] = &application
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("iterating oldest claim rows: %w", err)
-	}
-	return epochs, applications, nil
-}
-
-// Retrieve the newest claim barrier of each application.
-func (r *PostgresRepository) selectNewestClaimBarrierPerApp(
-	ctx context.Context,
-	tx pgx.Tx,
-	statuses ...model.EpochStatus,
-) (
-	map[int64]*model.Epoch,
-	error,
-) {
-	if len(statuses) == 0 {
-		return nil, fmt.Errorf("selecting newest claim barrier: no statuses provided")
-	}
-	statusExprs := make([]postgres.Expression, 0, len(statuses))
-	for _, status := range statuses {
-		statusExprs = append(statusExprs, postgres.NewEnumValue(status.String()))
-	}
-
-	// Select one barrier per eligible application through the epoch primary
-	// key. Sorting every historical accepted claim makes this query grow with
-	// the application's full history instead of the number of applications.
-	barrier := postgres.LATERAL(table.Epoch.SELECT(
-		table.Epoch.ApplicationID,
-		table.Epoch.Index,
-		table.Epoch.FirstBlock,
-		table.Epoch.LastBlock,
-		table.Epoch.MachineHash,
-		table.Epoch.TxBufferDataBlock,
-		table.Epoch.TxBufferProof,
-		table.Epoch.IflagsYDataBlock,
-		table.Epoch.IflagsYProof,
-		table.Epoch.HtifTohostDataBlock,
-		table.Epoch.HtifTohostProof,
-		table.Epoch.ClaimTransactionHash,
-		table.Epoch.Status,
-		table.Epoch.StagedAtBlock,
-		table.Epoch.VirtualIndex,
-		table.Epoch.CreatedAt,
-		table.Epoch.UpdatedAt,
-	).WHERE(
-		table.Epoch.ApplicationID.EQ(table.Application.ID).
-			AND(table.Epoch.Status.IN(statusExprs...)),
-	).ORDER_BY(table.Epoch.Index.DESC()).LIMIT(1)).AS("barrier")
-	stmt := postgres.SELECT(barrier.AllColumns()).
-		FROM(table.Application.CROSS_JOIN(barrier)).
-		WHERE(table.Application.Enabled.EQ(postgres.Bool(true)).
-			AND(claimableOrForeclosedApplication()).
-			AND(table.Application.ConsensusType.NOT_EQ(enum.Consensus.Prt)))
-
-	sqlStr, args := stmt.Sql()
-	rows, err := tx.Query(ctx, sqlStr, args...)
-	if err != nil {
-		return nil, fmt.Errorf("querying newest claim barrier per app: %w", err)
-	}
-	defer rows.Close()
-
-	epochs := map[int64]*model.Epoch{}
-	for rows.Next() {
-		var epoch model.Epoch
-		err := rows.Scan(
-			&epoch.ApplicationID,
-			&epoch.Index,
-			&epoch.FirstBlock,
-			&epoch.LastBlock,
-			&epoch.MachineHash,
-			&epoch.TxBufferDataBlock,
-			&epoch.TxBufferProof,
-			&epoch.IflagsYDataBlock,
-			&epoch.IflagsYProof,
-			&epoch.HtifTohostDataBlock,
-			&epoch.HtifTohostProof,
-			&epoch.ClaimTransactionHash,
-			&epoch.Status,
-			&epoch.StagedAtBlock,
-			&epoch.VirtualIndex,
-			&epoch.CreatedAt,
-			&epoch.UpdatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("scanning claim barrier epoch row: %w", err)
-		}
-		epochs[epoch.ApplicationID] = &epoch
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating claim barrier rows: %w", err)
-	}
-	return epochs, nil
-}
-
-func claimableOrForeclosedApplication() postgres.BoolExpression {
-	// Health gate only: a claim-eligible application has node-health OK.
-	// Foreclosure is orthogonal (foreclose_block); a foreclosed-but-healthy
-	// application is still OK and is handled by the caller's drain logic.
-	return table.Application.Status.EQ(enum.ApplicationStatus.Ok)
-}
-
-func (r *PostgresRepository) SelectClaimsToSubmitPerApp(ctx context.Context) (
-	map[int64]*model.Epoch,
-	map[int64]*model.Epoch,
-	map[int64]*model.Application,
-	error,
-) {
-	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel:   pgx.RepeatableRead,
-		AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("beginning read-only transaction for submitted claims: %w", err)
-	}
-	// Read-only tx: rollback releases the snapshot, equivalent to commit.
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	computed, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimComputed)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("selecting oldest computed claim per app: %w", err)
-	}
-
-	barriers, err := r.selectNewestClaimBarrierPerApp(
-		ctx,
-		tx,
-		model.EpochStatus_ClaimAccepted,
-		model.EpochStatus_ClaimSubmitted,
-		model.EpochStatus_ClaimStaged,
-	)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("selecting newest claim barrier per app: %w", err)
-	}
-
-	return barriers, computed, applications, err
-}
-
-func (r *PostgresRepository) SelectClaimsToStagePerApp(ctx context.Context) (
-	map[int64]*model.Epoch,
-	map[int64]*model.Epoch,
-	map[int64]*model.Application,
-	error,
-) {
-	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel:   pgx.RepeatableRead,
-		AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("beginning read-only transaction for accepted claims: %w", err)
-	}
-	// Read-only tx: rollback releases the snapshot, equivalent to commit.
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	submitted, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimSubmitted)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("selecting oldest submitted claim per app: %w", err)
-	}
-
-	accepted, err := r.selectNewestClaimBarrierPerApp(ctx, tx, model.EpochStatus_ClaimAccepted)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("selecting newest accepted claim per app: %w", err)
-	}
-
-	return accepted, submitted, applications, err
-}
-
 func (r *PostgresRepository) UpdateEpochWithSubmittedClaim(
 	ctx context.Context,
 	applicationID int64,
 	index uint64,
 	transactionHash common.Hash,
 ) error {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	updStmt := table.Epoch.
 		UPDATE(
 			table.Epoch.ClaimTransactionHash,
@@ -369,6 +52,61 @@ func (r *PostgresRepository) UpdateEpochWithSubmittedClaim(
 		return fmt.Errorf("executing update for submitted claim (app=%d, index=%d): %w", applicationID, index, err)
 	}
 	if cmd.RowsAffected() == 0 {
+		return repository.ErrNoUpdate
+	}
+	return nil
+}
+
+// RefreshClaimObservation corrects same-content re-inclusion metadata without
+// rolling claim progress back or replacing a concurrent observation.
+func (r *PostgresRepository) RefreshClaimObservation(
+	ctx context.Context, expected *model.Epoch, transactionHash *common.Hash, stagedAtBlock *uint64,
+) error {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
+	if expected == nil || expected.MachineHash == nil || expected.TxBufferDataBlock == nil ||
+		(expected.Status != model.EpochStatus_ClaimSubmitted && expected.Status != model.EpochStatus_ClaimStaged) ||
+		(expected.Status == model.EpochStatus_ClaimStaged && stagedAtBlock == nil) ||
+		(transactionHash != nil && *transactionHash == (common.Hash{})) {
+		return fmt.Errorf("claim observation refresh requires an identified submitted or staged claim")
+	}
+	status := enum.EpochStatus.ClaimSubmitted
+	if expected.Status == model.EpochStatus_ClaimStaged {
+		status = enum.EpochStatus.ClaimStaged
+	}
+	conditions := []postgres.BoolExpression{
+		table.Epoch.ApplicationID.EQ(postgres.Int64(expected.ApplicationID)),
+		table.Epoch.Index.EQ(uint64Expr(expected.Index)),
+		table.Epoch.Status.EQ(status),
+		table.Epoch.LastBlock.EQ(uint64Expr(expected.LastBlock)),
+		table.Epoch.MachineHash.EQ(postgres.Bytea(expected.MachineHash.Bytes())),
+		table.Epoch.TxBufferDataBlock.EQ(postgres.Bytea(expected.TxBufferDataBlock.Bytes())),
+		table.Application.ID.EQ(table.Epoch.ApplicationID),
+		table.Application.ConsensusType.IN(enum.Consensus.Authority, enum.Consensus.Quorum),
+	}
+	if expected.ClaimTransactionHash == nil {
+		conditions = append(conditions, table.Epoch.ClaimTransactionHash.IS_NULL())
+	} else {
+		conditions = append(conditions, table.Epoch.ClaimTransactionHash.EQ(postgres.Bytea(expected.ClaimTransactionHash.Bytes())))
+	}
+	if expected.StagedAtBlock == nil {
+		conditions = append(conditions, table.Epoch.StagedAtBlock.IS_NULL())
+	} else {
+		conditions = append(conditions, table.Epoch.StagedAtBlock.EQ(uint64Expr(*expected.StagedAtBlock)))
+	}
+	stmt := table.Epoch.UPDATE(table.Epoch.ClaimTransactionHash).SET(hashToBytes(transactionHash)).
+		FROM(table.Application).WHERE(postgres.AND(conditions...))
+	if stagedAtBlock != nil {
+		stmt = table.Epoch.UPDATE(table.Epoch.ClaimTransactionHash, table.Epoch.StagedAtBlock).
+			SET(hashToBytes(transactionHash), uint64Expr(*stagedAtBlock)).FROM(table.Application).WHERE(postgres.AND(conditions...))
+	}
+	query, args := stmt.Sql()
+	command, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("refreshing claim observation (app=%d, index=%d): %w", expected.ApplicationID, expected.Index, err)
+	}
+	if command.RowsAffected() == 0 {
 		return repository.ErrNoUpdate
 	}
 	return nil
@@ -406,6 +144,9 @@ func (r *PostgresRepository) UpdateEpochWithAcceptedClaim(
 	index uint64,
 	txHash *common.Hash,
 ) error {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	whereClause := table.Epoch.ApplicationID.EQ(postgres.Int64(applicationID)).
 		AND(table.Epoch.Index.EQ(uint64Expr(index))).
 		AND(table.Epoch.Status.IN(
@@ -452,6 +193,9 @@ func (r *PostgresRepository) UpdateEpochWithForeclosedClaim(
 	applicationID int64,
 	index uint64,
 ) error {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	updStmt := table.Epoch.
 		UPDATE(table.Epoch.Status).
 		SET(postgres.NewEnumValue(model.EpochStatus_ClaimForeclosed.String())).
@@ -492,6 +236,9 @@ func (r *PostgresRepository) RejectEpochAndSetApplicationDiverged(
 	index uint64,
 	reason string,
 ) (repository.RejectEpochAndDivergeResult, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	var result repository.RejectEpochAndDivergeResult
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -587,6 +334,9 @@ func (r *PostgresRepository) UpdateEpochToStaged(
 	index uint64,
 	stagedAtBlock uint64,
 ) error {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	updStmt := table.Epoch.
 		UPDATE(
 			table.Epoch.Status,
@@ -617,80 +367,30 @@ func (r *PostgresRepository) UpdateEpochToStaged(
 	return nil
 }
 
-// UpdateEpochThroughStaging atomically transitions an epoch from
-// CLAIM_COMPUTED → CLAIM_SUBMITTED → CLAIM_STAGED in a single transaction.
-// Used by the Authority/Quorum-deciding fast-path where the submit-tx
-// receipt contains both ClaimSubmitted and ClaimStaged events; the trigger
-// permits both legs and we record both transitions atomically so that a
-// crash between them cannot leave the DB inconsistent with the chain.
-func (r *PostgresRepository) UpdateEpochThroughStaging(
-	ctx context.Context,
-	applicationID int64,
-	index uint64,
-	transactionHash common.Hash,
-	stagedAtBlock uint64,
+// UpdateEpochStagingBlock records same-content re-inclusion without replacing
+// an accepted epoch or a staging observation committed by another writer.
+func (r *PostgresRepository) UpdateEpochStagingBlock(
+	ctx context.Context, applicationID int64, index, expectedOldBlock, newBlock uint64,
 ) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("beginning transaction for through-staging update: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
 
-	submitStmt := table.Epoch.
-		UPDATE(
-			table.Epoch.ClaimTransactionHash,
-			table.Epoch.Status,
-		).
-		SET(
-			transactionHash,
-			postgres.NewEnumValue(model.EpochStatus_ClaimSubmitted.String()),
-		).
-		FROM(
-			table.Application,
-		).
-		WHERE(
-			table.Epoch.ApplicationID.EQ(postgres.Int64(applicationID)).
-				AND(table.Epoch.Index.EQ(uint64Expr(index))).
-				AND(table.Epoch.Status.EQ(
-					postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()))),
-		)
-	sqlStr, args := submitStmt.Sql()
-	cmd, err := tx.Exec(ctx, sqlStr, args...)
+	stmt := table.Epoch.UPDATE(table.Epoch.StagedAtBlock).SET(uint64Expr(newBlock)).FROM(table.Application).WHERE(
+		table.Epoch.ApplicationID.EQ(postgres.Int64(applicationID)).
+			AND(table.Epoch.Index.EQ(uint64Expr(index))).
+			AND(table.Epoch.Status.EQ(enum.EpochStatus.ClaimStaged)).
+			AND(table.Epoch.StagedAtBlock.EQ(uint64Expr(expectedOldBlock))).
+			AND(table.Application.ID.EQ(table.Epoch.ApplicationID)).
+			AND(table.Application.ConsensusType.EQ(enum.Consensus.Prt)))
+	query, args := stmt.Sql()
+	command, err := r.db.Exec(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("executing through-staging submit leg (app=%d, index=%d): %w", applicationID, index, err)
+		return fmt.Errorf("refreshing epoch staging block (app=%d, index=%d): %w", applicationID, index, err)
 	}
-	if cmd.RowsAffected() == 0 {
+	if command.RowsAffected() == 0 {
 		return repository.ErrNoUpdate
 	}
-
-	stageStmt := table.Epoch.
-		UPDATE(
-			table.Epoch.Status,
-			table.Epoch.StagedAtBlock,
-		).
-		SET(
-			postgres.NewEnumValue(model.EpochStatus_ClaimStaged.String()),
-			uint64Expr(stagedAtBlock),
-		).
-		FROM(
-			table.Application,
-		).
-		WHERE(
-			table.Epoch.ApplicationID.EQ(postgres.Int64(applicationID)).
-				AND(table.Epoch.Index.EQ(uint64Expr(index))).
-				AND(table.Epoch.Status.EQ(
-					postgres.NewEnumValue(model.EpochStatus_ClaimSubmitted.String()))),
-		)
-	sqlStr, args = stageStmt.Sql()
-	cmd, err = tx.Exec(ctx, sqlStr, args...)
-	if err != nil {
-		return fmt.Errorf("executing through-staging stage leg (app=%d, index=%d): %w", applicationID, index, err)
-	}
-	if cmd.RowsAffected() == 0 {
-		return repository.ErrNoUpdate
-	}
-
-	return tx.Commit(ctx)
+	return nil
 }
 
 // UpdateEpochReconciledStaged transitions an epoch from CLAIM_COMPUTED to
@@ -704,6 +404,9 @@ func (r *PostgresRepository) UpdateEpochReconciledStaged(
 	index uint64,
 	stagedAtBlock uint64,
 ) error {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	updStmt := table.Epoch.
 		UPDATE(
 			table.Epoch.Status,
@@ -734,38 +437,148 @@ func (r *PostgresRepository) UpdateEpochReconciledStaged(
 	return nil
 }
 
-// SelectClaimsToAcceptPerApp returns, for each Authority/Quorum application
-// with at least one CLAIM_STAGED epoch:
-//   - the oldest CLAIM_STAGED epoch (the next one waiting to be accepted),
-//   - the newest already-accepted epoch (for cross-checks),
-//   - the application row.
-//
-// Used by the claimer's accept stages to drive CLAIM_STAGED → CLAIM_ACCEPTED
-// transitions.
-func (r *PostgresRepository) SelectClaimsToAcceptPerApp(ctx context.Context) (
-	map[int64]*model.Epoch,
-	map[int64]*model.Epoch,
-	map[int64]*model.Application,
-	error,
-) {
-	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{
-		IsoLevel:   pgx.RepeatableRead,
-		AccessMode: pgx.ReadOnly,
-	})
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("beginning read-only transaction for staged claims: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+// selectClaimsPage visits one next application, then reads its oldest row plus
+// a resumed later window. A busy app cannot keep the next app off the next pass.
+func (r *PostgresRepository) selectClaimsPage(
+	ctx context.Context, cursor repository.ClaimCursor, limit uint64, status model.EpochStatus,
+) (repository.ClaimPage, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
 
-	staged, applications, err := r.selectOldestClaimPerApp(ctx, tx, model.EpochStatus_ClaimStaged)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("selecting oldest staged claim per app: %w", err)
+	if cursor.AfterApplicationID < 0 || limit < 2 || limit > math.MaxInt64 {
+		return repository.ClaimPage{}, fmt.Errorf("claim page requires a nonnegative app cursor and a limit of at least two")
 	}
-
-	accepted, err := r.selectNewestClaimBarrierPerApp(ctx, tx, model.EpochStatus_ClaimAccepted)
+	filter := repository.ApplicationFilter{Enabled: new(true),
+		ConsensusTypes: []model.Consensus{model.Consensus_Authority, model.Consensus_Quorum}}
+	// Rotate over applications with work in this source. Observers keep every
+	// health status; publisher cursors exclude applications that cannot send.
+	next, err := r.nextClaimApplication(ctx, cursor.AfterApplicationID, status, cursor.HealthyOnly)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("selecting newest accepted claim per app: %w", err)
+		return repository.ClaimPage{}, err
 	}
+	if next == 0 && cursor.AfterApplicationID != 0 {
+		next, err = r.nextClaimApplication(ctx, 0, status, cursor.HealthyOnly)
+		if err != nil {
+			return repository.ClaimPage{}, err
+		}
+	}
+	if next == 0 {
+		return repository.ClaimPage{}, nil
+	}
+	apps, err := r.ListApplicationsByID(ctx, filter, next-1, next, 1)
+	if err != nil || len(apps) == 0 {
+		// Deletion or disabling between these reads simply leaves this pass empty.
+		return repository.ClaimPage{ApplicationID: next}, err
+	}
+	app := apps[0]
+	page := repository.ClaimPage{ApplicationID: app.ID}
+	tx, err := beginReadTx(ctx, r.db)
+	if err != nil {
+		return page, err
+	}
+	defer rollbackDeliveryTx(tx)
+	oldest, err := claimWindowRows(ctx, tx, app.ID, status, nil, 1)
+	if err != nil {
+		return page, err
+	}
+	if len(oldest) == 0 {
+		return page, nil
+	}
+	page.Work = append(page.Work, repository.ClaimWork{Application: app, Epoch: oldest[0]})
+	after := oldest[0].Index
+	if saved, ok := cursor.Epochs[app.ID]; ok && saved > after {
+		after = saved
+	}
+	later, err := claimWindowRows(ctx, tx, app.ID, status, &after, int64(limit))
+	if err != nil {
+		return repository.ClaimPage{}, err
+	}
+	if uint64(len(later)) >= limit {
+		later = later[:limit-1]
+		page.NextEpoch = new(later[len(later)-1].Index)
+	}
+	for _, epoch := range later {
+		page.Work = append(page.Work, repository.ClaimWork{Application: app, Epoch: epoch})
+	}
+	return page, nil
+}
 
-	return accepted, staged, applications, err
+func (r *PostgresRepository) nextClaimApplication(
+	ctx context.Context, after int64, status model.EpochStatus, healthyOnly bool,
+) (int64, error) {
+	pending := table.Epoch.SELECT(table.Epoch.ApplicationID).WHERE(table.Epoch.ApplicationID.EQ(table.Application.ID).
+		AND(table.Epoch.Status.EQ(postgres.NewEnumValue(status.String()))))
+	conditions := []postgres.BoolExpression{
+		table.Application.Enabled.EQ(postgres.Bool(true)),
+		table.Application.ConsensusType.IN(enum.Consensus.Authority, enum.Consensus.Quorum),
+		table.Application.ID.GT(postgres.Int64(after)),
+		postgres.EXISTS(pending),
+	}
+	if healthyOnly {
+		conditions = append(conditions, table.Application.Status.EQ(enum.ApplicationStatus.Ok),
+			table.Application.ForecloseBlock.EQ(uint64Expr(0)))
+	}
+	stmt := table.Application.SELECT(table.Application.ID).WHERE(postgres.AND(conditions...)).
+		ORDER_BY(table.Application.ID.ASC()).LIMIT(1)
+	query, args := stmt.Sql()
+	var id int64
+	if err := r.db.QueryRow(ctx, query, args...).Scan(&id); errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	} else if err != nil {
+		return 0, fmt.Errorf("selecting next claim application: %w", err)
+	}
+	return id, nil
+}
+
+func claimWindowRows(
+	ctx context.Context, tx pgx.Tx, appID int64, status model.EpochStatus, after *uint64, limit int64,
+) ([]*model.Epoch, error) {
+	conditions := []postgres.BoolExpression{table.Epoch.ApplicationID.EQ(postgres.Int64(appID)),
+		table.Epoch.Status.EQ(postgres.NewEnumValue(status.String()))}
+	if after != nil {
+		conditions = append(conditions, table.Epoch.Index.GT(uint64Expr(*after)))
+	}
+	stmt := table.Epoch.SELECT(table.Epoch.ApplicationID, table.Epoch.Index, table.Epoch.FirstBlock, table.Epoch.LastBlock,
+		table.Epoch.MachineHash, table.Epoch.TxBufferDataBlock, table.Epoch.TxBufferProof,
+		table.Epoch.IflagsYDataBlock, table.Epoch.IflagsYProof, table.Epoch.HtifTohostDataBlock,
+		table.Epoch.HtifTohostProof, table.Epoch.ClaimTransactionHash, table.Epoch.Status,
+		table.Epoch.StagedAtBlock, table.Epoch.VirtualIndex, table.Epoch.CreatedAt, table.Epoch.UpdatedAt).
+		WHERE(postgres.AND(conditions...)).ORDER_BY(table.Epoch.Index.ASC()).LIMIT(limit)
+	query, args := stmt.Sql()
+	rows, err := tx.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("reading claim window for app %d: %w", appID, err)
+	}
+	defer rows.Close()
+	var result []*model.Epoch
+	for rows.Next() {
+		epoch := new(model.Epoch)
+		if err := rows.Scan(&epoch.ApplicationID, &epoch.Index, &epoch.FirstBlock, &epoch.LastBlock,
+			&epoch.MachineHash, &epoch.TxBufferDataBlock, &epoch.TxBufferProof,
+			&epoch.IflagsYDataBlock, &epoch.IflagsYProof, &epoch.HtifTohostDataBlock, &epoch.HtifTohostProof,
+			&epoch.ClaimTransactionHash, &epoch.Status, &epoch.StagedAtBlock, &epoch.VirtualIndex,
+			&epoch.CreatedAt, &epoch.UpdatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, epoch)
+	}
+	return result, rows.Err()
+}
+
+func (r *PostgresRepository) SelectClaimsToSubmitPage(
+	ctx context.Context, cursor repository.ClaimCursor, limit uint64,
+) (repository.ClaimPage, error) {
+	return r.selectClaimsPage(ctx, cursor, limit, model.EpochStatus_ClaimComputed)
+}
+
+func (r *PostgresRepository) SelectClaimsToStagePage(
+	ctx context.Context, cursor repository.ClaimCursor, limit uint64,
+) (repository.ClaimPage, error) {
+	return r.selectClaimsPage(ctx, cursor, limit, model.EpochStatus_ClaimSubmitted)
+}
+
+func (r *PostgresRepository) SelectClaimsToAcceptPage(
+	ctx context.Context, cursor repository.ClaimCursor, limit uint64,
+) (repository.ClaimPage, error) {
+	return r.selectClaimsPage(ctx, cursor, limit, model.EpochStatus_ClaimStaged)
 }

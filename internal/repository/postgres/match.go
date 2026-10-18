@@ -52,6 +52,9 @@ func (r *PostgresRepository) GetMatch(
 func (r *PostgresRepository) ListMatches(
 	ctx context.Context, nameOrAddress string, f repository.MatchFilter, p repository.Pagination, descending bool,
 ) ([]*model.Match, uint64, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	if p.Limit > math.MaxInt64 || p.Offset > math.MaxInt64 {
 		return nil, 0, fmt.Errorf("pagination exceeds PostgreSQL integer range")
 	}

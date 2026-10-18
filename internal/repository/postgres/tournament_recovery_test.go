@@ -98,7 +98,8 @@ func TestListRecoverableRootBondsFiltersPublishedOwnedRoots(t *testing.T) {
 			append(append([]repository.RootBondRecoveryCandidate{}, want...), newer)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := r.ListRecoverableRootBonds(t.Context(), test.appID, test.claimer, test.observed, nil, math.MaxUint64, 10)
+			got, err := r.ListRecoverableRootBonds(t.Context(), test.appID, test.claimer,
+				test.observed, nil, math.MaxUint64, 10)
 			require.NoError(t, err)
 			require.Equal(t, test.want, got)
 		})
@@ -122,7 +123,8 @@ func TestListRecoverableRootBondsExcludesInnerTournament(t *testing.T) {
 	}
 	require.NoError(t, r.StoreTournamentEvents(t.Context(), app.ID,
 		[]*repository.TournamentEventBatch{{Tournament: child}}, recoveryObservationBlock))
-	got, err := r.ListRecoverableRootBonds(t.Context(), app.ID, owner, recoveryObservationBlock, nil, math.MaxUint64, 10)
+	got, err := r.ListRecoverableRootBonds(t.Context(), app.ID, owner,
+		recoveryObservationBlock, nil, math.MaxUint64, 10)
 	require.NoError(t, err)
 	require.Empty(t, got)
 }

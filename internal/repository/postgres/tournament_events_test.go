@@ -35,8 +35,11 @@ func TestTournamentEventWindowLocksApplicationBeforeChildren(t *testing.T) {
 		return &PostgresRepository{db: pool}
 	}
 	writer, deleter := newRepository(), newRepository()
+	registerDeliveryTest(t, writer, repotest.UniqueAddress())
 	app := repotest.NewApplicationBuilder().WithConsensus(Consensus_PRT).WithEnabled(false).Create(ctx, t, writer)
+	root := repotest.NewTournamentBuilder(app.ID).Build()
 	epoch := repotest.NewEpochBuilder(app.ID).WithStatus(EpochStatus_Closed).WithInputBounds(0, 0).Build()
+	epoch.TournamentAddress = &root.Address
 	require.NoError(t, writer.CreateEpochsAndInputs(ctx, app.Name, map[*Epoch][]*Input{epoch: {}}, 10))
 	var writerPID, deleterPID int32
 	require.NoError(t, writer.db.QueryRow(ctx, "SELECT pg_backend_pid()").Scan(&writerPID))
@@ -62,9 +65,9 @@ func TestTournamentEventWindowLocksApplicationBeforeChildren(t *testing.T) {
 
 	stored := make(chan error, 1)
 	go func() {
-		batch := &repository.TournamentEventBatch{Tournament: repotest.NewTournamentBuilder(app.ID).Build()}
+		batch := &repository.TournamentEventBatch{Tournament: root}
 		batch.Tournament.Snapshot.AsOfBlock = 100
-		stored <- writer.StoreTournamentEvents(ctx, app.ID, []*repository.TournamentEventBatch{batch}, 100)
+		stored <- writer.StoreTournamentInterval(ctx, app.ID, nil, []*repository.TournamentEventBatch{batch})
 	}()
 	// The epoch lock pauses the first projection's foreign-key check. The
 	// writer must already hold the application lock before it reaches here.
@@ -79,11 +82,11 @@ func TestTournamentEventWindowLocksApplicationBeforeChildren(t *testing.T) {
 	for _, query := range []string{"SELECT count(*) FROM application", "SELECT count(*) FROM epoch", "SELECT count(*) FROM tournaments"} {
 		var count int
 		require.NoError(t, writer.db.QueryRow(ctx, query).Scan(&count))
-		require.Zero(t, count, "deletion must remove the complete committed projection")
+		require.Zero(t, count, "deletion must cascade only after the complete observation commits")
 	}
 }
 
-func TestTournamentEventWindowIsAtomic(t *testing.T) {
+func TestTournamentIntervalExistingParentRollsBackLaterFailures(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		fault func([]*repository.TournamentEventBatch)
@@ -98,7 +101,7 @@ func TestTournamentEventWindowIsAtomic(t *testing.T) {
 			commitment.TournamentAddress = repotest.UniqueAddress()
 			batches[1].Commitments = []*Commitment{&commitment}
 		}},
-		{name: "last root event", fault: func(batches []*repository.TournamentEventBatch) {
+		{name: "last child event", fault: func(batches []*repository.TournamentEventBatch) {
 			last := batches[len(batches)-1]
 			invalid := repotest.NewMatchBuilder(last.Tournament.ApplicationID).
 				WithEpochIndex(last.Tournament.EpochIndex).WithTournamentAddress(last.Tournament.Address).Build()
@@ -146,21 +149,22 @@ func TestTournamentEventWindowIsAtomic(t *testing.T) {
 				one.Snapshot.AsOfBlock = 100
 				two.Snapshot.AsOfBlock = 100
 				match.Snapshot.AsOfBlock = 100
+				one.BlockNumber, two.BlockNumber, match.BlockNumber = 100, 100, 100
 				return &repository.TournamentEventBatch{Tournament: tournament,
 					Commitments: []*Commitment{one, two}, Matches: []*Match{match}}
 			}
 			parent := makeBatch(&updatedRoot)
 			child := repotest.NewTournamentBuilder(app.ID).WithLevel(1).
 				WithParent(root.Address, parent.Matches[0].IDHash).Build()
-			secondRoot := repotest.NewTournamentBuilder(app.ID).WithEpochIndex(1).Build()
-			good := []*repository.TournamentEventBatch{parent, makeBatch(child), makeBatch(secondRoot)}
+			child.StartInstant = child.CreationEvent.BlockNumber
+			good := []*repository.TournamentEventBatch{parent, makeBatch(child)}
 			bad := make([]*repository.TournamentEventBatch, len(good))
 			for i, batch := range good {
 				batchCopy := *batch
 				bad[i] = &batchCopy
 			}
 			test.fault(bad)
-			require.Error(t, r.StoreTournamentEvents(t.Context(), app.ID, bad, 100))
+			require.Error(t, r.StoreTournamentInterval(t.Context(), app.ID, new(uint64(50)), bad))
 			storedRoot, err := r.GetTournament(t.Context(), app.Name, root.Address.Hex())
 			require.NoError(t, err)
 			require.Equal(t, root.Snapshot, storedRoot.Snapshot, "projection update must roll back with the last batch")
@@ -179,7 +183,7 @@ func TestTournamentEventWindowIsAtomic(t *testing.T) {
 				require.Equal(t, target.count, count, target.query)
 			}
 
-			require.NoError(t, r.StoreTournamentEvents(t.Context(), app.ID, good, 100))
+			require.NoError(t, r.StoreTournamentInterval(t.Context(), app.ID, new(uint64(50)), good))
 			storedApp, err = r.GetApplication(t.Context(), app.Name)
 			require.NoError(t, err)
 			require.Equal(t, uint64(100), storedApp.LastTournamentCheckBlock)

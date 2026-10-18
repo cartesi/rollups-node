@@ -33,6 +33,9 @@ func (r *PostgresRepository) CreateCommitment(ctx context.Context, nameOrAddress
 func (r *PostgresRepository) GetCommitment(
 	ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string, commitmentHex string,
 ) (*Commitment, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	sel := table.Commitments.SELECT(commitmentColumns, table.Commitments.CreatedAt, table.Commitments.UpdatedAt).
 		FROM(table.Commitments.INNER_JOIN(table.Application, table.Commitments.ApplicationID.EQ(table.Application.ID))).
 		WHERE(getWhereClauseFromNameOrAddress(nameOrAddress).AND(
@@ -51,6 +54,9 @@ func (r *PostgresRepository) GetCommitment(
 func (r *PostgresRepository) ListCommitments(
 	ctx context.Context, nameOrAddress string, f repository.CommitmentFilter, p repository.Pagination, descending bool,
 ) ([]*Commitment, uint64, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	if p.Limit > math.MaxInt64 || p.Offset > math.MaxInt64 {
 		return nil, 0, fmt.Errorf("pagination exceeds PostgreSQL integer range")
 	}
