@@ -35,13 +35,12 @@ func TestVerifyClaimOutputsMismatch(t *testing.T) {
 	claim.StagedOutputsMerkleRoot = common.HexToHash("0xdeadbeef")
 	b.On("getClaimStatus", mock.Anything, app, currEpoch, endBlock).
 		Return(claim, nil).Once()
-	// No acceptClaimOnBlockchain call — mismatch trips before broadcast.
+	// A mismatched finalized root produces no accept candidate.
 	r.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 		Return(nil).Once()
 
-	_, err := m.acceptStagedClaimsAndIssueAcceptTx(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
+	_, err := m.observeStagedClaims(context.Background(), makeEpochMap(currEpoch), makeApplicationMap(app), endBlock)
 	assert.Error(t, err, "chain_claim_outputs_mismatch must surface as an error")
-	assert.Equal(t, 0, len(m.acceptsInFlight))
 }
 
 func TestRejectEpochAndSetApplicationDiverged_MirrorsAppliedWrites(t *testing.T) {
