@@ -39,7 +39,7 @@ func TestResultPublicationMakesProgressWithContinuousObserverLag(t *testing.T) {
 		// Bind every result read to the block that was actually published. A
 		// read at the moving configured head cannot establish this checkpoint.
 		f.expectResultBoundarySnapshot(epoch, snapshot, published)
-		require.NoError(t, f.s.validateApplication(t.Context(), f.app, configured))
+		require.NoError(t, f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(published)))
 		require.Equal(t, published, f.app.LastTournamentCheckBlock)
 		require.Equal(t, published, tournament.Snapshot.AsOfBlock)
 		require.Less(t, f.app.LastTournamentCheckBlock, configured, "the observer never catches the configured head")
@@ -54,7 +54,7 @@ func TestResultPublicationMakesProgressWithContinuousObserverLag(t *testing.T) {
 			require.Empty(t, stageWriteCoverage, "block 99 must not publish the stage from block 100")
 		}
 	}
+	require.Nil(t, f.s.delivery.sender, "observation never needs a publication owner")
 	f.client.AssertNotCalled(t, "BlockNumber", mock.Anything)
 	f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	require.Empty(t, f.s.pendingTransactions, "reader mode must not send transactions")
 }

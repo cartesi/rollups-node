@@ -5,6 +5,7 @@ package prt
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"math/big"
@@ -13,8 +14,8 @@ import (
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -40,7 +41,8 @@ func newObserverCheckpointFixture(t *testing.T) *observerCheckpointFixture {
 	f.app.LastTournamentCheckBlock = 50
 	f.app.LastEpochCheckBlock = 100
 	s.adapterFactory, s.client = f.factory, f.client
-	f.factory.On("CreateDaveConsensusAdapter", f.app.IConsensusAddress).Return(f.consensus, nil)
+	expectNumericWindowHeaders(f.client)
+	f.factory.On("CreateDaveConsensusAdapter", f.app.IConsensusAddress).Return(f.consensus, nil).Maybe()
 	t.Cleanup(func() {
 		f.repo.AssertExpectations(t)
 		f.factory.AssertExpectations(t)
@@ -48,6 +50,19 @@ func newObserverCheckpointFixture(t *testing.T) *observerCheckpointFixture {
 		f.client.AssertExpectations(t)
 	})
 	return f
+}
+
+func expectNumericWindowHeaders(client *ethClientMock) {
+	client.On("HeaderByNumber", mock.Anything,
+		mock.MatchedBy(func(block *big.Int) bool { return block != nil && block.Sign() >= 0 })).
+		Return(func(_ context.Context, block *big.Int) *types.Header {
+			return &types.Header{Number: new(big.Int).Set(block)}
+		}, nil).Maybe()
+}
+
+func observerFacts(block uint64) txsender.BlockRef {
+	header := &types.Header{Number: new(big.Int).SetUint64(block)}
+	return txsender.BlockRef{Number: block, Hash: header.Hash()}
 }
 
 func (f *observerCheckpointFixture) epochs(epochs ...*Epoch) {
@@ -68,9 +83,40 @@ func (f *observerCheckpointFixture) tournament(
 	epoch *Epoch, address common.Address, level, levels, finish, scanEnd uint64, events *TournamentEvents, scanError error,
 ) *Tournament {
 	f.t.Helper()
+	previous := f.app.LastTournamentCheckBlock
+	var old *Tournament
+	for _, known := range f.repo.storedTournaments {
+		if known.Address == address {
+			old = known
+			break
+		}
+	}
+	if committed := f.repo.committedTournaments[address]; committed != nil {
+		old = committed
+	}
+	if old != nil {
+		previous = old.Snapshot.AsOfBlock
+	}
 	tournament := &Tournament{ApplicationID: f.app.ID, EpochIndex: epoch.Index, Address: address,
-		Level: level, MaxLevel: levels, StartInstant: epoch.LastBlock, Snapshot: TournamentSnapshot{FinishedAtBlock: finish}}
+		Level: level, MaxLevel: levels, StartInstant: epoch.LastBlock,
+		Snapshot: TournamentSnapshot{FinishedAtBlock: finish, AsOfBlock: previous}}
+	if old != nil {
+		tournament.ParentTournamentAddress = old.ParentTournamentAddress
+		tournament.ParentMatchIDHash = old.ParentMatchIDHash
+		tournament.CreationEvent = old.CreationEvent
+	}
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), address.Hex()).Return(tournament, nil).Once()
+	replaced := false
+	for i, known := range f.repo.storedTournaments {
+		if known.Address == address {
+			f.repo.storedTournaments[i] = tournament
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		f.repo.storedTournaments = append(f.repo.storedTournaments, tournament)
+	}
 	adapter := &tournamentAdapterMock{}
 	f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()
 	kind := TournamentKindNonLeaf
@@ -97,19 +143,13 @@ func (f *observerCheckpointFixture) tournament(
 	}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, mock.MatchedBy(resultCallOptsAtBlock(scanEnd)), TournamentLevel(level), state)
 	end := scanEnd
-	start := max(epoch.LastBlock, f.app.LastTournamentCheckBlock+1)
+	start := max(epoch.LastBlock, tournament.Snapshot.AsOfBlock+1)
 	if start <= end {
 		adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 			return opts != nil && opts.Context != nil && opts.Start == start && opts.End != nil && *opts.End == end
 		})).Return(events, scanError).Once()
 	}
 	if scanError == nil {
-		if start > tournament.StartInstant {
-			adapter.On("StructuralEventCounts", mock.MatchedBy(resultCallOptsAtBlock(start-1))).
-				Return(zeroStructuralEventCounts(), nil).Once()
-			adapter.On("BondRecovery", mock.MatchedBy(resultCallOptsAtBlock(start-1))).
-				Return(canonicalBondRecovery(BondDispositionTournamentRunning, common.Address{}, 0), nil).Once()
-		}
 		adapter.On("StructuralEventCounts", mock.MatchedBy(resultCallOptsAtBlock(end))).
 			Return(structuralCountsForEvents(events), nil).Once()
 		f.emptyParticipants(epoch, address)
@@ -158,18 +198,34 @@ func (f *observerCheckpointFixture) children(epoch *Epoch, parent *Tournament, c
 		child.ParentTournamentAddress = &parent.Address
 		child.ParentMatchIDHash = new(common.HexToHash("0xabc"))
 	}
-	f.repo.On("ListTournaments", mock.Anything, f.app.Name, repository.TournamentFilter{
-		EpochIndex: &epoch.Index, ParentTournamentAddress: &parent.Address, Level: new(parent.Level + 1),
-	}, repository.Pagination{}, false).Return(children, uint64(len(children)), nil).Once()
+
+	for _, value := range append([]*Tournament{parent}, children...) {
+		found := false
+		for _, known := range f.repo.storedTournaments {
+			if known.Address == value.Address {
+				found = true
+				break
+			}
+		}
+		if !found {
+			f.repo.storedTournaments = append(f.repo.storedTournaments, value)
+		}
+	}
+
 }
 
 func (f *observerCheckpointFixture) acceptance(epoch *Epoch, tournament *Tournament, writeError error) {
 	f.t.Helper()
+	observed := *tournament
+	observed.Snapshot.AsOfBlock = 100
+	tournament = &observed
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
 		Return(tournament, nil).Once()
-	log := types.Log{Address: f.app.IConsensusAddress, TxHash: *epoch.ClaimTransactionHash, BlockNumber: 100}
+	log := types.Log{Address: f.app.IConsensusAddress, TxHash: *epoch.ClaimTransactionHash,
+		BlockNumber: 100, BlockHash: observerFacts(100).Hash}
 	receipt := &types.Receipt{TxHash: *epoch.ClaimTransactionHash, BlockNumber: big.NewInt(100),
-		Status: types.ReceiptStatusSuccessful, Logs: []*types.Log{&log}}
+		BlockHash: log.BlockHash, Status: types.ReceiptStatusSuccessful, Logs: []*types.Log{&log}}
+	expectNumericWindowHeaders(f.client)
 	f.client.On("TransactionReceipt", mock.Anything, *epoch.ClaimTransactionHash).Return(receipt, nil).Once()
 	f.consensus.On("ParseEpochSealed", log).Return(&idaveconsensus.IDaveConsensusEpochSealed{
 		EpochNumber: new(big.Int).SetUint64(epoch.Index + 1), InitialMachineStateHash: *epoch.MachineHash,
@@ -187,42 +243,30 @@ func (f *observerCheckpointFixture) unaccepted(epoch *Epoch, finish uint64) {
 		}}, nil).Once()
 }
 
-func TestObserverCheckpointCommitsAllRootsAndChildren(t *testing.T) {
+func TestObserverCheckpointCommitsAllStoredRootsAndChildrenIndependently(t *testing.T) {
 	f := newObserverCheckpointFixture(t)
 	first, second := checkpointEpoch(0, "0x100"), checkpointEpoch(1, "0x200")
 	first.ClaimTransactionHash = new(common.HexToHash("0x900"))
 	f.epochs(first, second)
 	f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(2), nil).Once()
-	childAddress := common.HexToAddress("0x101")
-	childEpoch := *first
-	childEpoch.LastBlock = 60 // The child is created inside the parent scan window, 51..100.
-	parentEvents := &TournamentEvents{NewInnerTournament: []*itournament.ITournamentNewInnerTournament{{
-		ChildTournament: childAddress, MatchIdHash: common.HexToHash("0xabc"),
-		Raw: types.Log{BlockNumber: childEpoch.LastBlock},
-	}}, PartialBondRefund: []*itournament.ITournamentPartialBondRefund{{Value: new(big.Int)}}}
-	parent := f.tournament(first, *first.TournamentAddress, 0, 2, 90, 100, parentEvents, nil)
-	child := f.tournament(&childEpoch, childAddress, 1, 2, 88, 100, &TournamentEvents{}, nil)
+	parent := f.tournament(first, *first.TournamentAddress, 0, 2, 90, 100, &TournamentEvents{}, nil)
+	child := f.tournament(first, common.HexToAddress("0x101"), 1, 2, 88, 100, &TournamentEvents{}, nil)
 	f.children(first, parent, child)
 	secondRoot := f.tournament(second, *second.TournamentAddress, 0, 2, 95, 100, &TournamentEvents{}, nil)
 	lastChild := f.tournament(second, common.HexToAddress("0x201"), 1, 2, 89, 100, &TournamentEvents{}, nil)
 	f.children(second, secondRoot, lastChild)
-	f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID,
-		mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool {
-			if len(batches) != 4 {
-				return false
-			}
-			for i, expected := range []*Tournament{parent, child, secondRoot, lastChild} {
-				if batches[i].Tournament.Address != expected.Address {
-					return false
-				}
-			}
-			return true
-		}), uint64(100)).Return(nil).Once()
+	var committed []common.Address
+	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, uint64(100)).Run(func(args mock.Arguments) {
+		batches := args.Get(2).([]*repository.TournamentEventBatch)
+		require.Len(t, batches, 1)
+		committed = append(committed, batches[0].Tournament.Address)
+	}).Return(nil).Times(4)
 	f.acceptance(first, parent, nil)
 	f.unaccepted(second, 95)
-	deferActions, err := f.s.checkEpochs(t.Context(), f.app, 100)
+	deferred, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
 	require.NoError(t, err)
-	require.False(t, deferActions)
+	require.False(t, deferred)
+	require.ElementsMatch(t, []common.Address{parent.Address, child.Address, secondRoot.Address, lastChild.Address}, committed)
 	require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 }
 
@@ -238,12 +282,12 @@ func TestObserverCheckpointKeepsFinishedSubtreesCurrent(t *testing.T) {
 			parent := f.tournament(epoch, *epoch.TournamentAddress, 0, 2, finish, 100, &TournamentEvents{}, nil)
 			child := f.tournament(epoch, common.HexToAddress("0x101"), 1, 2, finish, 100, &TournamentEvents{}, nil)
 			f.children(epoch, parent, child)
-			f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID,
+			f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,
 				mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool {
-					return len(batches) == 2
-				}), uint64(100)).Return(nil).Once()
+					return len(batches) == 1
+				}), uint64(100)).Return(nil).Twice()
 			f.unaccepted(epoch, finish)
-			_, err := f.s.checkEpochs(t.Context(), f.app, 100)
+			_, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
 			require.NoError(t, err)
 			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 			finishedLogs := strings.Count(output.String(), "Found finished tournament")
@@ -300,61 +344,72 @@ func TestGatherTournamentDataKeepsNewFinishedProjectionBelowCursor(t *testing.T)
 	factory.AssertExpectations(t)
 }
 
-func TestObserverCheckpointRetriesWholeWindowAfterFailure(t *testing.T) {
-	const transactionFailure = "transaction"
-	for _, fault := range []string{"child RPC", "last root RPC", transactionFailure} {
+const intervalTransactionFailure = "transaction"
+
+func TestObserverCheckpointRetriesOnlyFailedTournament(t *testing.T) {
+	for _, fault := range []string{"child RPC", "root RPC", intervalTransactionFailure} {
 		t.Run(fault, func(t *testing.T) {
 			f := newObserverCheckpointFixture(t)
 			first, second := checkpointEpoch(0, "0x100"), checkpointEpoch(1, "0x200")
+			first.Status, second.Status = EpochStatus_ClaimAccepted, EpochStatus_ClaimAccepted
 			failure := errors.New(fault)
+			var failedAddress common.Address
 			for attempt := range 2 {
 				f.epochs(first, second)
 				f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(2), nil).Once()
-				parent := f.tournament(first, *first.TournamentAddress, 0, 2, 0, 100, &TournamentEvents{}, nil)
-				var childError, rootError, writeError error
 				if attempt == 0 {
-					switch fault {
-					case "child RPC":
-						childError = failure
-					case "last root RPC":
-						rootError = failure
-					case transactionFailure:
-						writeError = failure
+					var rootErr, childErr error
+					if fault == "root RPC" {
+						rootErr = failure
+						failedAddress = *first.TournamentAddress
 					}
-				}
-				child := f.tournament(first, common.HexToAddress("0x101"), 1, 2, 90, 100, &TournamentEvents{}, childError)
-				f.children(first, parent, child)
-				if childError == nil {
-					lastRoot := f.tournament(second, *second.TournamentAddress, 0, 2, 95, 100, &TournamentEvents{}, rootError)
-					if rootError == nil {
-						f.children(second, lastRoot)
-						f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID, mock.Anything, uint64(100)).
-							Return(writeError).Once()
+					if fault == "child RPC" {
+						childErr = failure
+						failedAddress = common.HexToAddress("0x101")
 					}
-				}
-				if attempt == 1 {
-					f.unaccepted(first, 100)
-				}
-				deferActions, err := f.s.checkEpochs(t.Context(), f.app, 100)
-				require.Zero(t, parent.Snapshot.FinishedAtBlock, "gather must not mutate repository-owned projections")
-				if attempt == 0 {
-					require.ErrorIs(t, err, failure)
-					require.True(t, deferActions)
-					require.Equal(t, uint64(50), f.app.LastTournamentCheckBlock)
-					if fault != transactionFailure {
-						f.repo.AssertNotCalled(t, "StoreTournamentEvents", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+					parent := f.tournament(first, *first.TournamentAddress, 0, 2, 0, 100, &TournamentEvents{}, rootErr)
+					child := f.tournament(first, common.HexToAddress("0x101"), 1, 2, 90, 100, &TournamentEvents{}, childErr)
+					f.children(first, parent, child)
+					f.tournament(second, *second.TournamentAddress, 0, 2, 95, 100, &TournamentEvents{}, nil)
+					if fault == intervalTransactionFailure {
+						failedAddress = *first.TournamentAddress
 					}
 				} else {
-					require.NoError(t, err)
-					require.False(t, deferActions)
-					require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
+					level := uint64(0)
+					epoch := first
+					if failedAddress != *first.TournamentAddress {
+						level = 1
+					}
+					f.tournament(epoch, failedAddress, level, 2, 90, 100, &TournamentEvents{}, nil)
 				}
+				writes := 2
+				if attempt == 1 {
+					writes = 1
+				}
+				if fault == intervalTransactionFailure && attempt == 0 {
+					f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,
+						mock.MatchedBy(func(b []*repository.TournamentEventBatch) bool {
+							return len(b) == 1 && b[0].Tournament.Address == failedAddress
+						}), uint64(100)).Return(failure).Once()
+				}
+				f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,
+					mock.MatchedBy(func(b []*repository.TournamentEventBatch) bool {
+						return len(b) == 1 && (attempt == 1 || b[0].Tournament.Address != failedAddress)
+					}), uint64(100)).Return(nil).Times(writes)
+				_, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
+				if attempt == 0 {
+					require.ErrorIs(t, err, failure)
+				} else {
+					require.NoError(t, err)
+				}
+				require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock,
+					"successful independent units publish despite another failure")
 			}
 		})
 	}
 }
 
-func TestObserverCheckpointObservesUnpreparedRootsWithinIngestionFloor(t *testing.T) {
+func TestObserverCheckpointObservesRootsBeyondIngestionHead(t *testing.T) {
 	for _, status := range []EpochStatus{EpochStatus_Closed, EpochStatus_InputsProcessed} {
 		t.Run(status.String(), func(t *testing.T) {
 			f := newObserverCheckpointFixture(t)
@@ -362,27 +417,27 @@ func TestObserverCheckpointObservesUnpreparedRootsWithinIngestionFloor(t *testin
 			unprepared.Status, unprepared.LastBlock = status, 80
 			unprepared.Commitment, unprepared.MachineHash, unprepared.TxBufferDataBlock = nil, nil, nil
 			f.epochs(ready, unprepared)
-			f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(1), nil).Once()
-			f.tournament(ready, *ready.TournamentAddress, 0, 1, 0, 100, &TournamentEvents{}, nil)
-			f.tournament(unprepared, *unprepared.TournamentAddress, 0, 1, 0, 100, &TournamentEvents{}, nil)
-			f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID, mock.Anything, uint64(100)).Return(nil).Once()
-			f.unaccepted(ready, 100)
-			_, err := f.s.checkEpochs(t.Context(), f.app, 120)
+			f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(120))).Return(uint64(1), nil).Once()
+			f.tournament(ready, *ready.TournamentAddress, 0, 1, 0, 120, &TournamentEvents{}, nil)
+			f.tournament(unprepared, *unprepared.TournamentAddress, 0, 1, 0, 120, &TournamentEvents{}, nil)
+			f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, uint64(120)).Return(nil).Twice()
+			f.unaccepted(ready, 120)
+			_, err := observeEpochsForTest(t.Context(), f.s, f.app, 120)
 			require.NoError(t, err)
-			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
+			require.Equal(t, uint64(120), f.app.LastTournamentCheckBlock)
 		})
 	}
-	t.Run("ingestion head limits prepared roots", func(t *testing.T) {
+	t.Run("prepared roots continue beyond reader head", func(t *testing.T) {
 		f := newObserverCheckpointFixture(t)
 		epoch := checkpointEpoch(0, "0x100")
 		f.epochs(epoch)
-		f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(1), nil).Once()
-		f.tournament(epoch, *epoch.TournamentAddress, 0, 1, 0, 100, &TournamentEvents{}, nil)
-		f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID, mock.Anything, uint64(100)).Return(nil).Once()
-		f.unaccepted(epoch, 100)
-		_, err := f.s.checkEpochs(t.Context(), f.app, 120)
+		f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(120))).Return(uint64(1), nil).Once()
+		f.tournament(epoch, *epoch.TournamentAddress, 0, 1, 0, 120, &TournamentEvents{}, nil)
+		f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, uint64(120)).Return(nil).Once()
+		f.unaccepted(epoch, 120)
+		_, err := observeEpochsForTest(t.Context(), f.s, f.app, 120)
 		require.NoError(t, err)
-		require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
+		require.Equal(t, uint64(120), f.app.LastTournamentCheckBlock)
 	})
 }
 
@@ -393,19 +448,19 @@ func TestObserverCheckpointRetriesAcceptanceWithoutNewWindow(t *testing.T) {
 	f.epochs(epoch)
 	f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(1), nil).Once()
 	tournament := f.tournament(epoch, *epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
-	f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID, mock.Anything, uint64(100)).Return(nil).Once()
+	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, uint64(100)).Return(nil).Once()
 	failure := errors.New("acceptance write failed")
 	f.acceptance(epoch, tournament, failure)
-	deferActions, err := f.s.checkEpochs(t.Context(), f.app, 100)
+	deferActions, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
 	require.ErrorIs(t, err, failure)
 	require.True(t, deferActions)
 	require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 	f.epochs(epoch)
 	f.acceptance(epoch, tournament, nil)
-	deferActions, err = f.s.checkEpochs(t.Context(), f.app, 100)
+	deferActions, err = observeEpochsForTest(t.Context(), f.s, f.app, 100)
 	require.NoError(t, err)
 	require.False(t, deferActions)
-	f.repo.AssertNumberOfCalls(t, "StoreTournamentEvents", 1)
+	f.repo.AssertNumberOfCalls(t, "StoreTournamentInterval", 1)
 	f.consensus.AssertNumberOfCalls(t, "TournamentLevelCount", 1)
 }
 
@@ -422,11 +477,12 @@ func TestObserverCheckpointIncludesUnpreparedCreationBlock(t *testing.T) {
 			f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(1), nil).Once()
 			f.tournament(ready, *ready.TournamentAddress, 0, 1, 100, 100, &TournamentEvents{}, nil)
 			f.tournament(unprepared, *unprepared.TournamentAddress, 0, 1, 100, 100, &TournamentEvents{}, nil)
-			f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID,
-				mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool { return len(batches) == 2 }), uint64(100)).
-				Return(nil).Once()
+			f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,
+				mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool {
+					return len(batches) == 1
+				}), uint64(100)).Return(nil).Twice()
 			f.unaccepted(ready, 100)
-			_, err := f.s.checkEpochs(t.Context(), f.app, 100)
+			_, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
 			require.NoError(t, err)
 			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 		})
@@ -436,10 +492,14 @@ func TestObserverCheckpointIncludesUnpreparedCreationBlock(t *testing.T) {
 func TestObserverCheckpointDoesNotMoveBackward(t *testing.T) {
 	f := newObserverCheckpointFixture(t)
 	f.app.LastTournamentCheckBlock = 100
-	f.epochs(checkpointEpoch(0, "0x100"))
-	_, err := f.s.checkEpochs(t.Context(), f.app, 90)
+	epoch := checkpointEpoch(0, "0x100")
+	epoch.Status = EpochStatus_ClaimAccepted
+	f.repo.storedTournaments = []*Tournament{{ApplicationID: f.app.ID, EpochIndex: epoch.Index, Address: *epoch.TournamentAddress,
+		Snapshot: TournamentSnapshot{AsOfBlock: 100}}}
+	f.epochs(epoch)
+	_, err := observeEpochsForTest(t.Context(), f.s, f.app, 90)
 	require.NoError(t, err)
 	require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
-	f.repo.AssertNotCalled(t, "StoreTournamentEvents", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	f.repo.AssertNotCalled(t, "StoreTournamentInterval", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	f.consensus.AssertNotCalled(t, "TournamentLevelCount", mock.Anything)
 }

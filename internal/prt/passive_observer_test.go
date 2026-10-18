@@ -9,8 +9,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -50,19 +48,14 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 				if !pendingClaim {
 					epoch.Commitment, epoch.MachineHash, epoch.TxBufferDataBlock = nil, nil, nil
 				}
-				f.repo.On("ListApplications", mock.Anything, repository.ApplicationFilter{
-					Enabled: new(true), ConsensusType: new(model.Consensus_PRT),
-				}, repository.Pagination{}, false).Return([]*model.Application{f.app}, uint64(1), nil).Once()
-				f.client.On("HeaderByNumber", mock.Anything, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
-					Return(&types.Header{Number: big.NewInt(100)}, nil).Once()
 				f.epochs(epoch)
 				f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(1), nil).Once()
 				f.tournament(epoch, *epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
-				f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID,
+				f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,
 					mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool {
 						return len(batches) == 1 && batches[0].Tournament.Snapshot.AsOfBlock == 100
 					}), uint64(100)).Return(nil).Once()
-				if status == model.ApplicationStatus_OK {
+				if status == model.ApplicationStatus_OK && pendingClaim {
 					if pendingClaim {
 						f.unaccepted(epoch, 90)
 					}
@@ -72,16 +65,13 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 					f.consensus.On("CanAcceptStagedTournamentResult", opts).Return(snapshot.accept, nil).Once()
 					f.repo.On("GetEpoch", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).Return(epoch, nil).Once()
 				}
-				reschedule, err := f.s.Tick(t.Context())
-				require.False(t, reschedule)
+				err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 				require.NoError(t, err)
 				require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 				require.Equal(t, status, f.app.Status)
 				require.Equal(t, epochStatus, epoch.Status)
-				require.Empty(t, f.s.pendingTransactions)
+				require.Empty(t, f.s.delivery.sender)
 				f.client.AssertNotCalled(t, "BlockNumber", mock.Anything)
-				f.consensus.AssertNotCalled(t, "StageTournamentResult", mock.Anything, mock.Anything, mock.Anything)
-				f.consensus.AssertNotCalled(t, "AcceptStagedTournamentResult", mock.Anything, mock.Anything)
 				f.repo.AssertNotCalled(t, "UpdateEpochReconciledStaged", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 				f.repo.AssertNotCalled(t, "UpdateEpochWithAcceptedClaim", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 				f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -110,30 +100,24 @@ func TestForeclosedInvalidOutputsRootObservesWithoutDrainOrSubmission(t *testing
 	applyPRTStateProof(epoch, repotest.KeccakStateProof(common.HexToHash("0x1234")))
 	_, err := epoch.StateProof()
 	require.NoError(t, err, "claim data must not be the reason submission is blocked")
-	f.repo.On("ListApplications", mock.Anything, repository.ApplicationFilter{
-		Enabled: new(true), ConsensusType: new(model.Consensus_PRT),
-	}, repository.Pagination{}, false).Return([]*model.Application{f.app}, uint64(1), nil).Once()
-	f.client.On("HeaderByNumber", mock.Anything, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
-		Return(&types.Header{Number: big.NewInt(100)}, nil).Once()
 	f.epochs(epoch)
 	f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(1), nil).Once()
 	f.tournament(epoch, *epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
-	f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID,
+	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,
 		mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool {
 			return len(batches) == 1 && batches[0].Tournament.Snapshot.AsOfBlock == 100 &&
 				batches[0].Tournament.Snapshot.BondRecovery.Disposition == model.BondDispositionRecoverable
 		}), uint64(100)).Return(nil).Once()
 
-	reschedule, err := f.s.Tick(t.Context())
+	err = f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 
-	require.False(t, reschedule)
 	require.NoError(t, err)
 	require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 	require.Equal(t, model.ApplicationStatus_InvalidOutputsRoot, f.app.Status)
 	require.Equal(t, "epoch 0: declared outputs root does not match the calculated root", *f.app.Reason)
 	require.Equal(t, model.EpochStatus_ClaimComputed, epoch.Status)
-	require.Empty(t, f.s.pendingTransactions)
-	require.Empty(t, f.s.rootBondRecoveries)
+	require.Empty(t, f.s.delivery.sender)
+	require.Empty(t, f.s.delivery.rootBondRecoveryScans)
 	f.repo.AssertNotCalled(t, "HasUndrainedEpochsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
 	f.repo.AssertNotCalled(t, "HasUnreconciledClaimsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
 	f.repo.AssertNotCalled(t, "GetLastNonOpenEpochIndex", mock.Anything, mock.Anything)
@@ -142,8 +126,6 @@ func TestForeclosedInvalidOutputsRootObservesWithoutDrainOrSubmission(t *testing
 	// broadcast would fail, as would a new latest-block read for either action.
 	f.client.AssertNotCalled(t, "BlockNumber", mock.Anything)
 	f.consensus.AssertNotCalled(t, "GetCurrentSealedEpoch", mock.Anything)
-	f.consensus.AssertNotCalled(t, "StageTournamentResult", mock.Anything, mock.Anything, mock.Anything)
-	f.consensus.AssertNotCalled(t, "AcceptStagedTournamentResult", mock.Anything, mock.Anything)
 }
 
 func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
@@ -154,16 +136,11 @@ func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
 	snapshot := resultTestSnapshot(epoch, true)
 	snapshot.sealed.StagingBlockNumber = 95
 	snapshot.accept.IsClaimStagingPeriodOver = true
-	f.repo.On("ListApplications", mock.Anything, repository.ApplicationFilter{
-		Enabled: new(true), ConsensusType: new(model.Consensus_PRT),
-	}, repository.Pagination{}, false).Return([]*model.Application{f.app}, uint64(1), nil).Once()
-	f.client.On("HeaderByNumber", mock.Anything, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
-		Return(&types.Header{Number: big.NewInt(100)}, nil).Once()
 	f.epochs(epoch)
 	opts := mock.MatchedBy(resultCallOptsAtBlock(100))
 	f.consensus.On("TournamentLevelCount", opts).Return(uint64(1), nil).Once()
 	f.tournament(epoch, *epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
-	f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID,
+	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,
 		mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool {
 			return len(batches) == 1 && batches[0].Tournament.Snapshot.AsOfBlock == 100
 		}), uint64(100)).Return(nil).Once()
@@ -175,16 +152,13 @@ func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
 	f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, epoch.Index, uint64(95)).
 		Run(func(mock.Arguments) { require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock) }).Return(nil).Once()
 
-	reschedule, err := f.s.Tick(t.Context())
-	require.False(t, reschedule)
+	err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 	require.NoError(t, err)
 	require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
 	require.Equal(t, model.EpochStatus_ClaimStaged, epoch.Status)
 	require.Equal(t, new(uint64(95)), epoch.StagedAtBlock)
-	require.Empty(t, f.s.pendingTransactions)
+	require.Empty(t, f.s.delivery.sender)
 	f.client.AssertNotCalled(t, "BlockNumber", mock.Anything)
-	f.consensus.AssertNotCalled(t, "StageTournamentResult", mock.Anything, mock.Anything, mock.Anything)
-	f.consensus.AssertNotCalled(t, "AcceptStagedTournamentResult", mock.Anything, mock.Anything)
 	f.repo.AssertNotCalled(t, "UpdateEpochWithAcceptedClaim", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
@@ -214,7 +188,7 @@ func TestLosingRootPublishesBeforeLocalDivergence(t *testing.T) {
 	adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 	f.emptyParticipants(epoch, address)
 	var published *model.Tournament
-	f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID, mock.Anything, uint64(100)).
+	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, uint64(100)).
 		Run(func(args mock.Arguments) {
 			batches := args.Get(2).([]*repository.TournamentEventBatch)
 			require.Len(t, batches, 1)
@@ -229,10 +203,10 @@ func TestLosingRootPublishesBeforeLocalDivergence(t *testing.T) {
 			require.NotNil(t, published)
 			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 		}).Return(nil).Once()
-	deferActions, err := f.s.checkEpochs(t.Context(), f.app, 100)
+	deferActions, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
 	require.ErrorContains(t, err, "inconsistent commitment")
 	require.True(t, deferActions)
 	require.Equal(t, model.ApplicationStatus_Diverged, f.app.Status)
-	require.Empty(t, f.s.pendingTransactions)
+	require.Empty(t, f.s.delivery.sender)
 	adapter.AssertExpectations(t)
 }

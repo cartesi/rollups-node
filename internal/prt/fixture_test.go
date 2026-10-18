@@ -5,23 +5,75 @@ package prt
 
 import (
 	"context"
-	"io"
-	"log/slog"
-	"math/big"
-	"time"
-
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
+	"io"
+	"log/slog"
+	"math/big"
+	"time"
 )
 
 type prtRepositoryMock struct {
 	mock.Mock
+	repository.DeliveryRepository
+	storedTournaments    []*model.Tournament
+	committedTournaments map[common.Address]*model.Tournament
+	eventCounts          map[common.Address]repository.TournamentEventCounts
+	eventCountError      error
+	eventCountRead       func(int64, uint64, common.Address, uint64)
+}
+
+func (m *prtRepositoryMock) GetTournamentEventCounts(
+	_ context.Context, appID int64, epoch uint64, tournament common.Address, through uint64,
+) (repository.TournamentEventCounts, error) {
+	if m.eventCountRead != nil {
+		m.eventCountRead(appID, epoch, tournament, through)
+	}
+	return m.eventCounts[tournament], m.eventCountError
+}
+
+func (m *prtRepositoryMock) GetApplication(ctx context.Context, address string) (*model.Application, error) {
+	args := m.Called(ctx, address)
+	app, _ := args.Get(0).(*model.Application)
+	return app, args.Error(1)
+}
+
+func (m *prtRepositoryMock) GetApplicationIDBoundary(ctx context.Context, filter repository.ApplicationFilter) (int64, error) {
+	args := m.Called(ctx, filter)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *prtRepositoryMock) ListApplicationsByID(
+	ctx context.Context, filter repository.ApplicationFilter, after, through int64, limit uint64,
+) ([]*model.Application, error) {
+	args := m.Called(ctx, filter, after, through, limit)
+	apps, _ := args.Get(0).([]*model.Application)
+	return apps, args.Error(1)
+}
+
+func (m *prtRepositoryMock) StoreTournamentInterval(ctx context.Context, id int64, _ *uint64,
+	batches []*repository.TournamentEventBatch) error {
+	var head uint64
+	if len(batches) > 0 {
+		head = batches[0].Tournament.Snapshot.AsOfBlock
+	}
+	args := m.MethodCalled("StoreTournamentInterval", ctx, id, batches, head)
+	if args.Error(0) == nil {
+		if m.committedTournaments == nil {
+			m.committedTournaments = map[common.Address]*model.Tournament{}
+		}
+		for _, batch := range batches {
+			m.committedTournaments[batch.Tournament.Address] = batch.Tournament
+		}
+	}
+	return args.Error(0)
 }
 
 var _ prtRepository = (*prtRepositoryMock)(nil)
@@ -111,6 +163,12 @@ func (m *prtRepositoryMock) ListRecoverableRootBonds(
 	return values, args.Error(1)
 }
 
+func (m *prtRepositoryMock) UpdateEpochStagingBlock(
+	ctx context.Context, applicationID int64, index, expectedOldBlock, newBlock uint64,
+) error {
+	return m.Called(ctx, applicationID, index, expectedOldBlock, newBlock).Error(0)
+}
+
 func (m *prtRepositoryMock) UpdateEpochReconciledStaged(
 	ctx context.Context,
 	applicationID int64,
@@ -136,8 +194,45 @@ func (m *prtRepositoryMock) GetTournament(
 	nameOrAddress string,
 	address string,
 ) (*model.Tournament, error) {
+	if committed := m.committedTournaments[common.HexToAddress(address)]; committed != nil {
+		active := false
+		for _, call := range m.ExpectedCalls {
+			if call.Method == getTournamentMethod && call.Repeatability >= 0 {
+				_, diff := call.Arguments.Diff([]any{ctx, nameOrAddress, address})
+				if diff == 0 {
+					active = true
+					break
+				}
+			}
+		}
+		if !active {
+			return committed, nil
+		}
+	}
+	active := false
+	for _, call := range m.ExpectedCalls {
+		if call.Method == getTournamentMethod && call.Repeatability >= 0 {
+			_, diff := call.Arguments.Diff([]any{ctx, nameOrAddress, address})
+			if diff == 0 {
+				active = true
+				break
+			}
+		}
+	}
+	if !active {
+		for _, stored := range m.storedTournaments {
+			if stored.Address == common.HexToAddress(address) {
+				return stored, nil
+			}
+		}
+	}
 	args := m.Called(ctx, nameOrAddress, address)
 	tournament, _ := args.Get(0).(*model.Tournament)
+	if args.Error(1) == nil {
+		if committed := m.committedTournaments[common.HexToAddress(address)]; committed != nil {
+			return committed, nil
+		}
+	}
 	return tournament, args.Error(1)
 }
 
@@ -148,6 +243,37 @@ func (m *prtRepositoryMock) ListTournaments(
 	p repository.Pagination,
 	descending bool,
 ) ([]*model.Tournament, uint64, error) {
+	if f == (repository.TournamentFilter{}) {
+		explicit := false
+		for _, call := range m.ExpectedCalls {
+			if call.Method == "ListTournaments" {
+				_, diff := call.Arguments.Diff([]any{ctx, nameOrAddress, f, p, descending})
+				if diff == 0 {
+					explicit = true
+					break
+				}
+			}
+		}
+		if !explicit {
+			stored := append([]*model.Tournament(nil), m.storedTournaments...)
+			if len(stored) == 0 {
+				for _, call := range m.ExpectedCalls {
+					if call.Method == getTournamentMethod && len(call.ReturnArguments) > 0 {
+						if t, ok := call.ReturnArguments[0].(*model.Tournament); ok && t != nil && t.Address != (common.Address{}) &&
+							t.Snapshot.AsOfBlock > 0 {
+							stored = append(stored, t)
+						}
+					}
+				}
+			}
+			for i, row := range stored {
+				if committed := m.committedTournaments[row.Address]; committed != nil {
+					stored[i] = committed
+				}
+			}
+			return stored, uint64(len(stored)), nil
+		}
+	}
 	args := m.Called(ctx, nameOrAddress, f, p, descending)
 	tournaments, _ := args.Get(0).([]*model.Tournament)
 	return tournaments, args.Get(1).(uint64), args.Error(2)
@@ -242,6 +368,9 @@ func (m *ethClientMock) BlockNumber(ctx context.Context) (uint64, error) {
 
 func (m *ethClientMock) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
 	args := m.Called(ctx, number)
+	if header, ok := args.Get(0).(func(context.Context, *big.Int) *types.Header); ok {
+		return header(ctx, number), args.Error(1)
+	}
 	header, _ := args.Get(0).(*types.Header)
 	return header, args.Error(1)
 }
@@ -279,6 +408,14 @@ type daveConsensusAdapterMock struct {
 
 var _ DaveConsensusAdapter = (*daveConsensusAdapterMock)(nil)
 
+func (m *daveConsensusAdapterMock) EpochSealedAt(
+	ctx context.Context, blockHash common.Hash, epoch uint64,
+) ([]*idaveconsensus.IDaveConsensusEpochSealed, error) {
+	args := m.Called(ctx, blockHash, epoch)
+	events, _ := args.Get(0).([]*idaveconsensus.IDaveConsensusEpochSealed)
+	return events, args.Error(1)
+}
+
 func (m *daveConsensusAdapterMock) ParseEpochSealed(
 	log types.Log,
 ) (*idaveconsensus.IDaveConsensusEpochSealed, error) {
@@ -312,31 +449,6 @@ func (m *daveConsensusAdapterMock) CanAcceptStagedTournamentResult(
 	args := m.Called(opts)
 	result, _ := args.Get(0).(CanAcceptStagedTournamentResult)
 	return result, args.Error(1)
-}
-
-func (m *daveConsensusAdapterMock) StageTournamentResult(
-	opts *bind.TransactOpts,
-	epochNumber uint64,
-	proof model.StateProof,
-) (*types.Transaction, error) {
-	args := m.Called(opts, epochNumber, proof)
-	tx, _ := args.Get(0).(*types.Transaction)
-	if fn, ok := args.Get(1).(func(*bind.TransactOpts, uint64, model.StateProof) error); ok {
-		return tx, fn(opts, epochNumber, proof)
-	}
-	return tx, args.Error(1)
-}
-
-func (m *daveConsensusAdapterMock) AcceptStagedTournamentResult(
-	opts *bind.TransactOpts,
-	epochNumber uint64,
-) (*types.Transaction, error) {
-	args := m.Called(opts, epochNumber)
-	tx, _ := args.Get(0).(*types.Transaction)
-	if fn, ok := args.Get(1).(func(*bind.TransactOpts, uint64) error); ok {
-		return tx, fn(opts, epochNumber)
-	}
-	return tx, args.Error(1)
 }
 
 type tournamentAdapterMock struct {
@@ -402,28 +514,31 @@ func (m *tournamentAdapterMock) CommitmentStanding(
 	return result, args.Error(1)
 }
 
-func (m *tournamentAdapterMock) JoinTournament(
-	opts *bind.TransactOpts,
-	finalState [32]byte,
-	proof [][32]byte,
-	leftNode [32]byte,
-	rightNode [32]byte,
-) (*types.Transaction, error) {
-	args := m.Called(opts, finalState, proof, leftNode, rightNode)
-	tx, _ := args.Get(0).(*types.Transaction)
-	if fn, ok := args.Get(1).(func(*bind.TransactOpts, [32]byte, [][32]byte, [32]byte, [32]byte) error); ok {
-		return tx, fn(opts, finalState, proof, leftNode, rightNode)
+func observeEpochsForTest(ctx context.Context, s *Service, app *model.Application, head uint64) (bool, error) {
+	epochs, _, err := getTournamentObservationEpochs(ctx, s.repository, app.Name)
+	if err != nil {
+		return true, err
 	}
-	return tx, args.Error(1)
+	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
+	if err != nil {
+		return true, err
+	}
+	err = s.observeTournamentState(ctx, app, epochs, consensus, observerFacts(head))
+	if err != nil {
+		return true, err
+	}
+	if app.Status != model.ApplicationStatus_OK {
+		return true, nil
+	}
+	if app.IsForeclosed() {
+		return true, s.drainForeclosedClaims(ctx, app, epochs, consensus, head)
+	}
+	return s.reconcileAcceptedEpochs(ctx, app, epochs, consensus, head)
 }
 
-func (m *tournamentAdapterMock) TryRecoveringBond(opts *bind.TransactOpts) (*types.Transaction, error) {
-	args := m.Called(opts)
-	tx, _ := args.Get(0).(*types.Transaction)
-	if fn, ok := args.Get(1).(func(*bind.TransactOpts) error); ok {
-		return tx, fn(opts)
-	}
-	return tx, args.Error(1)
+func (s *delivery) observeWindow(ctx context.Context, app *model.Application, epochs []*model.Epoch,
+	consensus DaveConsensusAdapter, facts txsender.BlockRef) error {
+	return s.observeTournamentState(ctx, app, epochs, consensus, facts)
 }
 
 func newPRTServiceMock() (*Service, *prtRepositoryMock) {
@@ -435,11 +550,10 @@ func newPRTServiceMock() (*Service, *prtRepositoryMock) {
 			},
 		},
 		repository:          repo,
-		pendingTransactions: map[int64]pendingTournamentTransaction{},
 		disputeWarnings:     map[common.Address]struct{}{},
 		zeroStagingWarnings: map[int64]struct{}{},
-		rootBondRecoveries:  map[int64]*rootBondRecovery{},
 		observationFailures: map[int64]tournamentObservationFailure{},
 	}
+	s.delivery = &delivery{Service: s, deliveryPolicy: txsender.RuntimePolicy()}
 	return s, repo
 }

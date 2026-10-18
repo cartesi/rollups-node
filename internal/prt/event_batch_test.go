@@ -117,7 +117,7 @@ func TestTournamentEventBatchKeepsFactsAndCurrentViewsSeparate(t *testing.T) {
 	require.Equal(t, 201, batch.MatchAdvances[0].SegmentStartPosition.ToBig().BitLen())
 	require.Equal(t, 201, batch.BondEvents[0].Refund.Value.ToBig().BitLen())
 	require.Equal(t, tx, *match.DeletionTxHash)
-	f.repo.AssertNotCalled(t, "StoreTournamentEvents", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	f.repo.AssertNotCalled(t, "StoreTournamentInterval", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestTournamentEventBatchRejectsUnknownOrContradictoryDeletion(t *testing.T) {
