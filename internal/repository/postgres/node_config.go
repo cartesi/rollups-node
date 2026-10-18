@@ -49,6 +49,9 @@ func (r *PostgresRepository) SaveNodeConfigRaw(ctx context.Context, key string, 
 }
 
 func (r *PostgresRepository) LoadNodeConfigRaw(ctx context.Context, key string) ([]byte, time.Time, time.Time, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	sel := table.NodeConfig.
 		SELECT(
 			table.NodeConfig.Value,
