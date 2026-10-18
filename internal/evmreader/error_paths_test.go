@@ -127,12 +127,38 @@ func (s *SealedEpochsSuite) TestSealedEpochInputCountMismatchReturnsError() {
 
 	err := s.evmReader.processSealedEpochEvent(s.ctx, app, event)
 	s.Require().Error(err)
+	s.Require().ErrorIs(err, errInconclusiveEpochView)
 	s.Require().ErrorContains(err, "input count mismatch")
 	s.Require().ErrorContains(err, "expected 2")
 	s.Require().ErrorContains(err, "got 1")
 
 	// Epoch must NOT be stored
 	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
+
+	// A complete response to the same event can be committed on retry. No
+	// cursor was advanced past either missing input by the first attempt.
+	s.inputBox.Unset("GetNumberOfInputs")
+	s.inputBox.Unset("RetrieveInputs")
+	s.inputBox.On("GetNumberOfInputs", blockRange(0, 150), mock.Anything).Return(big.NewInt(3), nil)
+	s.inputBox.On("GetNumberOfInputs", blockFrom(150), mock.Anything).Return(big.NewInt(5), nil)
+	s.inputBox.On("RetrieveInputs", inputLogBlock(150), mock.Anything, mock.Anything).
+		Return([]iinputbox.IInputBoxInputAdded{
+			makeInputEvent(app1Addr, 3, 150), makeInputEvent(app1Addr, 4, 150),
+		}, nil).Once()
+	s.repository.On("CreateEpochsAndInputs", mock.Anything, app1Addr.Hex(), mock.Anything, sealBlock-1).
+		Run(func(args mock.Arguments) {
+			epochs := args.Get(2).(map[*Epoch][]*Input)
+			s.Require().Len(epochs, 1)
+			for epoch, inputs := range epochs {
+				s.Require().Equal(uint64(1), epoch.Index)
+				s.Require().Equal(EpochStatus_Closed, epoch.Status)
+				s.Require().Len(inputs, 2)
+			}
+		}).Return(nil).Once()
+	s.Require().NoError(s.evmReader.processSealedEpochEvent(s.ctx, app, event))
+	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
+	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
 }
 
 // --- Priority 3: Existing epoch FirstBlock mismatch → error ---

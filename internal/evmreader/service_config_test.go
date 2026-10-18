@@ -5,7 +5,6 @@ package evmreader
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math/big"
 	"net/http"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/mock"
@@ -50,15 +48,10 @@ func TestCreateAcceptsRequestTimeoutBelowPollingInterval(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	rawConfig, err := json.Marshal(PersistentConfig{
-		DefaultBlock: DefaultBlock_Finalized,
-		ChainID:      chainID,
-	})
-	require.NoError(t, err)
-
+	requested := PersistentConfig{DefaultBlock: DefaultBlock_Finalized, ChainID: chainID}
 	repo := newMockRepository()
-	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
-		Return(rawConfig, time.Now(), time.Now(), nil).Once()
+	repo.On("RegisterObserver", mock.Anything, EvmReaderConfigKey, requested).
+		Return(requested, nil).Once()
 
 	_, err = Create(t.Context(), &CreateInfo{
 		Config: config.EvmreaderConfig{
@@ -116,115 +109,84 @@ func (s *EvmReaderSuite) TestFetchMostRecentHeaderSuccess() {
 // --- setupPersistentConfig tests ---
 
 func (s *EvmReaderSuite) TestSetupPersistentConfigFirstRun() {
-	initial := PersistentConfig{DefaultBlock: DefaultBlock_Finalized, ChainID: 42}
-	raw, err := json.Marshal(initial)
-	s.Require().NoError(err)
+	requested := PersistentConfig{DefaultBlock: DefaultBlock_Finalized, ChainID: 42}
 	repo := newMockRepository()
-	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
-		Return(([]byte)(nil), time.Time{}, time.Time{}, repository.ErrNotFound).Once()
-	repo.On("InitializeNodeConfigRaw", mock.Anything, EvmReaderConfigKey, raw).Return(nil).Once()
-	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
-		Return(raw, time.Time{}, time.Time{}, nil).Once()
-
+	repo.On("RegisterObserver", mock.Anything, EvmReaderConfigKey, requested).
+		Return(requested, nil).Once()
 	s.evmReader.repository = repo
-
-	cfg := &config.EvmreaderConfig{
-		BlockchainDefaultBlock: DefaultBlock_Finalized,
-		BlockchainId:           42,
-	}
-
-	result, err := s.evmReader.setupPersistentConfig(s.ctx, cfg)
+	result, err := s.evmReader.setupPersistentConfig(s.ctx, &config.EvmreaderConfig{
+		BlockchainDefaultBlock: DefaultBlock_Finalized, BlockchainId: 42,
+	})
 	s.Require().NoError(err)
-	s.Require().NotNil(result)
-	s.Require().Equal(DefaultBlock_Finalized, result.DefaultBlock)
-	s.Require().Equal(uint64(42), result.ChainID)
-
-	repo.AssertNumberOfCalls(s.T(), "SaveNodeConfigRaw", 0)
+	s.Require().Equal(requested, *result)
 	repo.AssertExpectations(s.T())
 }
 
 func (s *EvmReaderSuite) TestSetupPersistentConfigRejectsConcurrentInitializer() {
+	// The repository serializes registration and detects a different winner.
+	errConflict := errors.New("observation policy mismatch: database=LATEST, configured=FINALIZED")
 	repo := newMockRepository()
-	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
-		Return(([]byte)(nil), time.Time{}, time.Time{}, repository.ErrNotFound).Once()
-	repo.On("InitializeNodeConfigRaw", mock.Anything, EvmReaderConfigKey, mock.Anything).Return(nil).Once()
-	// A different initializer wins after our first read. Never use our unsaved request.
-	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
-		Return([]byte(`{"DefaultBlock":"LATEST","ChainID":42}`), time.Time{}, time.Time{}, nil).Once()
+	repo.On("RegisterObserver", mock.Anything, EvmReaderConfigKey, mock.Anything).
+		Return(PersistentConfig{}, errConflict).Once()
 	s.evmReader.repository = repo
 	result, err := s.evmReader.setupPersistentConfig(s.ctx, &config.EvmreaderConfig{
 		BlockchainId: 42, BlockchainDefaultBlock: DefaultBlock_Finalized,
 	})
 	s.Require().Nil(result)
-	s.Require().ErrorContains(err, "observation policy mismatch: database=LATEST, configured=FINALIZED")
-	repo.AssertNumberOfCalls(s.T(), "SaveNodeConfigRaw", 0)
+	s.Require().ErrorIs(err, errConflict)
 	repo.AssertExpectations(s.T())
 }
 
-func (s *EvmReaderSuite) TestSetupPersistentConfigValidatesSavedFields() {
-	for _, test := range []struct{ raw, want string }{
-		{`{}`, "non-null DefaultBlock and ChainID"},
-		{`null`, "non-null DefaultBlock and ChainID"},
-		{`{"DefaultBlock":"FINALIZED","ChainID":0}`, "ChainID must be greater than zero"},
-		{`{"DefaultBlock":"INVALID","ChainID":42}`, "invalid DefaultBlock"},
-		{`{"DefaultBlock":"LATEST","ChainID":42}`, "database=LATEST, configured=FINALIZED"},
+func (s *EvmReaderSuite) TestSetupPersistentConfigPropagatesSavedFieldErrors() {
+	// Decoding and persistent validation live inside the coordinated repository
+	// operation. Its concrete behavior has PostgreSQL registration fixtures.
+	for _, message := range []string{
+		"persistent config requires non-null DefaultBlock and ChainID",
+		"ChainID must be greater than zero",
+		"invalid DefaultBlock",
+		"observation policy mismatch: database=LATEST, configured=FINALIZED",
 	} {
-		s.Run(test.raw, func() {
+		s.Run(message, func() {
+			errSaved := errors.New(message)
 			repo := newMockRepository()
-			repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
-				Return([]byte(test.raw), time.Time{}, time.Time{}, nil).Once()
+			repo.On("RegisterObserver", mock.Anything, EvmReaderConfigKey, mock.Anything).
+				Return(PersistentConfig{}, errSaved).Once()
 			s.evmReader.repository = repo
 			result, err := s.evmReader.setupPersistentConfig(s.ctx, &config.EvmreaderConfig{
 				BlockchainId: 42, BlockchainDefaultBlock: DefaultBlock_Finalized,
 			})
 			s.Require().Nil(result)
-			s.Require().ErrorContains(err, test.want)
-			repo.AssertNumberOfCalls(s.T(), "SaveNodeConfigRaw", 0)
-			repo.AssertNumberOfCalls(s.T(), "InitializeNodeConfigRaw", 0)
+			s.Require().ErrorIs(err, errSaved)
 			repo.AssertExpectations(s.T())
 		})
 	}
 }
 
 func (s *EvmReaderSuite) TestSetupPersistentConfigRejectsDifferentConfig() {
-	existingJSON, err := json.Marshal(PersistentConfig{
-		DefaultBlock: DefaultBlock_Safe,
-		ChainID:      99,
-	})
-	s.Require().NoError(err)
-
+	errMismatch := errors.New("chain ID mismatch: database=99, configured=1")
 	repo := newMockRepository()
-	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
-		Return(existingJSON, time.Now(), time.Now(), nil)
-
+	repo.On("RegisterObserver", mock.Anything, EvmReaderConfigKey, mock.Anything).
+		Return(PersistentConfig{}, errMismatch).Once()
 	s.evmReader.repository = repo
-
-	// A restart must not silently use values different from the requested ones.
-	cfg := &config.EvmreaderConfig{
-		BlockchainDefaultBlock: DefaultBlock_Latest,
-		BlockchainId:           1,
-	}
-
-	result, err := s.evmReader.setupPersistentConfig(s.ctx, cfg)
-	s.Require().ErrorContains(err, "chain ID mismatch: database=99, configured=1")
+	result, err := s.evmReader.setupPersistentConfig(s.ctx, &config.EvmreaderConfig{
+		BlockchainDefaultBlock: DefaultBlock_Latest, BlockchainId: 1,
+	})
 	s.Require().Nil(result)
-
-	// SaveNodeConfigRaw must NOT be called
-	repo.AssertNumberOfCalls(s.T(), "SaveNodeConfigRaw", 0)
+	s.Require().ErrorIs(err, errMismatch)
+	repo.AssertExpectations(s.T())
 }
 
 func (s *EvmReaderSuite) TestSetupPersistentConfigDBError() {
+	errDB := errors.New("database unreachable")
 	repo := newMockRepository()
-	repo.On("LoadNodeConfigRaw", mock.Anything, EvmReaderConfigKey).
-		Return(([]byte)(nil), time.Time{}, time.Time{}, errors.New("database unreachable"))
-
+	repo.On("RegisterObserver", mock.Anything, EvmReaderConfigKey, mock.Anything).
+		Return(PersistentConfig{}, errDB).Once()
 	s.evmReader.repository = repo
-
 	_, err := s.evmReader.setupPersistentConfig(s.ctx, &config.EvmreaderConfig{
 		BlockchainId: 42, BlockchainDefaultBlock: DefaultBlock_Finalized,
 	})
-	s.Require().Error(err)
-	s.Require().ErrorContains(err, "database unreachable")
+	s.Require().ErrorIs(err, errDB)
+	repo.AssertExpectations(s.T())
 }
 
 func TestReadinessBudget(t *testing.T) {
@@ -257,9 +219,9 @@ func TestCreateRejectsNegativeReadinessBudget(t *testing.T) {
 
 func (s *EvmReaderSuite) TestReadinessRefreshesAfterScan() {
 	s.client.EnqueueNewHead(100).Once()
-	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).Unset()
+	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything).Unset()
 	var scanFinished time.Time
-	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
+	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything).
 		Return([]*Application{}, uint64(0), nil).Once().Run(func(mock.Arguments) {
 		s.Require().False(s.evmReader.Ready(), "fetching a header must not mark an unfinished scan ready")
 		scanFinished = time.Now()

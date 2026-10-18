@@ -222,6 +222,9 @@ func (r *Service) reportInputScanError(ctx context.Context, app appContracts, fr
 		return
 	}
 	level := slog.LevelError
+	if errors.Is(err, errInconclusiveInputView) {
+		level = slog.LevelWarn
+	}
 	if ctx.Err() == context.Canceled && errutil.IsOnlyCancellation(err) {
 		level = slog.LevelDebug
 	}
@@ -233,6 +236,10 @@ func (r *Service) reportInputScanError(ctx context.Context, app appContracts, fr
 		"error", err,
 	)
 }
+
+// A counter and its logs must agree before the scan can commit. Disagreement
+// is an incomplete provider view, not evidence of a stored application fault.
+var errInconclusiveInputView = errors.New("input observation is inconclusive")
 
 // ErrInputForNonOpenEpoch indicates that an input was received for an epoch
 // that is not open — a state that should never occur during normal operation.
@@ -425,8 +432,8 @@ func (r *Service) readApplicationInputs(
 	}
 	expectedNew := endCount - inputCount
 	if uint64(len(inputs)) != expectedNew {
-		return nil, fmt.Errorf("input count mismatch: stored %d, on-chain %d, expected %d new inputs, got %d",
-			inputCount, endCount, expectedNew, len(inputs))
+		return nil, fmt.Errorf("%w: input count mismatch: stored %d, on-chain %d, expected %d new inputs, got %d",
+			errInconclusiveInputView, inputCount, endCount, expectedNew, len(inputs))
 	}
 	return inputs, nil
 }
