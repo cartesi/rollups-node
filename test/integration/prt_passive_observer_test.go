@@ -22,7 +22,6 @@ import (
 	jsonrpcclient "github.com/cartesi/rollups-node/pkg/jsonrpc/client"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -89,8 +88,8 @@ func runPassiveDisputeObserver(t *testing.T, localWins bool) {
 				Reason: "the external timeout winner differs from this application's locally computed commitment",
 			},
 			ExpectedLog{
-				Pattern: regexp.MustCompile("Tick.*service=prt.*validating PRT application " +
-					regexp.QuoteMeta(fixture.appAddress.Hex()) + ": " + reason),
+				Pattern: regexp.MustCompile("Tick.*service=prt.*observing PRT application " +
+					regexp.QuoteMeta(fixture.appName) + ": " + reason),
 				Level: LevelError, Required: true,
 				Reason: "the PRT service reports this application's expected divergence transition to the service loop",
 			},
@@ -265,7 +264,8 @@ func (f *passiveDisputeFixture) mineTo(target uint64) {
 		return
 	}
 	f.r.LessOrEqual(target-head, uint64(maxBlocksToMine))
-	f.r.NoError(anvilRPC(f.ctx, "anvil_mine", hexutil.EncodeUint64(target-head)), "mine a bounded timeout or staging interval")
+	f.r.NoError(anvilMine(f.ctx, int(target-head)), //nolint:gosec // Bounded by maxBlocksToMine above.
+		"mine a bounded timeout or staging interval")
 }
 
 func (f *passiveDisputeFixture) stageAndAccept() {

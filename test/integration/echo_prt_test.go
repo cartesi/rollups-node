@@ -30,8 +30,6 @@ func TestEchoPrt(t *testing.T) {
 }
 
 func (s *EchoPrtSuite) SetupSuite() {
-	s.ctx, s.cancel = context.WithTimeout(context.Background(), 10*time.Minute)
-
 	endpoint := envOrDefault("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "http://localhost:8545")
 	client, err := ethclient.Dial(endpoint)
 	s.Require().NoError(err, "dial ethclient")
@@ -39,16 +37,19 @@ func (s *EchoPrtSuite) SetupSuite() {
 }
 
 func (s *EchoPrtSuite) TearDownSuite() {
-	s.cancel()
 	s.ethClient.Close()
 }
 
 func (s *EchoPrtSuite) SetupTest() {
+	// Each case can wait through several finalized epochs; earlier cases
+	// must not consume its existing ten-minute polling budget.
+	s.ctx, s.cancel = context.WithTimeout(s.T().Context(), 10*time.Minute)
 	s.StartLogCapture()
 	s.appName = ""
 }
 
 func (s *EchoPrtSuite) TearDownTest() {
+	defer s.cancel()
 	if s.appName != "" {
 		s.T().Logf("Disabling application %s", s.appName)
 		if err := disableApplication(s.ctx, s.appName); err != nil {
@@ -62,6 +63,8 @@ func (s *EchoPrtSuite) TearDownTest() {
 // deploy with --prt, send input, verify outputs/reports, then complete
 // both epoch 0 (empty, sealed at deploy) and epoch 1 (with input) tournaments.
 func (s *EchoPrtSuite) TestEchoPrtLifecycle() {
+	// Settlement mines blocks while observers read historical state.
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 	dappPath := envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp")
 	ethClient := s.ethClient
 	s.appName = uniqueAppName("echo-prt")

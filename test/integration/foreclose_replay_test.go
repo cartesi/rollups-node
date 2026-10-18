@@ -499,9 +499,12 @@ func dedupAscending(in []uint64) []uint64 {
 
 // removeApplication removes a registered application from the local DB via
 // `cartesi-rollups-cli app remove`. The CLI rejects apps with enabled=true, so
-// callers must set enabled=false first.
+// callers must set enabled=false first and acknowledge abandonment explicitly.
 func removeApplication(ctx context.Context, appName string) error {
-	_, err := runCLI(ctx, "app", "remove", appName, "--yes")
+	out, err := runCLI(ctx, "app", "remove", appName, "--yes", "--allow-abandonment")
+	if err != nil && strings.TrimSpace(out) != "" {
+		return fmt.Errorf("remove %s: %w\nremoval output:\n%s", appName, err, out)
+	}
 	return err
 }
 

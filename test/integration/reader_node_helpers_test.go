@@ -31,6 +31,12 @@ func startReaderNode(ctx context.Context, t *testing.T) {
 	repo, err := factory.NewRepositoryFromConnectionString(ctx, dsn.Raw())
 	require.NoError(t, err)
 	t.Cleanup(repo.Close)
+	// Whole-value writes are restricted to this stopped-node fixture. Production
+	// services use registration through DeliveryRepository.
+	writer, ok := repo.(interface {
+		SaveNodeConfigRaw(context.Context, string, []byte) error
+	})
+	require.True(t, ok, "the reader fixture requires a PostgreSQL config writer")
 	overrides := []struct {
 		key    string
 		fields map[string]any
@@ -53,7 +59,7 @@ func startReaderNode(ctx context.Context, t *testing.T) {
 		defer cancel()
 		restored := true
 		for _, original := range saved {
-			if err := repo.SaveNodeConfigRaw(cleanupCtx, original.key, original.raw); err != nil {
+			if err := writer.SaveNodeConfigRaw(cleanupCtx, original.key, original.raw); err != nil {
 				t.Errorf("restore %s persistent config: %v", original.key, err)
 				restored = false
 			}
@@ -73,7 +79,7 @@ func startReaderNode(ctx context.Context, t *testing.T) {
 	// Validate all originals before the first write. Cleanup is already registered
 	// even if a write succeeds but its reply fails. Never change the parent env.
 	for _, override := range saved {
-		require.NoError(t, repo.SaveNodeConfigRaw(ctx, override.key, override.updated))
+		require.NoError(t, writer.SaveNodeConfigRaw(ctx, override.key, override.updated))
 	}
 	startSharedNodeWithEnv(t, "CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED=false",
 		"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK=latest")

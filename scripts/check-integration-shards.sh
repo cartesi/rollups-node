@@ -3,11 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0 (see LICENSE)
 #
 # Shard coverage guard: verifies that every top-level integration test
-# belongs to exactly one shard and that every shard matches at least one
+# belongs to exactly one ordinary shard and that every shard matches at least one
 # test. Prevents false greens when a new integration test is added but not
 # assigned to a shard.
 #
-# Usage: check-integration-shards.sh <shard>=<regex> [<shard>=<regex> ...]
+# Usage: check-integration-shards.sh <shard>=<regex> ...
+#   [--profile=<name>=<regex>] [--profile-test=<name>=<TestName>] ...
+# Profiles overlap ordinary shards. Each listed profile test must exist and match.
 #
 # Test discovery uses `go test -list`, which builds the package and runs
 # TestMain (TestMain skips node management when listing). The package has no
@@ -24,15 +26,27 @@ fi
 
 SHARD_NAMES=()
 SHARD_REGEXES=()
+PROFILE_NAMES=()
+PROFILE_REGEXES=()
+PROFILE_TEST_NAMES=()
+PROFILE_TESTS=()
 for arg in "$@"; do
+    kind=shard
+    case "$arg" in
+        --profile=*) kind=profile; arg="${arg#--profile=}" ;;
+        --profile-test=*) kind=profile-test; arg="${arg#--profile-test=}" ;;
+    esac
     name="${arg%%=*}"
     regex="${arg#*=}"
     if [ -z "$name" ] || [ -z "$regex" ] || [ "$name" = "$arg" ]; then
         echo "ERROR: malformed shard spec '$arg' (expected <name>=<regex>)" >&2
         exit 1
     fi
-    SHARD_NAMES+=("$name")
-    SHARD_REGEXES+=("$regex")
+    case "$kind" in
+        profile) PROFILE_NAMES+=("$name"); PROFILE_REGEXES+=("$regex") ;;
+        profile-test) PROFILE_TEST_NAMES+=("$name"); PROFILE_TESTS+=("$regex") ;;
+        shard) SHARD_NAMES+=("$name"); SHARD_REGEXES+=("$regex") ;;
+    esac
 done
 
 # Discover top-level tests. Keep the build/list step separate from the grep so
@@ -53,6 +67,13 @@ if [ -z "$TESTS" ]; then
 fi
 
 fail=0
+
+# run-integration-tests.sh uses this literal suite to select delivery fixtures.
+# A rename must update that selector too; otherwise release checks silently stop.
+if ! printf '%s\n' "$TESTS" | grep -Fxq TestEchoAuthority; then
+    echo "ERROR: delivery fixture selector TestEchoAuthority no longer exists" >&2
+    fail=1
+fi
 
 while IFS= read -r t; do
     [ -n "$t" ] || continue
@@ -80,9 +101,35 @@ for i in "${!SHARD_NAMES[@]}"; do
     fi
 done
 
+# Profile overlap is intentional; only ordinary shards participate above.
+for i in "${!PROFILE_NAMES[@]}"; do
+    if ! printf '%s\n' "$TESTS" | grep -Eq -- "${PROFILE_REGEXES[$i]}"; then
+        echo "ERROR: profile ${PROFILE_NAMES[$i]} matches no tests" >&2
+        fail=1
+    fi
+done
+for i in "${!PROFILE_TEST_NAMES[@]}"; do
+    found=0
+    for j in "${!PROFILE_NAMES[@]}"; do
+        if [ "${PROFILE_TEST_NAMES[$i]}" != "${PROFILE_NAMES[$j]}" ]; then
+            continue
+        fi
+        found=1
+        if ! printf '%s\n' "$TESTS" | grep -Fxq -- "${PROFILE_TESTS[$i]}" ||
+           ! printf '%s\n' "${PROFILE_TESTS[$i]}" | grep -Eq -- "${PROFILE_REGEXES[$j]}"; then
+            echo "ERROR: profile ${PROFILE_NAMES[$j]} requires existing matching test ${PROFILE_TESTS[$i]}" >&2
+            fail=1
+        fi
+    done
+    if [ "$found" -eq 0 ]; then
+        echo "ERROR: test ${PROFILE_TESTS[$i]} names unknown profile ${PROFILE_TEST_NAMES[$i]}" >&2
+        fail=1
+    fi
+done
+
 if [ "$fail" -ne 0 ]; then
     echo "FAIL: shard coverage check failed" >&2
     exit 1
 fi
 
-echo "OK: $(printf '%s\n' "$TESTS" | wc -l | tr -d ' ') tests covered by ${#SHARD_NAMES[@]} shards"
+echo "OK: $(printf '%s\n' "$TESTS" | wc -l | tr -d ' ') tests covered by ${#SHARD_NAMES[@]} shards; ${#PROFILE_NAMES[@]} profiles checked"

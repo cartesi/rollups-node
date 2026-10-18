@@ -38,6 +38,14 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(m.Run())
 	}
+	if os.Getenv(managedDeadlineChildEnv) != "" {
+		run := flag.Lookup("test.run")
+		if run == nil || run.Value.String() != managedDeadlineTestPattern {
+			fmt.Fprintln(os.Stderr, "deadline subprocess must select only its lifecycle test")
+			os.Exit(2)
+		}
+		os.Exit(m.Run())
+	}
 	if testing.Short() {
 		fmt.Fprintln(os.Stderr, "skipping integration tests in short mode")
 		os.Exit(0)
@@ -115,7 +123,18 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	var testTimeout time.Duration
+	if timeoutFlag := flag.Lookup("test.timeout"); timeoutFlag != nil {
+		parsed, err := time.ParseDuration(timeoutFlag.Value.String())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid test timeout: %v\n", err)
+			os.Exit(2)
+		}
+		testTimeout = parsed
+	}
+	stopDeadline := installManagedNodeDeadline(testTimeout)
 	code := m.Run()
+	stopDeadline()
 
 	if sharedNode != nil {
 		if checker, ok := sharedNode.(nodeExitChecker); ok {

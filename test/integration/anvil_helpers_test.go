@@ -107,7 +107,18 @@ func anvilSetBalance(ctx context.Context, address string, weiHex string) error {
 
 // anvilMine mines the specified number of blocks on the Anvil devnet.
 func anvilMine(ctx context.Context, numBlocks int) error {
-	return anvilRPC(ctx, "anvil_mine", fmt.Sprintf("0x%x", numBlocks))
+	if numBlocks < 0 {
+		return fmt.Errorf("cannot mine a negative number of blocks: %d", numBlocks)
+	}
+	// Keep explicit mining transitions separate from the concurrent node RPCs.
+	// Bulk mining has rewritten finalized fixture blocks under mixed mining.
+	// Do not change the automine or interval mode selected by the caller.
+	for block := range numBlocks {
+		if err := anvilRPC(ctx, "evm_mine"); err != nil {
+			return fmt.Errorf("mine block %d of %d: %w", block+1, numBlocks, err)
+		}
+	}
+	return nil
 }
 
 // mineForTournamentTimeout queries the tournament contract to determine

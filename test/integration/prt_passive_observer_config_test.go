@@ -13,12 +13,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
 const (
 	passiveClaimSubmissionField = "ClaimSubmissionEnabled"
 	passiveDefaultBlockField    = "DefaultBlock"
+	passiveSignerField          = "ResolvedSignerAddress"
 
 	observerCleanupExitEnv     = "CARTESI_TEST_PASSIVE_OBSERVER_CLEANUP_EXIT_AT"
 	observerCleanupTestPattern = "^TestPassiveObserverCleanupPreservesRestoreOrder$"
@@ -40,6 +43,16 @@ func patchPassiveObserverConfig(raw []byte, overrides map[string]any) ([]byte, e
 			return nil, fmt.Errorf("encode passive observer config field %s: %w", key, err)
 		}
 		fields[key] = encoded
+	}
+	if string(fields[passiveClaimSubmissionField]) == "false" {
+		if _, exists := fields[passiveSignerField]; !exists {
+			return nil, fmt.Errorf("passive observer config is missing field %s", passiveSignerField)
+		}
+		encoded, err := json.Marshal(common.Address{})
+		if err != nil {
+			return nil, fmt.Errorf("encode observer-only signer: %w", err)
+		}
+		fields[passiveSignerField] = encoded
 	}
 	return json.Marshal(fields)
 }
@@ -119,6 +132,7 @@ func TestPassiveObserverCleanupPreservesRestoreOrder(t *testing.T) {
 
 func TestPassiveObserverConfigPreservesOriginalAndUnrelatedFields(t *testing.T) {
 	raw := []byte(`{"DefaultBlock":"FINALIZED","ClaimSubmissionEnabled":true,` +
+		`"ResolvedSignerAddress":"0x0000000000000000000000000000000000000123",` +
 		`"ChainID":18446744073709551615,"Other":{"value":18446744073709551616}}`)
 	original := bytes.Clone(raw)
 	updated, err := patchPassiveObserverConfig(raw, map[string]any{passiveDefaultBlockField: "LATEST", passiveClaimSubmissionField: false})
@@ -128,6 +142,7 @@ func TestPassiveObserverConfigPreservesOriginalAndUnrelatedFields(t *testing.T) 
 	require.NoError(t, json.Unmarshal(updated, &fields))
 	require.Equal(t, `"LATEST"`, string(fields[passiveDefaultBlockField]))
 	require.Equal(t, "false", string(fields[passiveClaimSubmissionField]))
+	require.JSONEq(t, `"0x0000000000000000000000000000000000000000"`, string(fields[passiveSignerField]))
 	require.Equal(t, "18446744073709551615", string(fields["ChainID"]))
 	require.Equal(t, `{"value":18446744073709551616}`, string(fields["Other"]))
 }
@@ -139,4 +154,21 @@ func TestPassiveObserverConfigRejectsMissingFieldsAndInvalidJSON(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestReaderConfigClearsSignerAndCanRestoreExactSubmittingRecord(t *testing.T) {
+	original := []byte(`{"DefaultBlock":"FINALIZED","ChainID":31337,"ClaimSubmissionEnabled":true,` +
+		`"ResolvedSignerAddress":"0x0000000000000000000000000000000000000123"}`)
+	copyBefore := bytes.Clone(original)
+	reader, err := patchPassiveObserverConfig(original, map[string]any{passiveClaimSubmissionField: false})
+	require.NoError(t, err)
+	var parsed config.PersistentSubmitterConfig
+	require.NoError(t, json.Unmarshal(reader, &parsed))
+	require.NoError(t, parsed.Validate())
+	require.False(t, parsed.ClaimSubmissionEnabled)
+	require.Equal(t, common.Address{}, parsed.ResolvedSignerAddress)
+	require.Equal(t, copyBefore, original, "restore writes the exact saved bytes")
+	require.NoError(t, json.Unmarshal(original, &parsed))
+	require.True(t, parsed.ClaimSubmissionEnabled)
+	require.Equal(t, common.HexToAddress("0x123"), parsed.ResolvedSignerAddress)
 }
