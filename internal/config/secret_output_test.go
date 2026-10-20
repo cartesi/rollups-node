@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -131,7 +130,7 @@ func TestSensitiveFileErrorsKeepSafeFilesystemCause(t *testing.T) {
 	t.Setenv(AUTH_PRIVATE_KEY, "")
 	t.Setenv(AUTH_PRIVATE_KEY_FILE, directory)
 	_, err := GetAuthPrivateKey()
-	require.ErrorIs(t, err, syscall.EISDIR)
+	require.ErrorIs(t, err, ErrInsecureSecretFile)
 	require.NotContains(t, err.Error(), marker)
 
 	path := filepath.Join(t.TempDir(), marker)

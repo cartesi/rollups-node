@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -315,18 +314,9 @@ func ToRedactedUint32FromString(s string) (RedactedUint, error) {
 	return RedactedUint{uint32(value)}, nil
 }
 
-// readConfigFile retains filesystem classification without keeping a filename
-// in the returned error: operators may accidentally supply a secret as the path.
+// readConfigFile validates and reads a file-backed config secret.
 func readConfigFile(filename string) ([]byte, error) {
-	contents, err := os.ReadFile(filename)
-	if err == nil {
-		return contents, nil
-	}
-	var pathErr *os.PathError
-	if errors.As(err, &pathErr) {
-		return nil, pathErr.Err
-	}
-	return nil, errors.New("cannot read configuration file")
+	return readSecretFile(filename)
 }
 
 // ToHTTPURLFromString applies the HTTP-specific policy without changing DSNs.
