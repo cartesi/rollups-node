@@ -37,7 +37,7 @@ func mockTransitionQuery(values map[uint64]*big.Int) TransitionQueryFn {
 
 // Helper to create an onHit that collects blocks
 func collectOnHit(blocks *[]uint64) OnHitFn {
-	return func(block uint64) error {
+	return func(block uint64, _, _ *big.Int) error {
 		*blocks = append(*blocks, block)
 		return nil
 	}
@@ -45,7 +45,7 @@ func collectOnHit(blocks *[]uint64) OnHitFn {
 
 // Helper to create an onHit that returns error
 func errorOnHit(err error) OnHitFn {
-	return func(_ uint64) error {
+	return func(_ uint64, _, _ *big.Int) error {
 		return err
 	}
 }
@@ -259,15 +259,16 @@ func (s *SearchSuite) TestUpperBoundStopsAtReachingTransition() {
 		lower *big.Int
 		upper *big.Int
 		want  []uint64
+		last  uint64
 	}{
-		{name: "unbounded", want: []uint64{12, 14, 16}},
-		{name: "exact counter", upper: big.NewInt(5), want: []uint64{12}},
-		{name: "counter jumps past bound", upper: big.NewInt(6), want: []uint64{12, 14}},
-		{name: "bound above final counter", upper: big.NewInt(20), want: []uint64{12, 14, 16}},
-		{name: "bound already reached at start", upper: big.NewInt(2)},
-		{name: "bound already exceeded at start", upper: big.NewInt(1)},
-		{name: "initial transition reaches bound", lower: big.NewInt(0), upper: big.NewInt(2), want: []uint64{10}},
-		{name: "initial and later transitions", lower: big.NewInt(0), upper: big.NewInt(9), want: []uint64{10, 12, 14}},
+		{name: "unbounded", want: []uint64{12, 14, 16}, last: 17},
+		{name: "exact counter", upper: big.NewInt(5), want: []uint64{12}, last: 13},
+		{name: "counter jumps past bound", upper: big.NewInt(6), want: []uint64{12, 14}, last: 15},
+		{name: "bound above final counter", upper: big.NewInt(20), want: []uint64{12, 14, 16}, last: 17},
+		{name: "bound already reached at start", upper: big.NewInt(2), last: 17},
+		{name: "bound already exceeded at start", upper: big.NewInt(1), last: 17},
+		{name: "initial transition reaches bound", lower: big.NewInt(0), upper: big.NewInt(2), want: []uint64{10}, last: 17},
+		{name: "initial and later transitions", lower: big.NewInt(0), upper: big.NewInt(9), want: []uint64{10, 12, 14}, last: 15},
 	} {
 		s.Run(test.name, func() {
 			var blocks []uint64
@@ -276,11 +277,8 @@ func (s *SearchSuite) TestUpperBoundStopsAtReachingTransition() {
 			s.Require().NoError(err)
 			s.Equal(test.want, blocks)
 			s.Equal(uint64(len(test.want)), count)
-			wantLast := uint64(9) // startBlock - 1 when no callback succeeds
-			if len(test.want) > 0 {
-				wantLast = test.want[len(test.want)-1]
-			}
-			s.Equal(wantLast, last)
+			// Progress includes the unchanged blocks following a transition.
+			s.Equal(test.last, last)
 		})
 	}
 }
@@ -294,7 +292,7 @@ func (s *SearchSuite) TestLastProcessedBlockOnEmptyAndSingleBlockRanges() {
 		last       uint64
 	}{
 		{name: "empty range", start: 11, end: 10, last: 10},
-		{name: "single block without transition", start: 10, end: 10, last: 9},
+		{name: "single block without transition", start: 10, end: 10, last: 10},
 		{name: "single block with transition", start: 10, end: 10, lower: big.NewInt(0), want: []uint64{10}, last: 10},
 	} {
 		s.Run(test.name, func() {
@@ -310,14 +308,26 @@ func (s *SearchSuite) TestLastProcessedBlockOnEmptyAndSingleBlockRanges() {
 }
 
 func (s *SearchSuite) TestLastProcessedBlockExcludesFailedCallback() {
-	for _, failBlock := range []uint64{10, 11, 12} {
+	// Include unchanged blocks to verify that progress can extend beyond the
+	// last successful callback, while excluding the failed transition.
+	for _, test := range []struct {
+		failBlock uint64
+		last      uint64
+		completed []uint64
+	}{
+		{failBlock: 10, last: 9},
+		{failBlock: 12, last: 10, completed: []uint64{10}},
+		{failBlock: 14, last: 13, completed: []uint64{10, 12}},
+		{failBlock: 16, last: 15, completed: []uint64{10, 12, 14}},
+	} {
+		failBlock := test.failBlock
 		s.Run(fmt.Sprintf("failure_at_%d", failBlock), func() {
 			callbackErr := fmt.Errorf("callback failed at %d", failBlock)
 			var completed []uint64
-			count, last, err := FindTransitions(s.ctx, 10, 12, big.NewInt(0), nil,
+			count, last, err := FindTransitions(s.ctx, 10, 17, big.NewInt(0), nil,
 				func(_ context.Context, block uint64) (*big.Int, error) {
-					return new(big.Int).SetUint64(block - 9), nil
-				}, func(block uint64) error {
+					return new(big.Int).SetUint64((block-10)/2 + 1), nil
+				}, func(block uint64, _, _ *big.Int) error {
 					if block == failBlock {
 						return callbackErr
 					}
@@ -325,8 +335,8 @@ func (s *SearchSuite) TestLastProcessedBlockExcludesFailedCallback() {
 					return nil
 				})
 			s.ErrorIs(err, callbackErr)
-			s.Equal(failBlock-1, last)
-			s.Equal(failBlock-10, count)
+			s.Equal(test.last, last)
+			s.Equal(test.completed, completed)
 			s.Equal(uint64(len(completed)), count)
 		})
 	}

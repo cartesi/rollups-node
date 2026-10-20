@@ -185,7 +185,7 @@ func TestReadinessSeparatesInputCorruptionFromSharedFailures(t *testing.T) {
 			client := newMockEthClient()
 			client.On("HeaderByNumber", mock.Anything, mock.Anything).Return(&types.Header{Number: big.NewInt(110)}, nil)
 			r := &Service{client: client, repository: repo,
-				defaultBlock: DefaultBlock_Latest, readyMaxStaleness: time.Hour}
+				defaultBlock: DefaultBlock_Latest, readyMaxStaleness: time.Hour, maxInputsPerStep: 500}
 			r.Logger = slog.Default()
 			r.resolver = newApplicationAdapterResolver(r.Logger,
 				newMockAdapterFactory().SetupDefaultBehaviorSingleApp(newMockApplicationContract(), input))

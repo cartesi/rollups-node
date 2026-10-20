@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/errutil"
@@ -416,16 +415,16 @@ func (r *Service) readApplicationInputs(
 ) ([]*Input, uint64, error) {
 	inputCount, err := r.repository.GetNumberOfInputs(ctx, app.application.IApplicationAddress.String())
 	if err != nil {
-		return nil, startBlock-1, fmt.Errorf("get stored input count: %w", err)
+		return nil, startBlock - 1, fmt.Errorf("get stored input count: %w", err)
 	}
 	inputs, lastInputBlock, endCount, err := r.fetchInputs(
-		ctx, app, startBlock, endBlock, new(big.Int).SetUint64(inputCount), 0, math.MaxUint64)
+		ctx, app, startBlock, endBlock, new(big.Int).SetUint64(inputCount), inputCount, inputCount+r.maxInputsPerStep-1)
 	if err != nil {
-		return nil, startBlock-1, fmt.Errorf("fetch inputs: %w", err)
+		return nil, startBlock - 1, fmt.Errorf("fetch inputs: %w", err)
 	}
 	expectedNew := endCount - inputCount
 	if uint64(len(inputs)) != expectedNew {
-		return nil, startBlock-1, fmt.Errorf("input count mismatch: stored %d, on-chain %d, expected %d new inputs, got %d",
+		return nil, startBlock - 1, fmt.Errorf("input count mismatch: stored %d, on-chain %d, expected %d new inputs, got %d",
 			inputCount, endCount, expectedNew, len(inputs))
 	}
 	return inputs, lastInputBlock, nil
@@ -484,16 +483,25 @@ func (r *Service) fetchInputs(
 	}
 
 	var sortedInputs []*Input
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, prevValue, currValue *big.Int) error {
 		filterOpts := &bind.FilterOpts{
 			Context: ctx,
 			Start:   block,
 			End:     &block,
 		}
+		firstInputIdx := max(lowerBound, prevValue.Uint64())
+		lastInputIdx := min(upperBound, currValue.Uint64())
+		if firstInputIdx > lastInputIdx {
+			return nil
+		}
+		indices := make([]*big.Int, 0, max(0, 1+lastInputIdx-firstInputIdx))
+		for i := firstInputIdx; i <= lastInputIdx; i++ {
+			indices = append(indices, new(big.Int).SetUint64(i))
+		}
 		inputEvents, err := app.inputSource.RetrieveInputs(
 			filterOpts,
 			[]common.Address{app.application.IApplicationAddress},
-			nil,
+			indices,
 		)
 		if err != nil {
 			return fmt.Errorf(
@@ -527,7 +535,7 @@ func (r *Service) fetchInputs(
 		return nil
 	}
 
-	_, _, err := ethutil.FindTransitions(
+	_, lastProcessedBlock, err := ethutil.FindTransitions(
 		ctx, startBlock, endBlock, prevValue, nil, oracle, onHit)
 	if err != nil {
 		return nil, startBlock - 1, 0, fmt.Errorf(
@@ -546,5 +554,5 @@ func (r *Service) fetchInputs(
 		"end_input_count", observedEndValue.Uint64(),
 		"new_inputs", len(sortedInputs),
 	)
-	return sortedInputs, endBlock, observedEndValue.Uint64(), nil
+	return sortedInputs, lastProcessedBlock, observedEndValue.Uint64(), nil
 }

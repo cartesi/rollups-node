@@ -261,7 +261,7 @@ func (c *chainClient) findMatchCommitments(
 		return caller.GetMatchCreatedCount(opts)
 	}
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		q, qErr := buildEventFilterQuery(
 			tournamentAddr, "MatchCreated",
 			itournament.ITournamentMetaData, block, block,

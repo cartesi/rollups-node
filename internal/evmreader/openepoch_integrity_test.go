@@ -46,7 +46,7 @@ func TestDaveOpenEpochChecksInputCountBeforePublication(t *testing.T) {
 			t.Run(name+"/"+test.name, func(t *testing.T) {
 				repo := newMockRepository()
 				inputBox := newMockInputBox()
-				r := &Service{repository: repo}
+				r := &Service{repository: repo, maxInputsPerStep: 500}
 				r.Logger = testLogger(t)
 				app := newDaveAppContracts(inputBox, nil)
 				app.application.Status = model.ApplicationStatus_OK

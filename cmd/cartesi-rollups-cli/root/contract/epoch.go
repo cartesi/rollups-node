@@ -136,7 +136,7 @@ func (c *chainClient) epochHistoryDave(consensusAddr common.Address) (*EpochHist
 	var epochs []EpochEvent
 	limit := epochLimitFlag
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		if limit > 0 && len(epochs) >= limit {
 			return errLimitReached
 		}
@@ -261,7 +261,7 @@ func (c *chainClient) epochHistoryAuthority(
 	var claims []ClaimEvent
 	limit := epochLimitFlag
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		if limit > 0 && len(claims) >= limit {
 			return errLimitReached
 		}
@@ -428,7 +428,7 @@ func (c *chainClient) epochHistoryQuorum(
 		return consensusCaller.GetNumberOfAcceptedClaims(opts, c.appAddr)
 	}
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		if limit > 0 && len(claims) >= limit {
 			return errLimitReached
 		}

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -205,7 +204,7 @@ func (r *Service) processApplicationSealedEpochs(
 		}
 	}
 	previousTransitionValue := prevValue
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		value, err := r.processEpochTransition(ctx, app, block, previousTransitionValue)
 		if err == nil {
 			previousTransitionValue = value
@@ -533,7 +532,7 @@ func (r *Service) processApplicationOpenEpoch(
 	inputs, lastInputBlock, endCount, err := r.fetchInputs(ctx, app,
 		lastInputCheckBlock+1, mostRecentBlockNumber,
 		prevValue,
-		openEpoch.InputIndexUpperBound, math.MaxUint64)
+		openEpoch.InputIndexUpperBound, openEpoch.InputIndexUpperBound+r.maxInputsPerStep)
 	if err != nil {
 		return fmt.Errorf("failed to fetch inputs for epoch %d: %w", openEpoch.Index, err)
 	}

@@ -51,9 +51,10 @@ func (s *SealedEpochsSuite) SetupTest() {
 	s.dave = newMockDaveConsensus()
 
 	s.evmReader = &Service{
-		repository:     s.repository,
-		defaultBlock:   DefaultBlock_Latest,
-		hasEnabledApps: true,
+		repository:       s.repository,
+		defaultBlock:     DefaultBlock_Latest,
+		hasEnabledApps:   true,
+		maxInputsPerStep: 500,
 	}
 
 	logLevel, err := config.GetLogLevel()

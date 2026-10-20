@@ -96,7 +96,7 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 			inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).
 				Return(inputEvents, nil)
 			contracts := appContracts{application: app, inputSource: inputBox, daveConsensus: dave}
-			reader := &Service{repository: repo}
+			reader := &Service{repository: repo, maxInputsPerStep: 500}
 			reader.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 			require.NoError(t, reader.processApplicationSealedEpochs(ctx, contracts, forecloseBlock))
 
@@ -137,7 +137,7 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 			inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).
 				Return(inputEvents, nil).Once()
 			contracts.application = app
-			reader = &Service{repository: repo}
+			reader = &Service{repository: repo, maxInputsPerStep: 500}
 			reader.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 			reader.scanDaveConsensusEpochsAndInputs(ctx, []appContracts{contracts}, forecloseBlock+10)
 

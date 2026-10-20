@@ -6,7 +6,6 @@ package evmreader
 import (
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -60,7 +59,7 @@ func (s *EvmReaderSuite) TestFetchApplicationInputsDuplicateAndOutOfOrderEvents(
 	}, nil)
 
 	prevValue := new(big.Int).SetUint64(0) // repo returns 0 inputs
-	inputs, _, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 0, math.MaxUint64)
+	inputs, _, _, err := s.evmReader.fetchInputs(s.ctx, app, 10, 200, prevValue, 0, 300)
 	s.Require().NoError(err)
 
 	// 3 unique inputs, sorted by index
@@ -102,7 +101,7 @@ func (s *EvmReaderSuite) TestFetchInputsSameTransactionHashPreservesLogIndex() {
 	).Return([]iinputbox.IInputBoxInputAdded{input0, input1}, nil)
 
 	inputs, _, _, err := s.evmReader.fetchInputs(
-		s.ctx, app, 10, 200, new(big.Int).SetUint64(0), 0, math.MaxUint64)
+		s.ctx, app, 10, 200, new(big.Int).SetUint64(0), 0, 300)
 	s.Require().NoError(err)
 	s.Require().Len(inputs, 2)
 	s.Equal(txHash, inputs[0].TransactionHash)

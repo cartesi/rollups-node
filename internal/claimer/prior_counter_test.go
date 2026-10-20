@@ -142,7 +142,7 @@ func TestFindTransitions_PrevValueRegression(t *testing.T) {
 			"sanity: oracle(currEpoch.LastBlock=90) must observe both transitions")
 
 		hits := []uint64{}
-		onHit := func(block uint64) error {
+		onHit := func(block uint64, _, _ *big.Int) error {
 			hits = append(hits, block)
 			return nil
 		}
@@ -166,7 +166,7 @@ func TestFindTransitions_PrevValueRegression(t *testing.T) {
 			"sanity: priorCounter at fromBlock=70 must read oracle(69)=0 (no transitions yet)")
 
 		hits := []uint64{}
-		onHit := func(block uint64) error {
+		onHit := func(block uint64, _, _ *big.Int) error {
 			hits = append(hits, block)
 			return nil
 		}

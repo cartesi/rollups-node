@@ -67,7 +67,7 @@ func (r *Service) checkForPostForeclosureWithdrawals(
 
 	var withdrawals []*Withdrawal
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		blockWithdrawals, err := r.withdrawalsAtBlock(ctx, app, block)
 		if err != nil {
 			return err

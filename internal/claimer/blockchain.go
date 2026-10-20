@@ -272,8 +272,8 @@ func newOnHit[IT eventIterator](
 	address common.Address,
 	filter func(*bind.FilterOpts, []common.Address, []common.Address) (IT, error),
 	onEvent func(IT),
-) func(block uint64) error {
-	return func(block uint64) error {
+) ethutil.OnHitFn {
+	return func(block uint64, _, _ *big.Int) error {
 		filterOpts := &bind.FilterOpts{
 			Context: ctx,
 			Start:   block,

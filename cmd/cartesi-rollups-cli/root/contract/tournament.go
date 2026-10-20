@@ -245,7 +245,7 @@ func (c *chainClient) findTournamentForEpoch(
 
 	var result common.Address
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		q, qErr := buildEventFilterQuery(
 			consensusAddr, "EpochSealed",
 			idaveconsensus.IDaveConsensusMetaData, block, block,
@@ -732,7 +732,7 @@ func (c *chainClient) findAndCollectEvents(
 	oracle ethutil.TransitionQueryFn,
 	process func(*types.Log) (done bool, err error),
 ) error {
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		q, qErr := buildEventFilterQuery(
 			addr, eventName, itournament.ITournamentMetaData, block, block,
 		)
@@ -898,7 +898,7 @@ func (c *chainClient) discoverChildTournaments(
 		return caller.GetNewInnerTournamentCount(opts)
 	}
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		q, qErr := buildEventFilterQuery(
 			tournamentAddr, "NewInnerTournament",
 			itournament.ITournamentMetaData, block, block,

@@ -21,7 +21,7 @@ var ErrMonotonicViolation = errors.New("monotonic assumption violated")
 // TransitionQueryFn for binary search
 type TransitionQueryFn func(ctx context.Context, block uint64) (*big.Int, error)
 
-type OnHitFn func(block uint64) error
+type OnHitFn func(block uint64, prevValue, currValue *big.Int) error
 
 // FindTransitions performs divide-and-conquer search for transitions using oracle
 // and calls onHit for each transition block in chronological order.
@@ -31,16 +31,16 @@ type OnHitFn func(block uint64) error
 func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBound, upperBound *big.Int,
 	transitionQuery TransitionQueryFn, onHit OnHitFn) (uint64, uint64, error) {
 
-	lastProcessedBlock := startBlock-1
-
 	if startBlock > endBlock {
-		return 0, lastProcessedBlock, nil
+		return 0, endBlock, nil
 	}
 
 	type interval struct {
-		StartBlock, EndBlock uint64
+		StartBlock, EndBlock, LastBlock uint64
 		StartValue, EndValue *big.Int
 	}
+
+	lastProcessedBlock := startBlock-1
 
 	startValue, err := transitionQuery(ctx, startBlock)
 	if err != nil {
@@ -55,7 +55,7 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBoun
 				ErrMonotonicViolation, lowerBound.String(), startValue.String(), startBlock)
 		}
 		if comparisonResult < 0 {
-			if err := onHit(startBlock); err != nil {
+			if err := onHit(startBlock, lowerBound, startValue); err != nil {
 				return count, lastProcessedBlock, err
 			}
 			lastProcessedBlock = startBlock
@@ -64,21 +64,27 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBoun
 	}
 
 	if startBlock == endBlock || (upperBound != nil && startValue.Cmp(upperBound) >= 0) {
-		return count, lastProcessedBlock, nil
+		return count, endBlock, nil
 	}
 
 	endValue, err := transitionQuery(ctx, endBlock)
 	if err != nil {
-		return 0, lastProcessedBlock, fmt.Errorf("transitionQuery(endBlock=%d): %w", endBlock, err)
+		return count, lastProcessedBlock, fmt.Errorf("transitionQuery(endBlock=%d): %w", endBlock, err)
 	}
 
 	if startValue.Cmp(endValue) == 0 {
 		// No further transitions, but may have added startBlock
-		return count, lastProcessedBlock, nil
+		return count, endBlock, nil
 	}
 
 	// First phase: collect all transition blocks
-	stack := []interval{{StartBlock: startBlock, EndBlock: endBlock, StartValue: startValue, EndValue: endValue}}
+	stack := []interval{{
+		StartBlock: startBlock,
+		EndBlock:   endBlock,
+		LastBlock:  endBlock,
+		StartValue: startValue,
+		EndValue:   endValue,
+	}}
 	for len(stack) > 0 {
 		// Check for context cancellation
 		select {
@@ -93,10 +99,10 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBoun
 
 		if iv.StartBlock == iv.EndBlock {
 			// Found a transition block
-			if err := onHit(iv.StartBlock); err != nil {
+			if err := onHit(iv.StartBlock, iv.StartValue, iv.EndValue); err != nil {
 				return count, lastProcessedBlock, err
 			}
-			lastProcessedBlock = iv.StartBlock
+			lastProcessedBlock = iv.LastBlock
 			count++
 			continue
 		}
@@ -108,11 +114,27 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBoun
 		}
 
 		// Add new intervals to stack if there are transitions
-		if midValue.Cmp(iv.EndValue) != 0 && (upperBound == nil || midValue.Cmp(upperBound) < 0) {
-			stack = append(stack, interval{StartBlock: midBlock + 1, EndBlock: iv.EndBlock, StartValue: midValue, EndValue: iv.EndValue})
+		lastBlock := iv.LastBlock
+		if midValue.Cmp(iv.EndValue) != 0 {
+			if upperBound == nil || midValue.Cmp(upperBound) < 0 {
+				stack = append(stack, interval{
+					StartBlock: midBlock + 1,
+					EndBlock:   iv.EndBlock,
+					LastBlock:  lastBlock,
+					StartValue: midValue,
+					EndValue:   iv.EndValue,
+				})
+			}
+			lastBlock = midBlock
 		}
 		if iv.StartValue.Cmp(midValue) != 0 {
-			stack = append(stack, interval{StartBlock: iv.StartBlock, EndBlock: midBlock, StartValue: iv.StartValue, EndValue: midValue})
+			stack = append(stack, interval{
+				StartBlock: iv.StartBlock,
+				EndBlock:   midBlock,
+				LastBlock:  lastBlock,
+				StartValue: iv.StartValue,
+				EndValue:   midValue,
+			})
 		}
 	}
 
