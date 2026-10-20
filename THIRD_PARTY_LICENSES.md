@@ -525,6 +525,12 @@ repositories are Apache-2.0. They are listed below for attribution.
 * Version: v0.57.0
 * License: [BSD-3-Clause](https://cs.opensource.google/go/x/crypto/+/v0.57.0:LICENSE)
 
+## golang.org/x/net
+
+* Name: golang.org/x/net
+* Version: v0.58.0
+* License: [BSD-3-Clause](https://cs.opensource.google/go/x/net/+/v0.58.0:LICENSE)
+
 ## golang.org/x/sync
 
 * Name: golang.org/x/sync

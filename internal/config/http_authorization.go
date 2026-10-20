@@ -4,31 +4,61 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/spf13/viper"
+	"golang.org/x/net/http/httpguts"
 )
 
-// Unwrap the http authorization config `key:val` into a ClientOption that rpc accepts
-func HTTPAuthorizationOption() (rpc.ClientOption, error) {
+var (
+	errHTTPAuthorization = errors.New("malformed BlockchainHttpAuthorization, expected <key>:<value> with a valid HTTP header name and value")
+)
 
-	// no authorization is allowed.
-	auth, err := GetBlockchainHttpAuthorization()
-	if err != nil {
+// HTTPAuthorizationOption unwraps the http authorization config `key:val`
+// into a ClientOption that rpc accepts.
+//
+// Authorization is optional when neither the direct value nor its _FILE
+// counterpart is configured. Once configured, invalid input is an error so the
+// service refuses to start instead of silently sending requests without the
+// header.
+func HTTPAuthorizationOption() (rpc.ClientOption, error) {
+	if viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION) == "" &&
+		viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION_FILE) == "" {
 		return nil, nil
 	}
 
-	kv := strings.SplitN(auth.Value, ":", 2)
-	if len(kv) != 2 {
-		return nil, fmt.Errorf("malformed BlockchainHttpAuthorization, expected <key>:<value>")
+	auth, err := GetBlockchainHttpAuthorization()
+	if err != nil {
+		return nil, err
 	}
-	key := strings.TrimSpace(kv[0])
-	val := strings.TrimSpace(kv[1])
+
+	key, value, err := parseHTTPAuthorization(auth.Value)
+	if err != nil {
+		return nil, err
+	}
 
 	return rpc.WithHTTPAuth(func(h http.Header) error {
-		h.Set(key, val)
+		h.Set(key, value)
 		return nil
 	}), nil
+}
+
+func parseHTTPAuthorization(value string) (string, string, error) {
+	key, val, ok := strings.Cut(value, ":")
+	if !ok {
+		return "", "", errHTTPAuthorization
+	}
+
+	key = strings.TrimSpace(key)
+	val = strings.TrimSpace(val)
+	if !httpguts.ValidHeaderFieldName(key) ||
+		val == "" ||
+		!httpguts.ValidHeaderFieldValue(val) {
+		return "", "", errHTTPAuthorization
+	}
+
+	return key, val, nil
 }
