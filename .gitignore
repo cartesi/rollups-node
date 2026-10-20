@@ -21,4 +21,5 @@ machine-snapshot/**
 /applications
 /test/downloads
 /snapshots
+/.secrets/
 /integration-logs*.txt
