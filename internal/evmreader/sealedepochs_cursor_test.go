@@ -59,7 +59,7 @@ func TestForeclosureInputDrainRunsBelowSealedCursor(t *testing.T) {
 	repo := newMockRepository()
 	inputBox := newMockInputBox()
 	dave := newMockDaveConsensus()
-	r := &Service{repository: repo}
+	r := &Service{repository: repo, maxInputsPerStep: 500}
 	r.Logger = testLogger(t)
 	app := newDaveAppContracts(inputBox, dave)
 	app.application.Status = model.ApplicationStatus_MachineHalted

@@ -265,9 +265,9 @@ func (s *SearchSuite) TestUpperBoundStopsAtReachingTransition() {
 		{name: "exact counter", upper: big.NewInt(5), want: []uint64{12}, last: 13},
 		{name: "counter jumps past bound", upper: big.NewInt(6), want: []uint64{12, 14}, last: 15},
 		{name: "bound above final counter", upper: big.NewInt(20), want: []uint64{12, 14, 16}, last: 17},
-		{name: "bound already reached at start", upper: big.NewInt(2), last: 17},
-		{name: "bound already exceeded at start", upper: big.NewInt(1), last: 17},
-		{name: "initial transition reaches bound", lower: big.NewInt(0), upper: big.NewInt(2), want: []uint64{10}, last: 17},
+		{name: "bound already reached at start", upper: big.NewInt(2), last: 10},
+		{name: "bound already exceeded at start", upper: big.NewInt(1), last: 10},
+		{name: "initial transition reaches bound", lower: big.NewInt(0), upper: big.NewInt(2), want: []uint64{10}, last: 10},
 		{name: "initial and later transitions", lower: big.NewInt(0), upper: big.NewInt(9), want: []uint64{10, 12, 14}, last: 15},
 	} {
 		s.Run(test.name, func() {

@@ -31,7 +31,7 @@ func TestSealedEpochFetchesOnlyUnstoredInputs(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			repo := newMockRepository()
 			inputBox := newMockInputBox()
-			reader := &Service{repository: repo}
+			reader := &Service{repository: repo, maxInputsPerStep: 500}
 			reader.Logger = testLogger(t)
 			app := newDaveAppContracts(inputBox, nil)
 			previous := &Epoch{Index: 0, LastBlock: 50, InputIndexUpperBound: 3, Status: EpochStatus_Closed}
@@ -56,11 +56,14 @@ func TestSealedEpochFetchesOnlyUnstoredInputs(t *testing.T) {
 				}), app1Addr).Return(new(big.Int).SetUint64(count), nil).Once()
 				events := make([]iinputbox.IInputBoxInputAdded, 0, len(test.indices))
 				for _, index := range test.indices {
+					if index < 5 || index >= test.upper {
+						continue
+					}
 					events = append(events, makeInputEvent(app1Addr, index, sealBlock))
 				}
 				inputBox.On("RetrieveInputs", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 					return opts.Start == sealBlock && opts.End != nil && *opts.End == sealBlock
-				}), []common.Address{app1Addr}, mock.Anything).Return(events, nil).Once()
+				}), []common.Address{app1Addr}, inputIndexRange(5, test.upper)).Return(events, nil).Once()
 			}
 			if !test.mismatch {
 				repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, sealBlock-1).

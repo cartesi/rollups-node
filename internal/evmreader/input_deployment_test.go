@@ -70,7 +70,7 @@ func TestIConsensusPredeploymentObservationDoesNotCorrupt(t *testing.T) {
 				repo := newMockRepository()
 				inputBox := newMockInputBox()
 				applicationContract := newMockApplicationContract()
-				r := &Service{repository: repo}
+				r := &Service{repository: repo, maxInputsPerStep: 500}
 				r.Logger = testLogger(t)
 				app := appContracts{
 					application: &model.Application{

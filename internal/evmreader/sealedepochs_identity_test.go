@@ -79,7 +79,7 @@ func TestDaveInputStoreErrorClassification(t *testing.T) {
 				inputBox.On("GetNumberOfInputs", blockRange(head, head+1), app1Addr).Return(big.NewInt(1), nil).Once()
 				inputBox.On("RetrieveInputs", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 					return opts.Start == head && opts.End != nil && *opts.End == head
-				}), []common.Address{app1Addr}, mock.Anything).
+				}), []common.Address{app1Addr}, inputIndexRange(0, 1)).
 					Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 0, head)}, nil).Once()
 				storeErr := fmt.Errorf("insert inputs: %w", test.cause)
 				repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, checkpoint).

@@ -93,8 +93,14 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 			inputBlock := mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 				return opts.Start == forecloseBlock && opts.End != nil && *opts.End == forecloseBlock
 			})
-			inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).
-				Return(inputEvents, nil)
+			for _, event := range events {
+				lower, upper := event.InputIndexLowerBound.Uint64(), event.InputIndexUpperBound.Uint64()
+				if lower == upper {
+					continue
+				}
+				inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, inputIndexRange(lower, upper)).
+					Return(inputEvents[lower:upper], nil).Once()
+			}
 			contracts := appContracts{application: app, inputSource: inputBox, daveConsensus: dave}
 			reader := &Service{repository: repo, maxInputsPerStep: 500}
 			reader.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -105,9 +111,9 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 			inputBox.Unset("RetrieveInputs")
 			openCtx, cancel := context.WithCancel(ctx)
 			t.Cleanup(cancel)
-			failedRead := inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).Once()
+			failedRead := inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, inputIndexRange(sealedInputs, sealedInputs+1)).Once()
 			if test.cancelWrite {
-				failedRead.Run(func(mock.Arguments) { cancel() }).Return(inputEvents, nil)
+				failedRead.Run(func(mock.Arguments) { cancel() }).Return(inputEvents[sealedInputs:], nil)
 			} else {
 				failedRead.Return([]iinputbox.IInputBoxInputAdded{}, context.Canceled)
 			}
@@ -134,8 +140,8 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 			assert.False(t, app.ForeclosureScanCaughtUp(), "drain must wait for the missing open input")
 
 			inputBox.Unset("RetrieveInputs")
-			inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).
-				Return(inputEvents, nil).Once()
+			inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, inputIndexRange(sealedInputs, sealedInputs+1)).
+				Return(inputEvents[sealedInputs:], nil).Once()
 			contracts.application = app
 			reader = &Service{repository: repo, maxInputsPerStep: 500}
 			reader.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))

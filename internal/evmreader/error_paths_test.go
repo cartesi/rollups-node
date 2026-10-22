@@ -44,7 +44,7 @@ func (s *EvmReaderSuite) TestCreateEpochsAndInputsErrorDoesNotAdvanceCheckpoint(
 		Return(new(big.Int).SetUint64(1), nil)
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 105 }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(0, 1),
 	).Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(addr, 0, 105)}, nil)
 
 	apps := []appContracts{
@@ -120,7 +120,7 @@ func (s *SealedEpochsSuite) TestSealedEpochInputCountMismatchReturnsError() {
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 			return opts.Start == 150
 		}),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(3, 4),
 	).Return([]iinputbox.IInputBoxInputAdded{
 		makeInputEvent(app1Addr, 3, 150),
 	}, nil)
@@ -410,7 +410,7 @@ func (s *EvmReaderSuite) TestIConsensusInputCountMismatchSkipsApp() {
 	// RetrieveInputs at 105 only returns 1 event (missing second input)
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 105 }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(0, 2),
 	).Return([]iinputbox.IInputBoxInputAdded{
 		makeInputEvent(addr, 0, 105),
 	}, nil)
@@ -458,7 +458,7 @@ func (s *EvmReaderSuite) TestIConsensusInputCountValidationUsesObservedEndCount(
 
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 105 }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(0, 1),
 	).Return([]iinputbox.IInputBoxInputAdded{
 		makeInputEvent(addr, 0, 105),
 	}, nil).Once()

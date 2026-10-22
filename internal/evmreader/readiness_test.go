@@ -66,7 +66,7 @@ func TestReadinessTracksScanFailures(t *testing.T) {
 			case "input logs", "input store":
 				count.Return(big.NewInt(1), nil)
 				events := []iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 0, 101)}
-				logs := input.On("RetrieveInputs", mock.Anything, mock.Anything, mock.Anything).Return(events, nil)
+				logs := input.On("RetrieveInputs", mock.Anything, mock.Anything, inputIndexRange(0, 1)).Return(events, nil)
 				store := repo.On("CreateEpochsAndInputs", mock.Anything, mock.Anything, mock.Anything, uint64(110)).Return(nil)
 				if failure == "input logs" {
 					failedCall, recovered = logs, []any{events, nil}
@@ -102,7 +102,7 @@ func TestReadinessTracksScanFailures(t *testing.T) {
 				repo.On("UpdateApplicationLastForecloseCheckBlock", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 			}
 			r := &Service{client: client, repository: repo,
-				defaultBlock: DefaultBlock_Latest, readyMaxStaleness: time.Hour}
+				defaultBlock: DefaultBlock_Latest, readyMaxStaleness: time.Hour, maxInputsPerStep: 500}
 			r.Logger = slog.Default()
 			r.resolver = newApplicationAdapterResolver(r.Logger, newMockAdapterFactory().SetupDefaultBehaviorSingleApp(contract, input))
 			require.False(t, r.Ready())
@@ -151,7 +151,7 @@ func TestReadinessSeparatesInputCorruptionFromSharedFailures(t *testing.T) {
 			input := newMockInputBox()
 			input.On("GetNumberOfInputs", mock.Anything, good.IApplicationAddress).Return(big.NewInt(0), nil)
 			count := input.On("GetNumberOfInputs", mock.Anything, bad.IApplicationAddress).Return(big.NewInt(1), nil)
-			input.On("RetrieveInputs", mock.Anything, mock.Anything, mock.Anything).
+			input.On("RetrieveInputs", mock.Anything, mock.Anything, inputIndexRange(0, 1)).
 				Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(bad.IApplicationAddress, 0, 101)}, nil)
 			repo.On("GetNumberOfInputs", mock.Anything, mock.Anything).Return(uint64(0), nil)
 			repo.On("GetEpoch", mock.Anything, good.IApplicationAddress.String(), mock.Anything).Return((*Epoch)(nil), nil)

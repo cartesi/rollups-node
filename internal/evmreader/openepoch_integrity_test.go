@@ -76,11 +76,14 @@ func TestDaveOpenEpochChecksInputCountBeforePublication(t *testing.T) {
 				if test.endCount > test.storedCount {
 					events := make([]iinputbox.IInputBoxInputAdded, 0, len(test.logIndices))
 					for _, index := range test.logIndices {
+						if index < test.storedCount || index >= test.endCount {
+							continue
+						}
 						events = append(events, makeInputEvent(app1Addr, index, head))
 					}
 					inputBox.On("RetrieveInputs", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 						return opts.Start == head && opts.End != nil && *opts.End == head
-					}), []common.Address{app1Addr}, mock.Anything).Return(events, nil).Once()
+					}), []common.Address{app1Addr}, inputIndexRange(test.storedCount, test.endCount)).Return(events, nil).Once()
 				}
 				if !test.mismatch {
 					repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, head).
