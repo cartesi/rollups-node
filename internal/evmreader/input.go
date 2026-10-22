@@ -418,7 +418,7 @@ func (r *Service) readApplicationInputs(
 		return nil, startBlock - 1, fmt.Errorf("get stored input count: %w", err)
 	}
 	inputs, lastInputBlock, endCount, err := r.fetchInputs(
-		ctx, app, startBlock, endBlock, new(big.Int).SetUint64(inputCount), inputCount, inputCount+r.maxInputsPerStep-1)
+		ctx, app, startBlock, endBlock, new(big.Int).SetUint64(inputCount), inputCount, inputCount+r.maxInputsPerStep)
 	if err != nil {
 		return nil, startBlock - 1, fmt.Errorf("fetch inputs: %w", err)
 	}
@@ -491,11 +491,12 @@ func (r *Service) fetchInputs(
 		}
 		firstInputIdx := max(lowerBound, prevValue.Uint64())
 		lastInputIdx := min(upperBound, currValue.Uint64())
+		observedEndValue = new(big.Int).SetUint64(lastInputIdx)
 		if firstInputIdx > lastInputIdx {
 			return nil
 		}
-		indices := make([]*big.Int, 0, max(0, 1+lastInputIdx-firstInputIdx))
-		for i := firstInputIdx; i <= lastInputIdx; i++ {
+		indices := make([]*big.Int, 0, max(0, lastInputIdx-firstInputIdx))
+		for i := firstInputIdx; i < lastInputIdx; i++ {
 			indices = append(indices, new(big.Int).SetUint64(i))
 		}
 		inputEvents, err := app.inputSource.RetrieveInputs(
@@ -510,9 +511,6 @@ func (r *Service) fetchInputs(
 		}
 		for _, event := range inputEvents {
 			idx := event.Index.Uint64()
-			if idx < lowerBound || idx >= upperBound {
-				continue
-			}
 			input := &Input{
 				Index:           idx,
 				Status:          InputCompletionStatus_None,
@@ -532,11 +530,14 @@ func (r *Service) fetchInputs(
 				)
 			}
 		}
+		if lastInputIdx < currValue.Uint64() {
+			return ethutil.ErrIncompleteProcessing
+		}
 		return nil
 	}
 
 	_, lastProcessedBlock, err := ethutil.FindTransitions(
-		ctx, startBlock, endBlock, prevValue, nil, oracle, onHit)
+		ctx, startBlock, endBlock, prevValue, new(big.Int).SetUint64(upperBound), oracle, onHit)
 	if err != nil {
 		return nil, startBlock - 1, 0, fmt.Errorf(
 			"failed to walk input transitions: %w", err)

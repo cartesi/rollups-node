@@ -203,23 +203,21 @@ func (r *Service) processApplicationSealedEpochs(
 			return err
 		}
 	}
-	previousTransitionValue := prevValue
-	onHit := func(block uint64, _, _ *big.Int) error {
-		value, err := r.processEpochTransition(ctx, app, block, previousTransitionValue)
-		if err == nil {
-			previousTransitionValue = value
-		}
-		return err
+	onHit := func(block uint64, prevValue, _ *big.Int) error {
+		return r.processEpochTransition(ctx, app, block, prevValue)
 	}
 
 	// Use FindTransitions to find epoch transitions
-	_, _, err := ethutil.FindTransitions(ctx, nextSearchBlock, mostRecentBlockNumber, prevValue, nil, oracle, onHit)
-	if err != nil {
+	_, lastProcessedBlock, err := ethutil.FindTransitions(ctx, nextSearchBlock, mostRecentBlockNumber, prevValue, nil, oracle, onHit)
+	switch {
+	case errors.Is(err, ethutil.ErrIncompleteProcessing):
+		return nil
+	case err != nil:
 		return fmt.Errorf("failed to walk epoch transitions: %w", err)
 	}
 
 	// Update the last check block for this application
-	err = r.repository.UpdateEventLastCheckBlock(ctx, []int64{app.application.ID}, MonitoredEvent_EpochSealed, mostRecentBlockNumber)
+	err = r.repository.UpdateEventLastCheckBlock(ctx, []int64{app.application.ID}, MonitoredEvent_EpochSealed, lastProcessedBlock)
 	if err != nil {
 		return fmt.Errorf("failed to update last epoch check block: %w", err)
 	}
@@ -240,7 +238,7 @@ func (r *Service) processEpochTransition(
 	app appContracts,
 	transitionBlock uint64,
 	previousEpochNumber *big.Int,
-) (*big.Int, error) {
+) error {
 	r.Logger.Debug("Processing epoch transition", "application", app.application.Name, "block", transitionBlock)
 
 	// Get the sealed epoch information at this block
@@ -251,7 +249,7 @@ func (r *Service) processEpochTransition(
 
 	sealedEpoch, err := app.daveConsensus.GetCurrentSealedEpoch(callOpts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get sealed epoch at transition block %d: %w", transitionBlock, err)
+		return fmt.Errorf("failed to get sealed epoch at transition block %d: %w", transitionBlock, err)
 	}
 
 	// Retrieve the actual EpochSealed events for this transition
@@ -263,17 +261,17 @@ func (r *Service) processEpochTransition(
 
 	sealedEvents, err := app.daveConsensus.RetrieveSealedEpochs(filterOpts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve sealed epoch events at block %d: %w", transitionBlock, err)
+		return fmt.Errorf("failed to retrieve sealed epoch events at block %d: %w", transitionBlock, err)
 	}
 
 	// Validate the whole block before storing any event. Several epochs can seal
 	// in one block, so a nonempty page can still omit part of the transition.
 	if sealedEpoch.EpochNumber == nil || !sealedEpoch.EpochNumber.IsUint64() {
-		return nil, fmt.Errorf("invalid sealed epoch number at block %d: %v", transitionBlock, sealedEpoch.EpochNumber)
+		return fmt.Errorf("invalid sealed epoch number at block %d: %v", transitionBlock, sealedEpoch.EpochNumber)
 	}
 	expectedCount := new(big.Int).Sub(sealedEpoch.EpochNumber, previousEpochNumber)
 	if expectedCount.Sign() <= 0 || !expectedCount.IsUint64() || expectedCount.Uint64() != uint64(len(sealedEvents)) {
-		return nil, fmt.Errorf("sealed epoch event count mismatch at block %d: expected %s, got %d",
+		return fmt.Errorf("sealed epoch event count mismatch at block %d: expected %s, got %d",
 			transitionBlock, expectedCount, len(sealedEvents))
 	}
 	expectedEpoch := new(big.Int).Set(previousEpochNumber)
@@ -281,13 +279,13 @@ func (r *Service) processEpochTransition(
 		expectedEpoch.Add(expectedEpoch, big.NewInt(1))
 		if event == nil || event.EpochNumber == nil || event.EpochNumber.Cmp(expectedEpoch) != 0 ||
 			event.Raw.BlockNumber != transitionBlock {
-			return nil, fmt.Errorf("invalid sealed epoch event sequence at block %d: expected epoch %s", transitionBlock, expectedEpoch)
+			return fmt.Errorf("invalid sealed epoch event sequence at block %d: expected epoch %s", transitionBlock, expectedEpoch)
 		}
 	}
 	lastEvent := sealedEvents[len(sealedEvents)-1]
 	if lastEvent.InputIndexLowerBound.Cmp(sealedEpoch.InputIndexLowerBound) != 0 ||
 		lastEvent.InputIndexUpperBound.Cmp(sealedEpoch.InputIndexUpperBound) != 0 || lastEvent.Tournament != sealedEpoch.Tournament {
-		return nil, fmt.Errorf("last sealed epoch event does not match current sealed epoch at block %d", transitionBlock)
+		return fmt.Errorf("last sealed epoch event does not match current sealed epoch at block %d", transitionBlock)
 	}
 	r.Logger.Info("Found sealed epoch events",
 		"application", app.application.Name, "block", transitionBlock,
@@ -297,11 +295,11 @@ func (r *Service) processEpochTransition(
 	for _, event := range sealedEvents {
 		err := r.processSealedEpochEvent(ctx, app, event)
 		if err != nil {
-			return nil, fmt.Errorf("failed to process sealed epoch event at block %d: %w", transitionBlock, err)
+			return fmt.Errorf("failed to process sealed epoch event at block %d: %w", transitionBlock, err)
 		}
 	}
 
-	return sealedEpoch.EpochNumber, nil
+	return nil
 }
 
 func (r *Service) processSealedEpochEvent(
@@ -367,7 +365,7 @@ func (r *Service) processSealedEpochEvent(
 			InputIndexLowerBound: event.InputIndexLowerBound.Uint64(),
 			InputIndexUpperBound: event.InputIndexUpperBound.Uint64(),
 			TournamentAddress:    &event.Tournament,
-			Status:               EpochStatus_Closed, // Sealed epochs are closed
+			Status:               EpochStatus_Open, // Sealed epochs that are not fully processed are still open
 		}
 
 		// setup the entire epoch as unprocessed
@@ -388,14 +386,15 @@ func (r *Service) processSealedEpochEvent(
 		}
 
 		// backup markers that indicate which part of the epoch was already processed
-		unprocessedFirstBlock = epoch.LastBlock + 1
+		unprocessedFirstBlock = epoch.LastBlock+1
 		unprocessedIndexLowerBound = epoch.InputIndexUpperBound
 
 		epoch.LastBlock = event.Raw.BlockNumber
 		epoch.InputIndexUpperBound = event.InputIndexUpperBound.Uint64()
 		epoch.TournamentAddress = &event.Tournament
-		epoch.Status = EpochStatus_Closed // Sealed epochs are closed
 	}
+
+	unprocessedIndexUpperBound := min(epoch.InputIndexUpperBound, unprocessedIndexLowerBound+r.maxInputsPerStep)
 
 	// Fetch inputs for this epoch from the InputBox.
 	// Always search from unprocessedFirstBlock (not lastInputCheckBlock+1) because with
@@ -403,20 +402,20 @@ func (r *Service) processSealedEpochEvent(
 	// FirstBlock), inputs for this epoch may exist at the overlap block — added in
 	// a later transaction than the previous epoch's seal within the same block.
 	var inputs []*Input
-	if unprocessedIndexLowerBound < epoch.InputIndexUpperBound {
+	if unprocessedIndexLowerBound < unprocessedIndexUpperBound {
 		var err error
 		var lastInputBlock uint64
 		prevValue := new(big.Int).SetUint64(unprocessedIndexLowerBound)
 		inputs, lastInputBlock, _, err = r.fetchInputs(ctx, app,
 			unprocessedFirstBlock, epoch.LastBlock,
 			prevValue,
-			unprocessedIndexLowerBound, epoch.InputIndexUpperBound)
-		if err != nil {
+			unprocessedIndexLowerBound, unprocessedIndexUpperBound)
+		if err != nil /*&& !errors.Is(err, ErrIncompleteProcessing)*/ {
 			return fmt.Errorf("failed to fetch inputs for epoch %d: %w", epoch.Index, err)
 		}
 
 		actualCount := uint64(len(inputs))
-		expectedCount := epoch.InputIndexUpperBound - unprocessedIndexLowerBound
+		expectedCount := unprocessedIndexUpperBound - unprocessedIndexLowerBound
 		if actualCount != expectedCount {
 			return fmt.Errorf(
 				"epoch %d input count mismatch: expected %d (indices %d to %d), got %d",
@@ -427,8 +426,14 @@ func (r *Service) processSealedEpochEvent(
 
 		// update epoch cursors to reflect partially processed inputs
 		epoch.LastBlock = lastInputBlock
-		epoch.InputIndexUpperBound = unprocessedIndexLowerBound + actualCount
+		epoch.InputIndexUpperBound = unprocessedIndexUpperBound
 	}
+
+	if unprocessedIndexUpperBound == event.InputIndexUpperBound.Uint64() {
+		epoch.LastBlock = event.Raw.BlockNumber
+		epoch.Status = EpochStatus_Closed // Fully processed sealed epochs are closed
+	}
+
 	// The seal covers every input before its transaction, but later inputs in
 	// the same block belong to the next epoch. Publish only complete blocks;
 	// the open-epoch scan must finish this boundary block before drain is safe.
@@ -448,6 +453,10 @@ func (r *Service) processSealedEpochEvent(
 				"sealed epoch %d input L1 log identity conflicts with stored data; operator reset required: %v", epoch.Index, err)
 		}
 		return fmt.Errorf("failed to store epoch and inputs: %w", err)
+	}
+
+	if epoch.Status != EpochStatus_Closed {
+		return ethutil.ErrIncompleteProcessing
 	}
 
 	r.Logger.Debug("Stored sealed epoch and inputs",

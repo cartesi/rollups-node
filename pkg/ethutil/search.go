@@ -17,6 +17,7 @@ import (
 // Callers can match it with errors.Is to distinguish this corruption signal
 // from transient query failures.
 var ErrMonotonicViolation = errors.New("monotonic assumption violated")
+var ErrIncompleteProcessing = errors.New("incomplete processing of transitions")
 
 // TransitionQueryFn for binary search
 type TransitionQueryFn func(ctx context.Context, block uint64) (*big.Int, error)
@@ -40,42 +41,44 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBoun
 		StartValue, EndValue *big.Int
 	}
 
-	lastProcessedBlock := startBlock-1
-
 	startValue, err := transitionQuery(ctx, startBlock)
 	if err != nil {
-		return 0, lastProcessedBlock, fmt.Errorf("transitionQuery(startBlock=%d): %w", startBlock, err)
+		return 0, startBlock-1, fmt.Errorf("transitionQuery(startBlock=%d): %w", startBlock, err)
 	}
 
 	var count uint64
 	if lowerBound != nil {
 		comparisonResult := lowerBound.Cmp(startValue)
 		if comparisonResult > 0 {
-			return 0, lastProcessedBlock, fmt.Errorf("%w: lowerBound %s > startValue %s at block %d",
+			return 0, startBlock-1, fmt.Errorf("%w: lowerBound %s > startValue %s at block %d",
 				ErrMonotonicViolation, lowerBound.String(), startValue.String(), startBlock)
 		}
 		if comparisonResult < 0 {
 			if err := onHit(startBlock, lowerBound, startValue); err != nil {
-				return count, lastProcessedBlock, err
+				if errors.Is(err, ErrIncompleteProcessing) {
+					err = nil
+				}
+				return count, startBlock-1, err
 			}
-			lastProcessedBlock = startBlock
 			count++
 		}
 	}
 
 	if startBlock == endBlock || (upperBound != nil && startValue.Cmp(upperBound) >= 0) {
-		return count, endBlock, nil
+		return count, startBlock, nil
 	}
 
 	endValue, err := transitionQuery(ctx, endBlock)
 	if err != nil {
-		return count, lastProcessedBlock, fmt.Errorf("transitionQuery(endBlock=%d): %w", endBlock, err)
+		return count, startBlock-1, fmt.Errorf("transitionQuery(endBlock=%d): %w", endBlock, err)
 	}
 
 	if startValue.Cmp(endValue) == 0 {
 		// No further transitions, but may have added startBlock
 		return count, endBlock, nil
 	}
+
+	lastProcessedBlock := startBlock
 
 	// First phase: collect all transition blocks
 	stack := []interval{{
@@ -100,10 +103,13 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBoun
 		if iv.StartBlock == iv.EndBlock {
 			// Found a transition block
 			if err := onHit(iv.StartBlock, iv.StartValue, iv.EndValue); err != nil {
+				if errors.Is(err, ErrIncompleteProcessing) {
+					err = nil
+				}
 				return count, lastProcessedBlock, err
 			}
-			lastProcessedBlock = iv.LastBlock
 			count++
+			lastProcessedBlock = iv.LastBlock
 			continue
 		}
 
