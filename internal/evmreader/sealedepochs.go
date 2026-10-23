@@ -71,6 +71,9 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 
 	// Process each application individually since each has its own DaveConsensus contract
 	for _, app := range applications {
+		if r.inputBudgetExhausted() {
+			break
+		}
 		if app.inputSource == nil {
 			success = false
 			r.Logger.Error("Cannot scan DaveConsensus epochs: InputBox adapter is missing",
@@ -337,6 +340,9 @@ func (r *Service) processSealedEpochEvent(
 	app appContracts,
 	event *idaveconsensus.IDaveConsensusEpochSealed,
 ) error {
+	if r.inputBudgetExhausted() {
+		return ethutil.ErrIncompleteProcessing
+	}
 	r.Logger.Debug("Processing sealed epoch event",
 		"epoch_number", event.EpochNumber,
 		"input_lower_bound", event.InputIndexLowerBound,
@@ -503,6 +509,9 @@ func (r *Service) processApplicationOpenEpoch(
 	app appContracts,
 	mostRecentBlockNumber uint64,
 ) error {
+	if r.inputBudgetExhausted() {
+		return nil
+	}
 	// The input cursor covers complete blocks. A sealed batch in this tick
 	// can advance it only to the block before its seal.
 	if mostRecentBlockNumber < app.application.LastInputCheckBlock {
