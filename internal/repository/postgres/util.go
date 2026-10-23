@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
@@ -33,7 +34,7 @@ func getWhereClauseFromNameOrAddress(nameOrAddress string) postgres.BoolExpressi
 // uint64Expr converts a uint64 to a go-jet FloatExpression for use with
 // PostgreSQL NUMERIC(20,0) "uint64" domain columns.
 func uint64Expr(v uint64) postgres.FloatExpression {
-	return postgres.RawFloat(fmt.Sprintf("%d", v))
+	return postgres.CAST(postgres.String(strconv.FormatUint(v, 10))).AS_NUMERIC()
 }
 
 func hashToBytes(h *common.Hash) any {

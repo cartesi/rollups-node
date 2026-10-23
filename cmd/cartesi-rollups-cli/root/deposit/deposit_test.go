@@ -134,6 +134,7 @@ func (r *depositRPC) Call(_ context.Context, args map[string]json.RawMessage, bl
 
 func setupDepositRPC(t *testing.T, service *depositRPC) {
 	t.Helper()
+	config.SetDefaults()
 	erc20Cmd.SetContext(t.Context())
 	previousSilenceUsage := Cmd.SilenceUsage
 	Cmd.SilenceUsage = true

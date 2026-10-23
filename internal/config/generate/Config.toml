@@ -158,19 +158,6 @@ description = """
 How many seconds the node will wait before trying to finish epochs for all applications."""
 used-by = ["prt", "node"]
 
-[rollups.CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS]
-default = "5"
-go-type = "uint64"
-description = """
-Maximum number of consecutive acceptClaim attempts per (application, epoch) before
-the application is marked FAILED. Bounds wasted gas on a persistently-reverting chain
-(gas misconfig, nonce gap, signer not authorised, fork inconsistency). The default
-of 5 tolerates short transient blips and escalates within ~5 ticks. High-traffic
-mainnet apps with brittle gas markets may set this higher; conservative test networks
-may set it lower. The counter is in-memory per (appID, epochIndex) and resets on
-transition to CLAIM_ACCEPTED."""
-used-by = ["claimer", "node"]
-
 [rollups.CARTESI_MAX_STARTUP_TIME]
 default = "15"
 go-type = "Duration"
@@ -209,7 +196,17 @@ Examples:
  - Google:  "X-goog-api-key:${API_Key}"
 """
 omit = true
-used-by = ["evmreader", "claimer", "node"]
+used-by = ["evmreader", "claimer", "node", "prt", "cli"]
+
+[blockchain.CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS]
+default = ""
+go-type = "string"
+description = """
+Optional maximum transaction fee per gas, as a positive decimal integer in wei.
+Caps dynamic maxFeePerGas and legacy gasPrice. Unset means no operator price ceiling.
+The sender uses fresh fee quotes. After a price refusal, it retries once within
+this ceiling. The ceiling does not guarantee replacement, cancellation or inclusion."""
+used-by = ["claimer", "prt", "node"]
 
 [blockchain.CARTESI_BLOCKCHAIN_LEGACY_ENABLED]
 default = "false"
@@ -218,18 +215,23 @@ description = """
 If true, force the legacy transaction format with a fresh suggested gas price
 for each transaction. If false, select the fee format automatically: EIP-1559
 when the network provides a base fee, or legacy otherwise.
-This setting does not change gas estimation or replace pending transactions."""
+This setting does not change gas estimation. After a price refusal, service delivery
+retries once using a fresh-quote fallback and the optional fee cap."""
 used-by = ["claimer", "node", "cli", "prt"]
 
 [blockchain.CARTESI_BLOCKCHAIN_DEFAULT_BLOCK]
 default = "finalized"
 go-type = "DefaultBlock"
 description = """
+One of 'latest', 'safe', 'finalized'. Defaults to 'finalized'.
 The block used by EVM Reader, Claimer, and PRT for chain-state observations.
-PRT checks transaction readiness separately at 'latest'.
-Use 'finalized' in production. The node does not detect or roll back reorgs.
+Nonce selection and transaction readiness checks use 'latest'.
+The sender releases its in-memory transaction when the latest mined nonce advances.
+All contributing services must use the same policy.
+'latest' and 'safe' observations can change after a reorg. The node does not roll back
+stored observations; rebuilding may be required.
 The policy is saved when each service first starts. A later configuration mismatch stops startup.
-One of 'latest', 'pending', 'safe', 'finalized'"""
+'pending' is unsupported because it does not identify a mined block."""
 used-by = ["evmreader", "claimer", "node", "prt"]
 
 [rollups.CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES]
@@ -257,11 +259,12 @@ used-by = ["evmreader", "claimer", "node", "prt"]
 default = "120"
 go-type = "Duration"
 description = """
-Maximum time in seconds allowed for each HTTP request to the blockchain provider. This prevents a single slow or stuck provider request from blocking a service indefinitely."""
+Maximum time in seconds for each HTTP request attempt to the blockchain provider or AWS KMS,
+and for each transaction signing operation. This does not bound a whole publication pass."""
 used-by = ["evmreader", "claimer", "node", "prt"]
 
 [rollups.CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE]
-default = "0"
+default = "2000"
 go-type = "uint64"
 description = """
 Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited."""
@@ -341,7 +344,11 @@ go-type = "AuthKind"
 description = """
 One of "private_key", "private_key_file", "mnemonic", "mnemonic_file", "aws".
 
-The auth variable for the kind defined here is required. Eg.: CARTESI_AUTH_MNEMONIC"""
+The auth variable for the kind defined here is required. Eg.: CARTESI_AUTH_MNEMONIC
+
+Use one submitting process per signer. Do not send from an active node's signer
+with the CLI or another wallet. Use one node deployment per database and one
+active process per service role. Stop the current process before starting its replacement."""
 omit = true
 used-by = ["claimer", "node", "cli"]
 
@@ -403,7 +410,10 @@ even when it serves only Authority or Quorum applications. CARTESI_AUTH_* does n
 replace CARTESI_PRT_AUTH_*. PRT signer credentials are not required when claim
 submission is disabled.
 
-Use distinct addresses for claimer and PRT."""
+Use distinct addresses for claimer and PRT. Use one submitting process per signer.
+Do not send from an active node's signer with the CLI or another wallet. Use one
+node deployment per database and one active process per service role. Stop the
+current process before starting its replacement."""
 omit = true
 used-by = ["node", "prt"]
 

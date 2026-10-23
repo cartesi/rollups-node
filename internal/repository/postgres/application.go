@@ -167,6 +167,8 @@ func (r *PostgresRepository) GetApplication(
 	ctx context.Context,
 	nameOrAddress string,
 ) (*model.Application, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
@@ -615,6 +617,8 @@ func (r *PostgresRepository) UpdateApplicationStatus(
 	status model.ApplicationStatus,
 	reason *string,
 ) error {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
 
 	updateStmt := table.Application.
 		UPDATE(
@@ -783,32 +787,26 @@ func (r *PostgresRepository) GetLastSnapshot(ctx context.Context, nameOrAddress 
 	return &inp, nil
 }
 
-// DeleteApplication removes the row from "application" by ID.
-func (r *PostgresRepository) DeleteApplication(
-	ctx context.Context,
-	id int64,
-) error {
-	delStmt := table.Application.
-		DELETE().
-		WHERE(table.Application.ID.EQ(postgres.Int(id)))
-
-	sqlStr, args := delStmt.Sql()
-	cmd, err := r.db.Exec(ctx, sqlStr, args...)
-	if err != nil {
-		return err
-	}
-	if cmd.RowsAffected() != 1 {
-		return fmt.Errorf("application with ID %d not found", id)
-	}
-	return nil
-}
-
 // ListApplications queries multiple apps with optional filters & pagination.
 func (r *PostgresRepository) ListApplications(
 	ctx context.Context,
 	f repository.ApplicationFilter,
 	p repository.Pagination,
 	descending bool,
+) ([]*model.Application, uint64, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
+	return r.listApplications(ctx, f, p, descending, false, false)
+}
+
+func (r *PostgresRepository) listApplications(
+	ctx context.Context,
+	f repository.ApplicationFilter,
+	p repository.Pagination,
+	descending bool,
+	skipCount bool,
+	orderByID bool,
 ) ([]*model.Application, uint64, error) {
 	if p.Limit > math.MaxInt64 || p.Offset > math.MaxInt64 {
 		return nil, 0, fmt.Errorf("pagination exceeds PostgreSQL integer range")
@@ -819,37 +817,7 @@ func (r *PostgresRepository) ListApplications(
 		table.ExecutionParameters.ApplicationID.EQ(table.Application.ID),
 	)
 
-	conditions := []postgres.BoolExpression{}
-	if f.Enabled != nil {
-		conditions = append(conditions, table.Application.Enabled.EQ(postgres.Bool(*f.Enabled)))
-	}
-	if f.Status != nil {
-		conditions = append(conditions, table.Application.Status.EQ(postgres.NewEnumValue(f.Status.String())))
-	}
-	if len(f.Statuses) > 0 {
-		statuses := make([]postgres.Expression, len(f.Statuses))
-		for i, status := range f.Statuses {
-			statuses[i] = postgres.NewEnumValue(status.String())
-		}
-		conditions = append(conditions, table.Application.Status.IN(statuses...))
-	}
-	if f.ConsensusType != nil {
-		conditions = append(conditions, table.Application.ConsensusType.EQ(postgres.NewEnumValue(f.ConsensusType.String())))
-	}
-	if len(f.ConsensusTypes) > 0 {
-		consensusTypes := make([]postgres.Expression, len(f.ConsensusTypes))
-		for i, consensusType := range f.ConsensusTypes {
-			consensusTypes[i] = postgres.NewEnumValue(consensusType.String())
-		}
-		conditions = append(conditions, table.Application.ConsensusType.IN(consensusTypes...))
-	}
-	if f.ForeclosureRecorded != nil {
-		if *f.ForeclosureRecorded {
-			conditions = append(conditions, table.Application.ForecloseBlock.GT(uint64Expr(0)))
-		} else {
-			conditions = append(conditions, table.Application.ForecloseBlock.EQ(uint64Expr(0)))
-		}
-	}
+	conditions := applicationConditions(f)
 
 	tx, err := beginReadTx(ctx, r.db)
 	if err != nil {
@@ -857,16 +825,20 @@ func (r *PostgresRepository) ListApplications(
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	countStmt := table.Application.SELECT(postgres.COUNT(postgres.STAR)).FROM(fromClause)
-	if len(conditions) > 0 {
-		countStmt = countStmt.WHERE(postgres.AND(conditions...))
-	}
-	total, err := countFromTx(ctx, tx, countStmt)
-	if err != nil {
-		return nil, 0, err
-	}
-	if total == 0 {
-		return nil, 0, nil
+	var total uint64
+	if !skipCount {
+		countStmt := table.Application.SELECT(postgres.COUNT(postgres.STAR)).FROM(fromClause)
+		if len(conditions) > 0 {
+			countStmt = countStmt.WHERE(postgres.AND(conditions...))
+		}
+		total, err = countFromTx(ctx, tx, countStmt)
+		if err != nil {
+			return nil, 0, err
+		}
+		if total == 0 {
+			return nil, 0, nil
+		}
+
 	}
 
 	sel := table.Application.
@@ -928,9 +900,12 @@ func (r *PostgresRepository) ListApplications(
 		sel = sel.WHERE(postgres.AND(conditions...))
 	}
 
-	if descending {
+	switch {
+	case orderByID:
+		sel = sel.ORDER_BY(table.Application.ID.ASC())
+	case descending:
 		sel = sel.ORDER_BY(table.Application.Name.DESC())
-	} else {
+	default:
 		sel = sel.ORDER_BY(table.Application.Name.ASC())
 	}
 	if p.Limit > 0 {
@@ -1118,4 +1093,46 @@ func (r *PostgresRepository) UpdateExecutionParameters(
 		return repository.ErrNotFound
 	}
 	return nil
+}
+
+func applicationConditions(f repository.ApplicationFilter) []postgres.BoolExpression {
+	conditions := []postgres.BoolExpression{}
+	if f.Enabled != nil {
+		conditions = append(conditions, table.Application.Enabled.EQ(postgres.Bool(*f.Enabled)))
+	}
+	if f.Status != nil {
+		conditions = append(conditions, table.Application.Status.EQ(postgres.NewEnumValue(f.Status.String())))
+	}
+	if len(f.Statuses) > 0 {
+		statuses := make([]postgres.Expression, len(f.Statuses))
+		for i, status := range f.Statuses {
+			statuses[i] = postgres.NewEnumValue(status.String())
+		}
+		conditions = append(conditions, table.Application.Status.IN(statuses...))
+	}
+	if f.ConsensusType != nil {
+		conditions = append(conditions, table.Application.ConsensusType.EQ(postgres.NewEnumValue(f.ConsensusType.String())))
+	}
+	if len(f.ConsensusTypes) > 0 {
+		consensusTypes := make([]postgres.Expression, len(f.ConsensusTypes))
+		for i, consensusType := range f.ConsensusTypes {
+			consensusTypes[i] = postgres.NewEnumValue(consensusType.String())
+		}
+		conditions = append(conditions, table.Application.ConsensusType.IN(consensusTypes...))
+	}
+	if f.ForeclosureRecorded != nil {
+		if *f.ForeclosureRecorded {
+			conditions = append(conditions, table.Application.ForecloseBlock.GT(uint64Expr(0)))
+		} else {
+			conditions = append(conditions, table.Application.ForecloseBlock.EQ(uint64Expr(0)))
+		}
+	}
+
+	if f.AfterID != nil {
+		conditions = append(conditions, table.Application.ID.GT(postgres.Int64(*f.AfterID)))
+	}
+	if f.ThroughID != nil {
+		conditions = append(conditions, table.Application.ID.LT_EQ(postgres.Int64(*f.ThroughID)))
+	}
+	return conditions
 }

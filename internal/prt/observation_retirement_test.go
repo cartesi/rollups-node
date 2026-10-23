@@ -62,7 +62,7 @@ func TestRetiredParentStillObservesMutableChildren(t *testing.T) {
 		AsOfBlock: 50, FinishedAtBlock: 40, Standing: TournamentStandingRootWinner,
 		BondRecovery: TournamentBondRecovery{Disposition: BondDispositionRecovered},
 	}}
-	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), parent.Address.Hex()).Return(parent, nil).Once()
+	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), parent.Address.Hex()).Return(parent, nil).Maybe()
 	child := f.tournament(epoch, common.HexToAddress("0x101"), 1, 2, 45, 100, &TournamentEvents{}, nil)
 	retiredChild := &Tournament{Address: common.HexToAddress("0x102"), Level: 1, MaxLevel: 2,
 		CreationEvent: &TournamentCreationEvent{BlockNumber: 10}, Snapshot: TournamentSnapshot{
@@ -70,13 +70,13 @@ func TestRetiredParentStillObservesMutableChildren(t *testing.T) {
 			BondRecovery: TournamentBondRecovery{Disposition: BondDispositionNoWinner},
 		}}
 	f.children(epoch, parent, child, retiredChild)
-	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), retiredChild.Address.Hex()).Return(retiredChild, nil).Once()
-	f.repo.On("StoreTournamentEvents", mock.Anything, f.app.ID,
+	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), retiredChild.Address.Hex()).Return(retiredChild, nil).Maybe()
+	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,
 		mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool {
 			return len(batches) == 1 && batches[0].Tournament.Address == child.Address &&
 				batches[0].Tournament.Snapshot.AsOfBlock == 100
 		}), uint64(100)).Return(nil).Once()
-	_, err := f.s.checkEpochs(t.Context(), f.app, 100)
+	_, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
 	require.NoError(t, err)
 	require.Equal(t, uint64(50), parent.Snapshot.AsOfBlock)
 	require.Equal(t, uint64(50), retiredChild.Snapshot.AsOfBlock)

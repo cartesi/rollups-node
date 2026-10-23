@@ -330,6 +330,7 @@ func (s *ApplicationSuite) TestUpdateApplicationStatus() {
 
 	s.Run("MissingApplicationReturnsNotFound", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
 		err := s.Repo.DeleteApplication(s.Ctx, app.ID)
 		s.Require().NoError(err)
 
@@ -834,6 +835,7 @@ func (s *ApplicationSuite) TestDeleteApplication() {
 	s.Run("DeletesExistingApp", func() {
 		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
 
+		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
 		err := s.Repo.DeleteApplication(s.Ctx, app.ID)
 		s.Require().NoError(err)
 

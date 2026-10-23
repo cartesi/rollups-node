@@ -5,21 +5,19 @@ package claimer
 
 import (
 	"context"
-	"math/big"
-	"time"
-
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-
 	"github.com/stretchr/testify/mock"
+	"math/big"
+	"time"
 )
 
 type claimerRepositoryMock struct {
 	mock.Mock
+	pageReads []repository.ClaimCursor
 }
 
 type claimerCreateRepositoryMock struct {
@@ -53,28 +51,24 @@ func (m *claimerCreateRepositoryMock) LoadNodeConfigRaw(ctx context.Context, key
 
 func (m *claimerRepositoryMock) SelectClaimsToSubmitPerApp(ctx context.Context) (
 	map[int64]*model.Epoch,
-	map[int64]*model.Epoch,
 	map[int64]*model.Application,
 	error,
 ) {
 	args := m.Called(ctx)
 	return args.Get(0).(map[int64]*model.Epoch),
-		args.Get(1).(map[int64]*model.Epoch),
-		args.Get(2).(map[int64]*model.Application),
-		args.Error(3)
+		args.Get(1).(map[int64]*model.Application),
+		args.Error(2)
 }
 
 func (m *claimerRepositoryMock) SelectClaimsToStagePerApp(ctx context.Context) (
 	map[int64]*model.Epoch,
-	map[int64]*model.Epoch,
 	map[int64]*model.Application,
 	error,
 ) {
 	args := m.Called(ctx)
 	return args.Get(0).(map[int64]*model.Epoch),
-		args.Get(1).(map[int64]*model.Epoch),
-		args.Get(2).(map[int64]*model.Application),
-		args.Error(3)
+		args.Get(1).(map[int64]*model.Application),
+		args.Error(2)
 }
 func (m *claimerRepositoryMock) UpdateEpochWithSubmittedClaim(
 	ctx context.Context,
@@ -169,15 +163,13 @@ func (m *claimerRepositoryMock) UpdateEpochWithForeclosedClaim(
 
 func (m *claimerRepositoryMock) SelectClaimsToAcceptPerApp(ctx context.Context) (
 	map[int64]*model.Epoch,
-	map[int64]*model.Epoch,
 	map[int64]*model.Application,
 	error,
 ) {
 	args := m.Called(ctx)
 	return args.Get(0).(map[int64]*model.Epoch),
-		args.Get(1).(map[int64]*model.Epoch),
-		args.Get(2).(map[int64]*model.Application),
-		args.Error(3)
+		args.Get(1).(map[int64]*model.Application),
+		args.Error(2)
 }
 
 func (m *claimerRepositoryMock) UpdateEpochToStaged(
@@ -187,17 +179,6 @@ func (m *claimerRepositoryMock) UpdateEpochToStaged(
 	stagedAtBlock uint64,
 ) error {
 	args := m.Called(ctx, appid, index, stagedAtBlock)
-	return args.Error(0)
-}
-
-func (m *claimerRepositoryMock) UpdateEpochThroughStaging(
-	ctx context.Context,
-	appid int64,
-	index uint64,
-	txHash common.Hash,
-	stagedAtBlock uint64,
-) error {
-	args := m.Called(ctx, appid, index, txHash, stagedAtBlock)
 	return args.Error(0)
 }
 
@@ -307,26 +288,6 @@ func (m *claimerBlockchainMock) findClaimAcceptedEventAndSucc(
 		args.Error(3)
 }
 
-func (m *claimerBlockchainMock) submitClaimToBlockchain(
-	ctx context.Context,
-	instance consensusClaimSubmitter,
-	app *model.Application,
-	epoch *model.Epoch,
-	proof model.StateProof,
-) (common.Hash, error) {
-	rets := m.Called(ctx, instance, app, epoch, proof)
-	return rets.Get(0).(common.Hash), rets.Error(1)
-}
-
-func (m *claimerBlockchainMock) acceptClaimOnBlockchain(
-	ctx context.Context,
-	app *model.Application,
-	epoch *model.Epoch,
-) (common.Hash, error) {
-	rets := m.Called(ctx, app, epoch)
-	return rets.Get(0).(common.Hash), rets.Error(1)
-}
-
 func (m *claimerBlockchainMock) findClaimStagedEventAndSucc(
 	ctx context.Context,
 	app *model.Application,
@@ -355,16 +316,6 @@ func (m *claimerBlockchainMock) getClaimStatus(
 	args := m.Called(ctx, app, epoch, blockNumber)
 	return args.Get(0).(iconsensus.IConsensusClaim), args.Error(1)
 }
-func (m *claimerBlockchainMock) pollTransaction(
-	ctx context.Context,
-	txHash common.Hash,
-	endBlock *big.Int,
-) (bool, *types.Receipt, error) {
-	args := m.Called(ctx, txHash, endBlock)
-	return args.Bool(0),
-		args.Get(1).(*types.Receipt),
-		args.Error(2)
-}
 func (m *claimerBlockchainMock) getDefaultBlockNumber(ctx context.Context) (*big.Int, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(*big.Int),
@@ -386,7 +337,7 @@ func (m *claimerBlockchainMock) getConsensusAddress(
 // fromBlock matches prevEpoch.LastBlock+1 (if a prev exists) or
 // epoch.LastBlock+1 (otherwise) — same logic as submitClaimsAndUpdateDatabase.
 func expectNoForeignClaimAccepted(b *claimerBlockchainMock, app *model.Application, epoch *model.Epoch, fromBlock, toBlock uint64) {
-	b.On("findClaimAcceptedEventAndSucc", mock.Anything, app, epoch, fromBlock, toBlock).
+	b.On("findClaimAcceptedEventAndSucc", mock.Anything, app, epoch, epoch.LastBlock+1, toBlock).
 		Return(
 			&iconsensus.IConsensus{},
 			(*iconsensus.IConsensusClaimAccepted)(nil),
@@ -397,17 +348,16 @@ func expectNoForeignClaimAccepted(b *claimerBlockchainMock, app *model.Applicati
 
 // expectGetClaimStatusUnstaged registers the pre-submit getClaim reconciliation
 // expectation for the common case where the chain has not yet seen our claim,
-// so the caller proceeds to broadcast.
+// so the observer can offer a submit candidate.
 func expectGetClaimStatusUnstaged(b *claimerBlockchainMock, app *model.Application, epoch *model.Epoch, endBlock *big.Int) {
 	b.On("getClaimStatus", mock.Anything, app, epoch, endBlock).
 		Return(iconsensus.IConsensusClaim{Status: 0}, nil).Once()
 }
 
 // expectPreSubmitPath registers the pre-submit pipeline expectations shared by
-// the submit-revert tests for an epoch with no previous epoch: consensus
+// computed-claim tests for an epoch with no previous epoch: consensus
 // address lookup, no foreign ClaimAccepted, no prior ClaimSubmitted events,
-// and an UNSTAGED getClaim read — the path that ends with a
-// submitClaimToBlockchain broadcast.
+// and an UNSTAGED getClaim read before planning a submit candidate.
 func expectPreSubmitPath(b *claimerBlockchainMock, app *model.Application, epoch *model.Epoch, endBlock *big.Int) {
 	var prevEvent, currEvent *iconsensus.IConsensusClaimSubmitted
 	b.On("getConsensusAddress", mock.Anything, app, mock.Anything).
@@ -427,4 +377,45 @@ func makeClaimStatus(status uint8, epoch *model.Epoch, stagedAtBlock uint64) ico
 		claim.StagingBlockNumber = new(big.Int).SetUint64(stagedAtBlock)
 	}
 	return claim
+}
+
+func claimMockPage(epochs map[int64]*model.Epoch, apps map[int64]*model.Application, err error) (repository.ClaimPage, error) {
+	page := repository.ClaimPage{}
+	for id, epoch := range epochs {
+		page.Work = append(page.Work, repository.ClaimWork{Application: apps[id], Epoch: epoch})
+		page.ApplicationID = id
+	}
+	return page, err
+}
+func (m *claimerRepositoryMock) SelectClaimsToSubmitPage(ctx context.Context, after repository.ClaimCursor, _ uint64) (
+	repository.ClaimPage, error,
+) {
+	m.pageReads = append(m.pageReads, after)
+	return claimMockPage(m.SelectClaimsToSubmitPerApp(ctx))
+}
+func (m *claimerRepositoryMock) SelectClaimsToStagePage(ctx context.Context, after repository.ClaimCursor, _ uint64) (
+	repository.ClaimPage, error,
+) {
+	m.pageReads = append(m.pageReads, after)
+	return claimMockPage(m.SelectClaimsToStagePerApp(ctx))
+}
+func (m *claimerRepositoryMock) SelectClaimsToAcceptPage(ctx context.Context, after repository.ClaimCursor, _ uint64) (
+	repository.ClaimPage, error,
+) {
+	m.pageReads = append(m.pageReads, after)
+	return claimMockPage(m.SelectClaimsToAcceptPerApp(ctx))
+}
+
+func (m *claimerCreateRepositoryMock) RegisterSubmitter(
+	ctx context.Context, key string, requested config.PersistentSubmitterConfig,
+) (config.PersistentSubmitterConfig, error) {
+	args := m.Called(ctx, key, requested)
+	return args.Get(0).(config.PersistentSubmitterConfig), args.Error(1)
+}
+
+func (m *claimerRepositoryMock) ListApplicationsByID(
+	ctx context.Context, f repository.ApplicationFilter, _ int64, _ int64, _ uint64,
+) ([]*model.Application, error) {
+	apps, _, err := m.ListApplications(ctx, f, repository.Pagination{}, false)
+	return apps, err
 }

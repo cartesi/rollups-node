@@ -44,6 +44,9 @@ type Options struct {
 	// AllowedErrorMessages are fixed, nonsensitive messages that can pass through
 	// in error responses. Values from configuration or responses are not trusted.
 	AllowedErrorMessages []string
+	// PublicationReplies preserves only vetted eth_sendRawTransaction categories
+	// from a parsed error.message. Transport bodies and error.data are untrusted.
+	PublicationReplies bool
 }
 
 // New gives callers a host-only request URL and a transport which restores the
@@ -62,6 +65,7 @@ func New(raw string, next http.RoundTripper, options Options) (string, http.Roun
 	return safeBase, &transport{
 		endpoint: *u, safeBase: safeBase, next: next, appendOperation: options.AppendOperation,
 		allowedErrorMessages: slices.Clone(options.AllowedErrorMessages),
+		publicationReplies:   options.PublicationReplies,
 	}, nil
 }
 
@@ -91,6 +95,7 @@ type transport struct {
 	next                 http.RoundTripper
 	appendOperation      bool
 	allowedErrorMessages []string
+	publicationReplies   bool
 }
 
 // Error bodies are diagnostic input, not consensus input. Bound the work done
@@ -170,7 +175,11 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if err != nil || len(body) > maxDiagnosticResponseBytes {
 			body = nil
 		}
-		body = diagnosticResponse(body, t.allowedErrorMessages)
+		if t.publicationReplies {
+			body = publicationResponse(body, isPublicationRequest(req))
+		} else {
+			body = diagnosticResponse(body, t.allowedErrorMessages)
+		}
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		resp.ContentLength = int64(len(body))
 		resp.TransferEncoding = nil
@@ -237,9 +246,9 @@ func (b failedDiagnosticRead) Read([]byte) (int, error) { return 0, b.err }
 // phrase used by existing classifiers. An explicit client policy can also retain
 // exact trusted messages. All other provider text may echo credentials.
 func diagnosticResponse(body []byte, allowedErrorMessages []string) []byte {
-	rpcMessage := "RPC request failed"
-	if strings.Contains(strings.ToLower(string(body)), "nonce too low") {
-		rpcMessage = "nonce too low"
+	rpcMessage := rpcFailedMessage
+	if strings.Contains(strings.ToLower(string(body)), nonceLowMessage) {
+		rpcMessage = nonceLowMessage
 	}
 	var input struct {
 		Error *struct {
@@ -259,14 +268,14 @@ func diagnosticResponse(body []byte, allowedErrorMessages []string) []byte {
 		encoded, _ := json.Marshal(response) // Integers and strings cannot fail to marshal.
 		return encoded
 	}
-	if rpcMessage == "nonce too low" {
+	if rpcMessage == nonceLowMessage {
 		return []byte(rpcMessage)
 	}
 	message := strings.TrimSuffix(string(body), "\n")
 	if slices.Contains(allowedErrorMessages, message) {
 		return []byte(message)
 	}
-	return []byte("HTTP request failed")
+	return []byte(httpFailedMessage)
 }
 
 type diagnosticBody struct {

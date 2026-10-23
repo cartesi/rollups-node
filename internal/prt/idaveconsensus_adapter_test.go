@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/mock"
@@ -20,6 +21,52 @@ import (
 )
 
 type daveConsensusViewRPC struct{ mock.Mock }
+
+type daveEventQuery struct {
+	BlockHash common.Hash      `json:"blockHash"`
+	Address   []common.Address `json:"address"`
+	Topics    [][]common.Hash  `json:"topics"`
+	FromBlock json.RawMessage  `json:"fromBlock"`
+	ToBlock   json.RawMessage  `json:"toBlock"`
+}
+
+func (m *daveConsensusViewRPC) GetLogs(_ context.Context, query daveEventQuery) ([]types.Log, error) {
+	args := m.Called(query)
+	logs, _ := args.Get(0).([]types.Log)
+	return logs, args.Error(1)
+}
+
+func TestDaveConsensusAdapterFiltersAcceptanceByExactBlockHashContractAndEpoch(t *testing.T) {
+	contract, err := idaveconsensus.IDaveConsensusMetaData.GetAbi()
+	require.NoError(t, err)
+	address, block := common.HexToAddress("0x100"), common.HexToHash("0x110")
+	event := contract.Events["EpochSealed"]
+	epoch := uint64(4)
+	machine, outputs := common.HexToHash("0x400"), common.HexToHash("0x500")
+	data, err := event.Inputs.NonIndexed().Pack(big.NewInt(5), big.NewInt(9), machine, outputs, common.HexToAddress("0x200"))
+	require.NoError(t, err)
+	log := types.Log{Address: address, BlockHash: block, BlockNumber: 110, TxHash: common.HexToHash("0x999"),
+		Topics: []common.Hash{event.ID, common.BigToHash(new(big.Int).SetUint64(epoch))}, Data: data}
+	backend := &daveConsensusViewRPC{}
+	backend.On("GetLogs", daveEventQuery{BlockHash: block, Address: []common.Address{address},
+		Topics: [][]common.Hash{{event.ID}, {common.BigToHash(new(big.Int).SetUint64(epoch))}},
+	}).Return([]types.Log{log}, nil).Once()
+	server := rpc.NewServer()
+	require.NoError(t, server.RegisterName("eth", backend))
+	t.Cleanup(server.Stop)
+	client := ethclient.NewClient(rpc.DialInProc(server))
+	t.Cleanup(client.Close)
+	adapter, err := NewDaveConsensusAdapter(address, client)
+	require.NoError(t, err)
+	events, err := adapter.EpochSealedAt(t.Context(), block, epoch)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Equal(t, epoch, events[0].EpochNumber.Uint64())
+	require.Equal(t, [32]byte(machine), events[0].InitialMachineStateHash)
+	require.Equal(t, [32]byte(outputs), events[0].OutputsMerkleRoot)
+	require.Equal(t, log, events[0].Raw)
+	backend.AssertExpectations(t)
+}
 
 func (m *daveConsensusViewRPC) Call(
 	_ context.Context, call map[string]json.RawMessage, block rpc.BlockNumber,

@@ -5,61 +5,20 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"slices"
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
 	"github.com/jackc/pgx/v5"
 )
 
-// StoreTournamentEvents publishes event facts and pinned current snapshots in
-// one application-wide transaction. Parents must precede their children.
-func (r *PostgresRepository) StoreTournamentEvents(
-	ctx context.Context, appID int64, batches []*repository.TournamentEventBatch, lastBlock uint64,
-) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("beginning tournament event window: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-	// Keep the application aggregate lock before every child-row lock.
-	lockStmt := table.Application.SELECT(table.Application.ID).
-		WHERE(table.Application.ID.EQ(postgres.Int64(appID))).FOR(postgres.NO_KEY_UPDATE())
-	lockSQL, lockArgs := lockStmt.Sql()
-	var lockedID int64
-	if err := tx.QueryRow(ctx, lockSQL, lockArgs...).Scan(&lockedID); errors.Is(err, pgx.ErrNoRows) {
-		return repository.ErrNotFound
-	} else if err != nil {
-		return fmt.Errorf("locking tournament application %d: %w", appID, err)
-	}
-	for _, batch := range batches {
-		if err := validateTournamentBatch(appID, batch, lastBlock); err != nil {
-			return err
-		}
-		if err := storeTournamentProjection(ctx, tx, appID, batch.Tournament); err != nil {
-			return err
-		}
-		if err := insertCommitments(ctx, tx, appID, batch.Commitments); err != nil {
-			return fmt.Errorf("storing tournament commitments: %w", err)
-		}
-		if err := insertMatches(ctx, tx, appID, batch.Matches); err != nil {
-			return fmt.Errorf("storing tournament matches: %w", err)
-		}
-		if err := insertMatchAdvanced(ctx, tx, appID, batch.MatchAdvances); err != nil {
-			return fmt.Errorf("storing tournament match advances: %w", err)
-		}
-		if err := insertBondEvents(ctx, tx, appID, batch.BondEvents); err != nil {
-			return fmt.Errorf("storing tournament bonds: %w", err)
-		}
-	}
-	if err := updateLastProcessedBlock(ctx, tx, appID, lastBlock); err != nil {
-		return fmt.Errorf("storing tournament checkpoint: %w", err)
-	}
-	return tx.Commit(ctx)
-}
+// Keep every statement below PostgreSQL's 65,535 bind-parameter limit, even
+// for the widest event row. All chunks use the interval's existing transaction.
+const tournamentRowsPerStatement = 1000
 
 func validateTournamentBatch(appID int64, batch *repository.TournamentEventBatch, lastBlock uint64) error {
 	if batch == nil || batch.Tournament == nil {
@@ -69,17 +28,28 @@ func validateTournamentBatch(appID int64, batch *repository.TournamentEventBatch
 	if t.ApplicationID != appID || t.Snapshot.AsOfBlock != lastBlock {
 		return fmt.Errorf("tournament projection does not match application %d at block %d", appID, lastBlock)
 	}
+	commitments := make(map[common.Hash]struct{}, len(batch.Commitments))
 	for _, v := range batch.Commitments {
 		if v == nil || v.ApplicationID != appID || v.EpochIndex != t.EpochIndex ||
-			v.TournamentAddress != t.Address || v.Snapshot.AsOfBlock != lastBlock {
+			v.TournamentAddress != t.Address || v.Snapshot.AsOfBlock != lastBlock || v.BlockNumber > lastBlock {
 			return fmt.Errorf("commitment does not belong to tournament %s at block %d", t.Address, lastBlock)
 		}
+		if _, duplicate := commitments[v.Commitment]; duplicate {
+			return fmt.Errorf("duplicate commitment %s in tournament interval", v.Commitment)
+		}
+		commitments[v.Commitment] = struct{}{}
 	}
+	matches := make(map[common.Hash]struct{}, len(batch.Matches))
 	for _, v := range batch.Matches {
 		if v == nil || v.ApplicationID != appID || v.EpochIndex != t.EpochIndex ||
-			v.TournamentAddress != t.Address || v.Snapshot.AsOfBlock != lastBlock {
+			v.TournamentAddress != t.Address || v.Snapshot.AsOfBlock != lastBlock || v.BlockNumber > lastBlock ||
+			v.DeletionBlockNumber > lastBlock || (v.LeafSeal != nil && v.LeafSeal.BlockNumber > lastBlock) {
 			return fmt.Errorf("match does not belong to tournament %s at block %d", t.Address, lastBlock)
 		}
+		if _, duplicate := matches[v.IDHash]; duplicate {
+			return fmt.Errorf("duplicate match %s in tournament interval", v.IDHash)
+		}
+		matches[v.IDHash] = struct{}{}
 	}
 	for _, v := range batch.MatchAdvances {
 		if v == nil || v.ApplicationID != appID || v.EpochIndex != t.EpochIndex ||
@@ -151,7 +121,20 @@ func storeTournamentProjection(ctx context.Context, tx pgx.Tx, appID int64, v *T
 	return nil
 }
 
-func insertCommitments(ctx context.Context, tx pgx.Tx, appID int64, values []*Commitment) error {
+// insertChunked stores values with insert, one statement per chunk of at most
+// tournamentRowsPerStatement rows.
+func insertChunked[T any](
+	ctx context.Context, tx pgx.Tx, appID int64, values []T, insert func(context.Context, pgx.Tx, int64, []T) error,
+) error {
+	for chunk := range slices.Chunk(values, tournamentRowsPerStatement) {
+		if err := insert(ctx, tx, appID, chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func insertCommitmentChunk(ctx context.Context, tx pgx.Tx, appID int64, values []*Commitment) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -192,7 +175,7 @@ func insertCommitments(ctx context.Context, tx pgx.Tx, appID int64, values []*Co
 	return nil
 }
 
-func insertMatches(ctx context.Context, tx pgx.Tx, appID int64, values []*Match) error {
+func insertMatchChunk(ctx context.Context, tx pgx.Tx, appID int64, values []*Match) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -268,7 +251,7 @@ func insertMatches(ctx context.Context, tx pgx.Tx, appID int64, values []*Match)
 	return nil
 }
 
-func insertMatchAdvanced(ctx context.Context, tx pgx.Tx, appID int64, values []*MatchAdvanced) error {
+func insertMatchAdvancedChunk(ctx context.Context, tx pgx.Tx, appID int64, values []*MatchAdvanced) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -323,7 +306,7 @@ func sameMatchAdvancedEvent(a, b *MatchAdvanced) bool {
 		a.LogIndex == b.LogIndex
 }
 
-func insertBondEvents(ctx context.Context, tx pgx.Tx, appID int64, values []*BondEvent) error {
+func insertBondEventChunk(ctx context.Context, tx pgx.Tx, appID int64, values []*BondEvent) error {
 	if len(values) == 0 {
 		return nil
 	}

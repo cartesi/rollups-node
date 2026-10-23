@@ -38,6 +38,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# The real-chain release fixtures run when the ordinary basic suite is selected,
+# including an unsharded run. Match the actual test selection, not its log label.
+# The separate finalized delivery cells exercise long finality lag through the
+# integration suite; short fixture deadlines are not calibrated for that lag.
+if [ "${NODE_TOPOLOGY:-standalone}" = standalone ] &&
+   [[ TestEchoAuthority =~ ${TEST_PATTERN:-.*} ]] &&
+   [ "${CARTESI_BLOCKCHAIN_DEFAULT_BLOCK:-latest}" = latest ]; then
+  export CARTESI_CLAIMER_CAPACITY_ADMIN_CONNECTION="$CARTESI_DATABASE_CONNECTION"
+  make delivery-test
+fi
+
 # A skipped top-level test is not a pass. In the compose/CI topology the node
 # is always test-managed, so an entire top-level test skipping (e.g. TestRestart
 # deciding the node looks externally managed) means the shard reported success

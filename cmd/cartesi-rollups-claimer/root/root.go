@@ -32,9 +32,11 @@ var (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "cartesi-rollups-" + config.ServiceClaimer,
-	Short:   "Runs cartesi-rollups-" + config.ServiceClaimer,
-	Long:    "Runs cartesi-rollups-" + config.ServiceClaimer + " in standalone mode",
+	Use:   "cartesi-rollups-" + config.ServiceClaimer,
+	Short: "Runs cartesi-rollups-" + config.ServiceClaimer,
+	Long: "Runs cartesi-rollups-" + config.ServiceClaimer + " in standalone mode.\n\n" +
+		"Use one node deployment per database and one active process per service role.\n" +
+		"Use one submitting process per signer. Stop the current process before starting its replacement.",
 	RunE:    run,
 	Version: version.BuildVersion,
 }
@@ -45,7 +47,8 @@ func init() {
 	config.SetDefaults()
 
 	cli.AddFlagStrVarP(flags, &defaultBlockString, "default-block", "d", config.BLOCKCHAIN_DEFAULT_BLOCK,
-		"Default block to be used when fetching new blocks.\nOne of 'latest', 'safe', 'pending', 'finalized'")
+		"Default block to be used when fetching new blocks.\n"+
+			"One of 'latest', 'safe', 'finalized'; provisional observations have no reorg rollback")
 	cli.AddFlagStrVar(flags, &telemetryAddress, "telemetry-address", config.CLAIMER_TELEMETRY_ADDRESS,
 		"Health check and metrics address and port")
 	cli.AddFlagStrVar(flags, &logLevel, "log-level", config.LOG_LEVEL,

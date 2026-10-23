@@ -17,6 +17,11 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
+// A counter transition and its log page must describe the same chain view.
+// A provider can return an inconsistent view during mining or a provisional
+// reorg. Leave the cursor unchanged and retry on the next observation tick.
+var errInconclusiveEpochView = errors.New("inconclusive sealed epoch view")
+
 func (r *Service) initialSealedEpochSearchBlock(
 	ctx context.Context,
 	app appContracts,
@@ -100,6 +105,13 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 				continue
 			}
 			success = false
+			if errors.Is(err, errInconclusiveEpochView) {
+				r.Logger.Warn("Sealed epoch reads disagree; retrying from the saved cursor",
+					"application", app.application.Name, "address", app.application.IApplicationAddress,
+					"consensus_address", app.application.IConsensusAddress,
+					"from_block", app.application.LastEpochCheckBlock, "to_block", observationEndBlock, "error", err)
+				continue
+			}
 			r.Logger.Error("Error processing application sealed epochs",
 				"application", app.application.Name,
 				"consensus_address", app.application.IConsensusAddress,
@@ -122,6 +134,13 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 				continue
 			}
 			success = false
+			if errors.Is(err, errInconclusiveInputView) {
+				r.Logger.Warn("Open epoch input reads disagree; retrying from the saved cursor",
+					"application", app.application.Name, "address", app.application.IApplicationAddress,
+					"consensus_address", app.application.IConsensusAddress,
+					"from_block", app.application.LastInputCheckBlock, "to_block", observationEndBlock, "error", err)
+				continue
+			}
 			r.Logger.Error("Error processing application open epoch",
 				"application", app.application.Name,
 				"consensus_address", app.application.IConsensusAddress,
@@ -274,21 +293,23 @@ func (r *Service) processEpochTransition(
 	}
 	expectedCount := new(big.Int).Sub(sealedEpoch.EpochNumber, previousEpochNumber)
 	if expectedCount.Sign() <= 0 || !expectedCount.IsUint64() || expectedCount.Uint64() != uint64(len(sealedEvents)) {
-		return nil, fmt.Errorf("sealed epoch event count mismatch at block %d: expected %s, got %d",
-			transitionBlock, expectedCount, len(sealedEvents))
+		return nil, fmt.Errorf("%w: sealed epoch event count mismatch at block %d: expected %s, got %d",
+			errInconclusiveEpochView, transitionBlock, expectedCount, len(sealedEvents))
 	}
 	expectedEpoch := new(big.Int).Set(previousEpochNumber)
 	for _, event := range sealedEvents {
 		expectedEpoch.Add(expectedEpoch, big.NewInt(1))
 		if event == nil || event.EpochNumber == nil || event.EpochNumber.Cmp(expectedEpoch) != 0 ||
 			event.Raw.BlockNumber != transitionBlock {
-			return nil, fmt.Errorf("invalid sealed epoch event sequence at block %d: expected epoch %s", transitionBlock, expectedEpoch)
+			return nil, fmt.Errorf("%w: invalid sealed epoch event sequence at block %d: expected epoch %s",
+				errInconclusiveEpochView, transitionBlock, expectedEpoch)
 		}
 	}
 	lastEvent := sealedEvents[len(sealedEvents)-1]
 	if lastEvent.InputIndexLowerBound.Cmp(sealedEpoch.InputIndexLowerBound) != 0 ||
 		lastEvent.InputIndexUpperBound.Cmp(sealedEpoch.InputIndexUpperBound) != 0 || lastEvent.Tournament != sealedEpoch.Tournament {
-		return nil, fmt.Errorf("last sealed epoch event does not match current sealed epoch at block %d", transitionBlock)
+		return nil, fmt.Errorf("%w: last sealed epoch event does not match current sealed epoch at block %d",
+			errInconclusiveEpochView, transitionBlock)
 	}
 	r.Logger.Info("Found sealed epoch events",
 		"application", app.application.Name, "block", transitionBlock,
@@ -408,8 +429,8 @@ func (r *Service) processSealedEpochEvent(
 		expectedCount := epoch.InputIndexUpperBound - epoch.InputIndexLowerBound
 		if uint64(len(inputs)) != expectedCount {
 			return fmt.Errorf(
-				"epoch %d input count mismatch: expected %d (indices %d to %d), got %d",
-				epoch.Index, expectedCount,
+				"%w: epoch %d input count mismatch: expected %d (indices %d to %d), got %d",
+				errInconclusiveEpochView, epoch.Index, expectedCount,
 				epoch.InputIndexLowerBound, epoch.InputIndexUpperBound,
 				len(inputs))
 		}
@@ -523,8 +544,8 @@ func (r *Service) processApplicationOpenEpoch(
 		return fmt.Errorf("failed to fetch inputs for epoch %d: %w", openEpoch.Index, err)
 	}
 	if endCount < inputCount || endCount-inputCount != uint64(len(inputs)) {
-		return fmt.Errorf("open epoch %d input count mismatch: stored %d, on-chain %d, got %d",
-			openEpoch.Index, inputCount, endCount, len(inputs))
+		return fmt.Errorf("%w: open epoch %d input count mismatch: stored %d, on-chain %d, got %d",
+			errInconclusiveInputView, openEpoch.Index, inputCount, endCount, len(inputs))
 	}
 
 	// increase the upper bound according to the number of fetched inputs

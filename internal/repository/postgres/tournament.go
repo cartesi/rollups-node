@@ -36,6 +36,9 @@ func (r *PostgresRepository) CreateTournament(ctx context.Context, nameOrAddress
 }
 
 func (r *PostgresRepository) GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	sel := table.Tournaments.SELECT(tournamentColumns, table.Tournaments.CreatedAt, table.Tournaments.UpdatedAt).
 		FROM(table.Tournaments.INNER_JOIN(table.Application, table.Tournaments.ApplicationID.EQ(table.Application.ID))).
 		WHERE(getWhereClauseFromNameOrAddress(nameOrAddress).AND(
@@ -52,6 +55,9 @@ func (r *PostgresRepository) GetTournament(ctx context.Context, nameOrAddress st
 func (r *PostgresRepository) ListTournaments(
 	ctx context.Context, nameOrAddress string, f repository.TournamentFilter, p repository.Pagination, descending bool,
 ) ([]*Tournament, uint64, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	if p.Limit > math.MaxInt64 || p.Offset > math.MaxInt64 {
 		return nil, 0, fmt.Errorf("pagination exceeds PostgreSQL integer range")
 	}
@@ -112,20 +118,27 @@ func (r *PostgresRepository) ListTournaments(
 	return values, total, nil
 }
 
+// ListRecoverableRootBonds searches the configured recipient
+// within a finite epoch sweep and the published observation cursor.
 func (r *PostgresRepository) ListRecoverableRootBonds(
 	ctx context.Context, appID int64, claimer common.Address, observedBlock uint64,
-	afterEpoch *uint64, throughEpoch uint64, limit uint64,
+	afterEpoch *uint64, throughEpoch, limit uint64,
 ) ([]repository.RootBondRecoveryCandidate, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	if limit == 0 || limit > math.MaxInt64 {
 		return nil, fmt.Errorf("root bond recovery limit must be between 1 and %d", int64(math.MaxInt64))
+	}
+	if claimer == (common.Address{}) {
+		return nil, fmt.Errorf("bond recovery recipient cannot be zero")
 	}
 	if afterEpoch != nil && *afterEpoch >= throughEpoch {
 		return nil, nil
 	}
 	conditions := []postgres.BoolExpression{
 		table.Tournaments.ApplicationID.EQ(postgres.Int64(appID)),
-		// Keep the root predicate literal so generic plans can use the partial root index.
-		table.Tournaments.Level.EQ(postgres.RawInt("0")),
+		table.Tournaments.Level.EQ(postgres.Int(0)),
 		table.Tournaments.BondDisposition.EQ(enum.BondDisposition.Recoverable),
 		table.Tournaments.BondClaimer.EQ(postgres.Bytea(claimer.Bytes())),
 		table.Tournaments.AsOfBlock.LT_EQ(uint64Expr(observedBlock)),
@@ -135,23 +148,21 @@ func (r *PostgresRepository) ListRecoverableRootBonds(
 		conditions = append(conditions, table.Tournaments.EpochIndex.GT(uint64Expr(*afterEpoch)))
 	}
 	stmt := table.Tournaments.SELECT(table.Tournaments.EpochIndex, table.Tournaments.Address).
+		FROM(table.Tournaments.INNER_JOIN(table.Application, table.Application.ID.EQ(table.Tournaments.ApplicationID))).
 		WHERE(postgres.AND(conditions...)).ORDER_BY(table.Tournaments.EpochIndex.ASC()).LIMIT(int64(limit))
-	sqlStr, args := stmt.Sql()
-	rows, err := r.db.Query(ctx, sqlStr, args...)
+	query, args := stmt.Sql()
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("listing recoverable root bonds for application %d: %w", appID, err)
+		return nil, err
 	}
 	defer rows.Close()
 	var candidates []repository.RootBondRecoveryCandidate
 	for rows.Next() {
 		var candidate repository.RootBondRecoveryCandidate
-		if err := rows.Scan(&candidate.EpochIndex, &candidate.Tournament); err != nil {
-			return nil, fmt.Errorf("reading recoverable root bond for application %d: %w", appID, err)
+		if err = rows.Scan(&candidate.EpochIndex, &candidate.Tournament); err != nil {
+			return nil, err
 		}
 		candidates = append(candidates, candidate)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("listing recoverable root bonds for application %d: %w", appID, err)
-	}
-	return candidates, nil
+	return candidates, rows.Err()
 }

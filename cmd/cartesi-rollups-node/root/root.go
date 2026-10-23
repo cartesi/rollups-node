@@ -5,11 +5,13 @@ package root
 
 import (
 	"context"
+	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/advancer"
 	"github.com/cartesi/rollups-node/internal/claimer"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/config/auth"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/inspect"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
@@ -17,6 +19,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/prt"
 	"github.com/cartesi/rollups-node/internal/validator"
 	"github.com/cartesi/rollups-node/internal/version"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 
 	"github.com/spf13/cobra"
@@ -53,9 +56,11 @@ var (
 )
 
 var Cmd = &cobra.Command{
-	Use:     "cartesi-rollups-" + config.ServiceNode,
-	Short:   "Runs cartesi-rollups-" + config.ServiceNode,
-	Long:    "Runs cartesi-rollups-" + config.ServiceNode + " in standalone mode",
+	Use:   "cartesi-rollups-" + config.ServiceNode,
+	Short: "Runs cartesi-rollups-" + config.ServiceNode,
+	Long: "Runs cartesi-rollups-" + config.ServiceNode + " in standalone mode.\n\n" +
+		"Use one node deployment per database and one active process per service role.\n" +
+		"Use one submitting process per signer. Stop the current process before starting its replacement.",
 	RunE:    run,
 	Version: version.BuildVersion,
 }
@@ -66,7 +71,8 @@ func init() {
 	config.SetDefaults()
 
 	cli.AddFlagStrVarP(flags, &defaultBlockString, "default-block", "d", config.BLOCKCHAIN_DEFAULT_BLOCK,
-		"Default block to be used when fetching new blocks.\nOne of 'latest', 'safe', 'pending', 'finalized'")
+		"Default block to be used when fetching new blocks.\n"+
+			"One of 'latest', 'safe', 'finalized'; provisional observations have no reorg rollback")
 	cli.AddFlagStrVar(flags, &jsonrpcAPIAddress, "jsonrpc-address", config.JSONRPC_API_ADDRESS,
 		"Jsonrpc API service address and port")
 	cli.AddFlagStrVar(flags, &inspectAddress, "inspect-address", config.INSPECT_ADDRESS,
@@ -141,6 +147,15 @@ func run(cmd *cobra.Command, args []string) (runErr error) {
 	defer func() { cli.LogErr(logger, runErr) }()
 	cmd.SilenceUsage = true
 
+	var claimerSigner, prtSigner ethutil.TransactOptsFactory
+	var err error
+	if cfg.FeatureClaimSubmissionEnabled {
+		claimerSigner, prtSigner, err = auth.GetNodeTransactOptsFactories(ctx, new(big.Int).SetUint64(cfg.BlockchainId))
+		if err != nil {
+			return err
+		}
+	}
+
 	repo, err := cli.OpenRepository(ctx, cfg.DatabaseConnection)
 	if err != nil {
 		return err
@@ -185,14 +200,16 @@ func run(cmd *cobra.Command, args []string) (runErr error) {
 		},
 		func(ctx context.Context, sup service.Supervisor) (service.SupervisedService, error) {
 			return claimer.Create(ctx, &claimer.CreateInfo{
-				Config:     *cfg.ToClaimerConfig(),
-				Repository: repo,
+				Config:              *cfg.ToClaimerConfig(),
+				Repository:          repo,
+				TransactOptsFactory: claimerSigner,
 			})
 		},
 		func(ctx context.Context, sup service.Supervisor) (service.SupervisedService, error) {
 			return prt.Create(ctx, &prt.CreateInfo{
-				Config:     *cfg.ToPrtConfig(),
-				Repository: repo,
+				Config:              *cfg.ToPrtConfig(),
+				Repository:          repo,
+				TransactOptsFactory: prtSigner,
 			})
 		},
 	}

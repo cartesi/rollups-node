@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -19,14 +20,19 @@ import (
 // need to see whether pre-foreclosure work is fully drained. This query keeps
 // those apps visible to processForeclosedApps.
 func (s *Service) listEnabledForeclosedNonPRTApps(ctx context.Context) (map[int64]*model.Application, error) {
-	apps, _, err := s.repository.ListApplications(
-		ctx,
-		foreclosedClaimDrainApplicationsFilter(),
-		repository.Pagination{},
-		false,
-	)
+	apps, err := s.repository.ListApplicationsByID(ctx,
+		foreclosedClaimDrainApplicationsFilter(), s.foreclosePageCursor, math.MaxInt64, claimPageSize)
 	if err != nil {
 		return nil, fmt.Errorf("listing enabled foreclosed apps: %w", err)
+	}
+	if uint64(len(apps)) < claimPageSize {
+		s.foreclosePageCursor = 0
+	} else {
+		for _, app := range apps {
+			if app.ID > s.foreclosePageCursor {
+				s.foreclosePageCursor = app.ID
+			}
+		}
 	}
 	out := make(map[int64]*model.Application, len(apps))
 	for _, app := range apps {
@@ -62,11 +68,16 @@ func foreclosedClaimDrainApplicationsFilter() repository.ApplicationFilter {
 func (s *Service) processForeclosedApps(
 	ctx context.Context,
 	apps map[int64]*model.Application,
+	observedBlock uint64,
 ) error {
 	var errs error
 	for _, app := range apps {
 		if app.ForecloseBlock == 0 {
 			// This should have been filtered by the query.
+			continue
+		}
+		if err := requireObservedBlock(observedBlock, app.ForecloseBlock); err != nil {
+			s.Logger.Debug("Waiting for Claimer observation to reach foreclosure", "application", app.Name, "error", err)
 			continue
 		}
 		// Bootstrap-readiness invariant. For a newly registered app, EVM reader
@@ -159,8 +170,12 @@ func (s *Service) forecloseClaim(
 	ctx context.Context,
 	app *model.Application,
 	epoch *model.Epoch,
+	observedBlock uint64,
 	site string,
 ) error {
+	if err := requireObservedBlock(observedBlock, app.ForecloseBlock); err != nil {
+		return err
+	}
 	s.Logger.Info("Claim made terminal by application foreclosure",
 		"application", app.Name,
 		"address", app.IApplicationAddress.String(),

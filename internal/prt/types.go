@@ -4,6 +4,7 @@
 package prt
 
 import (
+	"context"
 	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -117,7 +118,7 @@ type BondRecovery struct {
 	Payment     *big.Int
 }
 
-// TournamentAdapter provides read and write access to tournament contracts.
+// TournamentAdapter provides contract views and event decoding.
 type TournamentAdapter interface {
 	RetrieveAllEvents(opts *bind.FilterOpts) (*TournamentEvents, error)
 	Descriptor(opts *bind.CallOpts) (TournamentDescriptor, error)
@@ -128,21 +129,16 @@ type TournamentAdapter interface {
 	StructuralEventCounts(opts *bind.CallOpts) (StructuralEventCounts, error)
 	BondValue(opts *bind.CallOpts) (*big.Int, error)
 	BondRecovery(opts *bind.CallOpts) (BondRecovery, error)
-	JoinTournament(opts *bind.TransactOpts, finalState [32]byte, proof [][32]byte,
-		leftNode [32]byte, rightNode [32]byte) (*types.Transaction, error)
-	TryRecoveringBond(opts *bind.TransactOpts) (*types.Transaction, error)
 }
 
 // DaveConsensusAdapter wraps access to the IDaveConsensus contract.
 type DaveConsensusAdapter interface {
 	ParseEpochSealed(log types.Log) (*idaveconsensus.IDaveConsensusEpochSealed, error)
+	EpochSealedAt(ctx context.Context, blockHash common.Hash, epoch uint64) ([]*idaveconsensus.IDaveConsensusEpochSealed, error)
 	TournamentLevelCount(opts *bind.CallOpts) (uint64, error)
 	GetCurrentSealedEpoch(opts *bind.CallOpts) (CurrentSealedEpoch, error)
 	CanStageTournamentResult(opts *bind.CallOpts) (CanStageTournamentResult, error)
 	CanAcceptStagedTournamentResult(opts *bind.CallOpts) (CanAcceptStagedTournamentResult, error)
-	StageTournamentResult(opts *bind.TransactOpts, epochNumber uint64,
-		proof model.StateProof) (*types.Transaction, error)
-	AcceptStagedTournamentResult(opts *bind.TransactOpts, epochNumber uint64) (*types.Transaction, error)
 }
 
 // CurrentSealedEpoch is the complete state of the current sealed epoch.

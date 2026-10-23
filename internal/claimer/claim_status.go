@@ -11,6 +11,12 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 )
 
+const (
+	claimStatusUnstaged uint8 = 0
+	claimStatusStaged   uint8 = 1
+	claimStatusAccepted uint8 = 2
+)
+
 func (s *Service) updateEpochAcceptedFromClaimStatus(
 	ctx context.Context,
 	app *model.Application,
@@ -22,8 +28,8 @@ func (s *Service) updateEpochAcceptedFromClaimStatus(
 		return err
 	}
 	// getClaim is read-only. It tells us the claim state, but not the
-	// transaction hash that accepted the claim. Store NULL for the hash; the
-	// DB accepts this for reconciled claims.
+	// transaction hash that accepted the claim. Preserve the existing audit hash;
+	// only an observed event can identify a replacement transaction.
 	if err := s.repository.UpdateEpochWithAcceptedClaim(
 		ctx, epoch.ApplicationID, epoch.Index, nil); err != nil {
 		return err

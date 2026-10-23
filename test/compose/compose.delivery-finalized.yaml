@@ -1,0 +1,14 @@
+# (c) Cartesi and individual authors (see AUTHORS)
+# SPDX-License-Identifier: Apache-2.0 (see LICENSE)
+
+# The ordinary profile uses a two-block lag. DEFAULT_BLOCK=finalized selects
+# this longer, 64-block lag through the existing Compose integration target.
+services:
+  ethereum_provider:
+    command: ["anvil", "--block-time", "1", "--mixed-mining", "--silent",
+              "--host", "0.0.0.0", "--chain-id", "31337", "--slots-in-an-epoch", "32",
+              "--preserve-historical-states", "--max-persisted-states", "86400",
+              "--load-state", "/usr/share/devnet/anvil_state.json"]
+  integration-test:
+    environment:
+      CARTESI_BLOCKCHAIN_DEFAULT_BLOCK: finalized

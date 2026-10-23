@@ -7,18 +7,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log/slog"
-	"math/big"
-	"testing"
-
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"log/slog"
+	"math/big"
+	"testing"
 )
 
 func prtForeclosedApp(id int64, block uint64) *model.Application {
@@ -40,191 +38,51 @@ func prtForeclosedApp(id int64, block uint64) *model.Application {
 	}
 }
 
-// An empty root query still proves that passive observation ran. It must
-// include all tournament-bearing epochs, not only particular claim states.
-func expectEmptyForeclosedObservation(r *prtRepositoryMock, app *model.Application) func() (uint64, error) {
-	r.On("ListEpochs", mock.Anything, app.Name, repository.EpochFilter{HasTournament: new(true)},
-		repository.Pagination{}, false).Return([]*model.Epoch{}, uint64(0), nil).Once()
-	return func() (uint64, error) { return 120, nil }
+func TestOrdinaryApplicationObservationDoesNotRunForeclosureDrain(t *testing.T) {
+	f := newDeliveryFixture(t)
+	view := resultTestSnapshot(f.epoch, false)
+	opts := mock.MatchedBy(resultCallOptsAtBlock(100))
+	f.consensus.On("GetCurrentSealedEpoch", opts).Return(view.sealed, nil)
+	f.consensus.On("CanStageTournamentResult", opts).Return(view.stage, nil)
+	f.consensus.On("CanAcceptStagedTournamentResult", opts).Return(view.accept, nil)
+	f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).Return([]*model.Epoch{}, uint64(0), nil)
+	require.NoError(t, f.d.observeApplication(t.Context(), f.app, observerFacts(100)))
+	f.repo.AssertNotCalled(t, "HasUndrainedEpochsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
 }
 
-// TestHandleForeclosedApp_NoOpWhenForecloseBlockZero verifies the guard at
-// the top of handleForeclosedApp. The PRT Tick passes every running app
-// through this function; only those with a non-zero ForecloseBlock should
-// drive any work.
-func TestHandleForeclosedApp_NoOpWhenForecloseBlockZero(t *testing.T) {
-	s, r := newPRTServiceMock()
-	defer r.AssertExpectations(t)
-
-	app := &model.Application{ID: 1, ConsensusType: model.Consensus_PRT}
-	require.NoError(t, s.handleForeclosedApp(context.Background(), app, nil))
-}
-
-func TestHandleForeclosedAppRecoversQueuedRootBond(t *testing.T) {
-	app := prtForeclosedApp(1, 100)
-	app.IConsensusAddress = common.HexToAddress("0x200")
-	owned := common.HexToAddress("0x600")
-	tournamentAddress := common.HexToAddress("0x300")
-	factory := &adapterFactoryMock{}
-	service := newRootBondTestService(owned, factory)
-	service.submissionEnabled = true
-	service.selectRootBondRecovery(app.ID, 3, tournamentAddress)
-	acceptTx := common.HexToHash("0x400")
-	service.pendingTransactions[app.ID] = pendingTournamentTransaction{
-		Action: tournamentActionAccept, Hash: acceptTx, EpochIndex: 3,
+func TestObserveRetainsTerminalApplicationStatus(t *testing.T) {
+	statuses := []model.ApplicationStatus{
+		model.ApplicationStatus_Failed, model.ApplicationStatus_Diverged, model.ApplicationStatus_Corrupted,
 	}
-	client := &ethClientMock{}
-	client.On("BlockNumber", mock.Anything).Return(uint64(120), nil).Once()
-	client.On("TransactionByHash", mock.Anything, acceptTx).
-		Return(types.NewTx(&types.LegacyTx{}), false, nil).Once()
-	client.On("TransactionReceipt", mock.Anything, acceptTx).Return(&types.Receipt{
-		Status: types.ReceiptStatusSuccessful, TxHash: acceptTx, BlockNumber: big.NewInt(119),
-	}, nil).Once()
-	service.client = client
-	tournament := &tournamentAdapterMock{}
-	tournament.On("BondRecovery", mock.Anything).
-		Return(canonicalBondRecovery(model.BondDispositionRecoverable, owned, 1), nil).Once()
-	tournament.On("TryRecoveringBond", mock.Anything).
-		Return(types.NewTx(&types.LegacyTx{Nonce: 1}), nil).Once()
-	factory.On("CreateTournamentAdapter", tournamentAddress).Return(tournament, nil).Once()
-	service.repository.(*prtRepositoryMock).On(
-		"HasUndrainedEpochsBeforeBlock", mock.Anything, app.ID, app.ForecloseBlock,
-	).Return(true, nil).Twice()
-
-	require.NoError(t, service.handleForeclosedApp(context.Background(), app,
-		expectEmptyForeclosedObservation(service.repository.(*prtRepositoryMock), app)))
-	require.Nil(t, service.rootBondRecoveries[app.ID].TxHash)
-	factory.AssertNotCalled(t, "CreateDaveConsensusAdapter", mock.Anything)
-	client.On("BlockNumber", mock.Anything).Return(uint64(121), nil).Once()
-	require.NoError(t, service.handleForeclosedApp(context.Background(), app,
-		expectEmptyForeclosedObservation(service.repository.(*prtRepositoryMock), app)))
-	require.NotNil(t, service.rootBondRecoveries[app.ID].TxHash)
-	factory.AssertExpectations(t)
-	tournament.AssertExpectations(t)
-	client.AssertExpectations(t)
-}
-
-func TestHandleForeclosedAppReconcilesInFlightRootBondRecovery(t *testing.T) {
-	app := prtForeclosedApp(1, 100)
-	owned := common.HexToAddress("0x600")
-	tournamentAddress := common.HexToAddress("0x300")
-	recoveryTx := common.HexToHash("0x400")
-	factory := &adapterFactoryMock{}
-	service := newRootBondTestService(owned, factory)
-	service.submissionEnabled = true
-	service.rootBondRecoveries[app.ID] = &rootBondRecovery{
-		EpochIndex: 3,
-		Tournament: tournamentAddress,
-		TxHash:     &recoveryTx,
-	}
-	client := &ethClientMock{}
-	client.On("BlockNumber", mock.Anything).Return(uint64(120), nil).Once()
-	client.On("TransactionByHash", mock.Anything, recoveryTx).
-		Return(types.NewTx(&types.LegacyTx{}), false, nil).Once()
-	client.On("TransactionReceipt", mock.Anything, recoveryTx).Return(&types.Receipt{
-		Status:      types.ReceiptStatusSuccessful,
-		TxHash:      recoveryTx,
-		BlockNumber: big.NewInt(119),
-	}, nil).Once()
-	service.client = client
-	tournament := &tournamentAdapterMock{}
-	tournament.On("BondRecovery", mock.Anything).
-		Return(canonicalBondRecovery(model.BondDispositionRecovered, common.Address{}, 0), nil).Once()
-	factory.On("CreateTournamentAdapter", tournamentAddress).Return(tournament, nil).Once()
-	service.repository.(*prtRepositoryMock).On(
-		"HasUndrainedEpochsBeforeBlock", mock.Anything, app.ID, app.ForecloseBlock,
-	).Return(true, nil).Once()
-
-	require.NoError(t, service.handleForeclosedApp(context.Background(), app,
-		expectEmptyForeclosedObservation(service.repository.(*prtRepositoryMock), app)))
-	require.Empty(t, service.rootBondRecoveries[app.ID])
-	factory.AssertExpectations(t)
-	tournament.AssertExpectations(t)
-	client.AssertExpectations(t)
-}
-
-func TestHandleForeclosedAppReconcilesJoinBeforeQueuedRootBond(t *testing.T) {
-	for _, pending := range []bool{true, false} {
-		name := "mined"
-		if pending {
-			name = "pending"
-		}
-		t.Run(name, func(t *testing.T) {
-			app := prtForeclosedApp(1, 100)
-			app.IConsensusAddress = common.HexToAddress("0x200")
-			owned := common.HexToAddress("0x600")
-			tournamentAddress := common.HexToAddress("0x300")
-			joinTx := common.HexToHash("0x400")
-			factory := &adapterFactoryMock{}
-			service := newRootBondTestService(owned, factory)
-			service.submissionEnabled = true
-			service.selectRootBondRecovery(app.ID, 3, tournamentAddress)
-			service.pendingTransactions[app.ID] = pendingTournamentTransaction{
-				Action: tournamentActionJoin, Hash: joinTx, EpochIndex: 3,
-			}
-			client := &ethClientMock{}
-			client.On("BlockNumber", mock.Anything).Return(uint64(120), nil).Once()
-			client.On("TransactionByHash", mock.Anything, joinTx).
-				Return(types.NewTx(&types.LegacyTx{}), pending, nil).Once()
-			service.client = client
-
-			if pending {
-				service.repository.(*prtRepositoryMock).On(
-					"HasUndrainedEpochsBeforeBlock", mock.Anything, app.ID, app.ForecloseBlock,
-				).Return(true, nil).Once()
-				require.NoError(t, service.handleForeclosedApp(context.Background(), app,
-					expectEmptyForeclosedObservation(service.repository.(*prtRepositoryMock), app)))
-				require.Contains(t, service.pendingTransactions, app.ID)
-				require.Nil(t, service.rootBondRecoveries[app.ID].TxHash)
-				factory.AssertNotCalled(t, "CreateDaveConsensusAdapter", mock.Anything)
-			} else {
-				client.On("TransactionReceipt", mock.Anything, joinTx).Return(&types.Receipt{
-					Status: types.ReceiptStatusSuccessful, TxHash: joinTx, BlockNumber: big.NewInt(119),
-				}, nil).Once()
-				tournament := &tournamentAdapterMock{}
-				tournament.On("BondRecovery", mock.Anything).
-					Return(canonicalBondRecovery(model.BondDispositionRecoverable, owned, 1), nil).Once()
-				tournament.On("TryRecoveringBond", mock.Anything).
-					Return(types.NewTx(&types.LegacyTx{Nonce: 1}), nil).Once()
-				factory.On("CreateTournamentAdapter", tournamentAddress).Return(tournament, nil).Once()
-				service.repository.(*prtRepositoryMock).On(
-					"HasUndrainedEpochsBeforeBlock", mock.Anything, app.ID, app.ForecloseBlock,
-				).Return(true, nil).Twice()
-
-				require.NoError(t, service.handleForeclosedApp(context.Background(), app,
-					expectEmptyForeclosedObservation(service.repository.(*prtRepositoryMock), app)))
-				require.NotContains(t, service.pendingTransactions, app.ID)
-				require.Nil(t, service.rootBondRecoveries[app.ID].TxHash)
-				factory.AssertNotCalled(t, "CreateDaveConsensusAdapter", mock.Anything)
-				client.On("BlockNumber", mock.Anything).Return(uint64(121), nil).Once()
-				require.NoError(t, service.handleForeclosedApp(context.Background(), app,
-					expectEmptyForeclosedObservation(service.repository.(*prtRepositoryMock), app)))
-				require.NotNil(t, service.rootBondRecoveries[app.ID].TxHash)
-				tournament.AssertExpectations(t)
-			}
-			service.repository.(*prtRepositoryMock).AssertExpectations(t)
-			factory.AssertExpectations(t)
-			client.AssertExpectations(t)
+	for _, status := range statuses {
+		t.Run(status.String(), func(t *testing.T) {
+			f, client := tickFixture(t)
+			f.app.Status = status
+			f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).Return([]*model.Epoch{}, uint64(0), nil)
+			f.repo.publishedRoots = nil
+			tickHead(client, 110)
+			require.NoError(t, f.d.observe(t.Context()))
+			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock, "empty observation does not invent coverage")
+			require.Equal(t, status, f.app.Status)
+			require.Empty(t, f.repo.windows)
+			require.Empty(t, f.backend.published)
 		})
 	}
 }
 
-func TestGetObservableApplications_IncludesUnhealthyApps(t *testing.T) {
-	r := &prtRepositoryMock{}
-	r.On("ListApplications",
-		mock.Anything,
-		mock.MatchedBy(func(f repository.ApplicationFilter) bool {
-			return f.Enabled != nil && *f.Enabled &&
-				f.ConsensusType != nil && *f.ConsensusType == model.Consensus_PRT &&
-				len(f.Statuses) == 0
-		}),
-		repository.Pagination{},
-		false,
-	).Return([]*model.Application{}, uint64(0), nil).Once()
+func TestForeclosureDrainDefersNewerSavedForeclosure(t *testing.T) {
+	f := newDeliveryFixture(t)
+	f.app.ForecloseBlock = 120
+	f.app.LastEpochCheckBlock, f.app.LastInputCheckBlock = 120, 120
+	f.repo.publishedRoots = nil
+	f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).
+		Return([]*model.Epoch{}, uint64(0), nil).Once()
 
-	_, _, err := getObservableApplications(context.Background(), r)
-	require.NoError(t, err)
-	r.AssertExpectations(t)
+	err := f.d.observeApplication(t.Context(), f.app, observerFacts(100))
+	require.ErrorIs(t, err, txsender.ErrInconclusive)
+	f.repo.AssertNotCalled(t, "HasUndrainedEpochsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
+	f.repo.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, mock.Anything, mock.Anything)
+	f.repo.AssertExpectations(t)
 }
 
 // TestHandleForeclosedApp_DefersWhenUndrained verifies the
@@ -243,7 +101,7 @@ func TestHandleForeclosedApp_DefersWhenUndrained(t *testing.T) {
 	// No UpdateApplicationStatus expectation — see TestProcessForeclosedApps_DefersWhenUndrained
 	// in the claimer suite for the equivalent reasoning.
 
-	require.NoError(t, s.handleForeclosedApp(context.Background(), app, expectEmptyForeclosedObservation(r, app)))
+	require.NoError(t, s.drainForeclosedClaims(context.Background(), app, nil, nil, 120))
 }
 
 // A completed local drain must not stop passive tournament observation. With
@@ -260,7 +118,7 @@ func TestHandleForeclosedApp_ObservesAfterLocalDrain(t *testing.T) {
 		mock.Anything, app.ID, app.ForecloseBlock,
 	).Return(false, nil).Once()
 
-	require.NoError(t, s.handleForeclosedApp(context.Background(), app, expectEmptyForeclosedObservation(r, app)))
+	require.NoError(t, s.drainForeclosedClaims(context.Background(), app, nil, nil, 120))
 }
 
 // TestHandleForeclosedApp_SurfacesDrainCheckError verifies the surrounding
@@ -277,7 +135,7 @@ func TestHandleForeclosedApp_SurfacesDrainCheckError(t *testing.T) {
 		mock.Anything, app.ID, app.ForecloseBlock,
 	).Return(false, dbErr).Once()
 
-	err := s.handleForeclosedApp(context.Background(), app, expectEmptyForeclosedObservation(r, app))
+	err := s.drainForeclosedClaims(context.Background(), app, nil, nil, 120)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, dbErr)
 }
@@ -311,7 +169,7 @@ func TestHandleForeclosedApp_DefersWhenStillBackfilling(t *testing.T) {
 			app.LastEpochCheckBlock = test.epochCursor
 			app.LastInputCheckBlock = test.inputCursor
 
-			require.NoError(t, s.handleForeclosedApp(t.Context(), app, expectEmptyForeclosedObservation(r, app)))
+			require.NoError(t, s.drainForeclosedClaims(t.Context(), app, nil, nil, 120))
 			require.Contains(t, output.String(), "sealed epochs and inputs")
 			require.Contains(t, output.String(), "last_epoch_check_block="+new(big.Int).SetUint64(test.epochCursor).String())
 			require.Contains(t, output.String(), "last_input_check_block="+new(big.Int).SetUint64(test.inputCursor).String())
@@ -340,7 +198,7 @@ func TestHandleForeclosedApp_SurfacesReconciliationCheckError(t *testing.T) {
 		mock.Anything, app.ID, app.ForecloseBlock,
 	).Return(false, dbErr).Once()
 
-	err := s.handleForeclosedApp(context.Background(), app, expectEmptyForeclosedObservation(r, app))
+	err := s.drainForeclosedClaims(context.Background(), app, nil, nil, 120)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, dbErr)
 }
@@ -351,36 +209,16 @@ func TestHandleForeclosedApp_SurfacesReconciliationCheckError(t *testing.T) {
 // the next pass; the local drain must not mark that epoch CLAIM_FORECLOSED.
 func TestHandleForeclosedApp_LeavesClaimedEpochForNextReconciliationPass(t *testing.T) {
 	s, r := newPRTServiceMock()
-	defer r.AssertExpectations(t)
-
 	app := prtForeclosedApp(1, 100)
-	client := &ethClientMock{}
-	client.On("HeaderByNumber", mock.Anything, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
-		Return(&types.Header{Number: big.NewInt(120)}, nil).Once()
-	s.client = client
-	s.defaultBlock = model.DefaultBlock_Finalized
 	claimTx := common.HexToHash("0xbeef")
-
-	r.On("HasUndrainedEpochsBeforeBlock",
-		mock.Anything, app.ID, app.ForecloseBlock,
-	).Return(false, nil).Once()
-	r.On("HasUnreconciledClaimsBeforeBlock",
-		mock.Anything, app.ID, app.ForecloseBlock,
-	).Return(true, nil).Once()
-	r.On("ListEpochs",
-		mock.Anything, app.Name, repository.EpochFilter{HasTournament: new(true)}, repository.Pagination{}, false,
-	).Return([]*model.Epoch{}, uint64(0), nil).Once()
-	r.On("ListEpochs",
-		mock.Anything, app.Name, repository.EpochFilter{Status: model.NonTerminalEpochStatuses()}, repository.Pagination{}, false,
-	).Return([]*model.Epoch{
-		{Index: 1, ClaimTransactionHash: &claimTx},
-	}, uint64(1), nil).Once()
-
-	require.NoError(t, s.handleForeclosedApp(context.Background(), app, func() (uint64, error) {
-		return s.getDefaultBlockNumber(context.Background())
-	}))
+	r.On("HasUndrainedEpochsBeforeBlock", mock.Anything, app.ID, app.ForecloseBlock).Return(false, nil).Once()
+	r.On("HasUnreconciledClaimsBeforeBlock", mock.Anything, app.ID, app.ForecloseBlock).Return(true, nil).Once()
+	r.On("ListEpochs", mock.Anything, app.Name,
+		repository.EpochFilter{Status: model.NonTerminalEpochStatuses()}, repository.Pagination{}, false).
+		Return([]*model.Epoch{{Index: 1, ClaimTransactionHash: &claimTx}}, uint64(1), nil).Once()
+	require.NoError(t, s.drainForeclosedClaims(t.Context(), app, nil, nil, 120))
 	r.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(1))
-	client.AssertExpectations(t)
+	r.AssertExpectations(t)
 }
 
 // TestForeclosePendingClaimEpochs_TerminalizesEachPendingEpoch verifies the

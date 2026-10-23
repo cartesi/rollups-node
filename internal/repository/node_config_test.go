@@ -12,7 +12,7 @@ import (
 )
 
 type nodeConfigReadStub struct {
-	NodeConfigRepository
+	NodeConfigReader
 	load func(context.Context, string) ([]byte, time.Time, time.Time, error)
 }
 

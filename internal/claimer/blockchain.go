@@ -12,12 +12,12 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/contracts/iauthority"
+	"github.com/cartesi/rollups-node/internal/txsender"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
-
 	"github.com/ethereum/go-ethereum"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -26,6 +26,7 @@ import (
 )
 
 type iclaimerBlockchain interface {
+	claimTransactionCanonical(ctx context.Context, hash common.Hash, block uint64) (bool, error)
 	findClaimSubmittedEventAndSucc(
 		ctx context.Context,
 		application *model.Application,
@@ -51,32 +52,12 @@ type iclaimerBlockchain interface {
 		error,
 	)
 
-	submitClaimToBlockchain(
-		ctx context.Context,
-		ic consensusClaimSubmitter,
-		application *model.Application,
-		epoch *model.Epoch,
-		proof model.StateProof,
-	) (common.Hash, error)
-
-	acceptClaimOnBlockchain(
-		ctx context.Context,
-		application *model.Application,
-		epoch *model.Epoch,
-	) (common.Hash, error)
-
 	getClaimStatus(
 		ctx context.Context,
 		application *model.Application,
 		epoch *model.Epoch,
 		blockNumber *big.Int,
 	) (iconsensus.IConsensusClaim, error)
-
-	pollTransaction(
-		ctx context.Context,
-		txHash common.Hash,
-		endBlock *big.Int,
-	) (bool, *types.Receipt, error)
 
 	findClaimAcceptedEventAndSucc(
 		ctx context.Context,
@@ -102,14 +83,24 @@ type iclaimerBlockchain interface {
 	claimSubmitterAddress() (common.Address, bool)
 }
 
-type consensusClaimSubmitter interface {
-	SubmitClaim(
-		opts *bind.TransactOpts,
-		appContract common.Address,
-		lastProcessedBlockNumber *big.Int,
-		machineMerkleRoot [32]byte,
-		proof iconsensus.MachineValidityProof,
-	) (*types.Transaction, error)
+func (cb *claimerBlockchain) claimTransactionCanonical(ctx context.Context, hash common.Hash, block uint64) (bool, error) {
+	receipt, err := cb.client.TransactionReceipt(ctx, hash)
+	if errors.Is(err, ethereum.NotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if receipt == nil || receipt.BlockNumber == nil || !receipt.BlockNumber.IsUint64() || receipt.BlockNumber.Uint64() > block {
+		return false, txsender.ErrInconclusive
+	}
+	if receipt.TxHash != hash || receipt.BlockHash == (common.Hash{}) || receipt.Status > types.ReceiptStatusSuccessful {
+		return false, txsender.ErrInconclusive
+	}
+	if receipt.Status == types.ReceiptStatusFailed {
+		return false, nil
+	}
+	return cb.backend.Canonical(ctx, txsender.BlockRef{Number: receipt.BlockNumber.Uint64(), Hash: receipt.BlockHash})
 }
 
 type claimerBlockchain struct {
@@ -117,6 +108,9 @@ type claimerBlockchain struct {
 	txOptsFactory ethutil.TransactOptsFactory
 	logger        *slog.Logger
 	defaultBlock  config.DefaultBlock
+	observed      txsender.BlockRef
+	backend       txsender.Backend
+	fault         error
 }
 
 func (cb *claimerBlockchain) claimSubmitterAddress() (common.Address, bool) {
@@ -124,104 +118,6 @@ func (cb *claimerBlockchain) claimSubmitterAddress() (common.Address, bool) {
 		return common.Address{}, false
 	}
 	return cb.txOptsFactory.From(), true
-}
-
-func (cb *claimerBlockchain) submitClaimToBlockchain(
-	ctx context.Context,
-	ic consensusClaimSubmitter,
-	application *model.Application,
-	epoch *model.Epoch,
-	proof model.StateProof,
-) (common.Hash, error) {
-	txHash := common.Hash{}
-	if cb.txOptsFactory == nil {
-		return txHash, fmt.Errorf("txOptsFactory is required for claim submission")
-	}
-	txOpts, err := cb.txOptsFactory.NewTransactOpts(ctx)
-	if err != nil {
-		return txHash, fmt.Errorf("creating transaction options for claim submission: %w", err)
-	}
-	lastBlockNumber := new(big.Int).SetUint64(epoch.LastBlock)
-	tx, err := ic.SubmitClaim(txOpts, application.IApplicationAddress,
-		lastBlockNumber, proof.MachineHash, consensusMachineValidityProof(proof))
-	if err != nil {
-		err = cb.diagnoseAuthorityOwner(ctx, application, txOpts.From, err)
-		cb.logger.Warn("submitClaimToBlockchain:failed",
-			"appContractAddress", application.IApplicationAddress,
-			"machine_merkle_root", proof.MachineHash,
-			"outputs_merkle_root", proof.TxBufferDataBlock,
-			"last_block", epoch.LastBlock,
-			"error", err)
-	} else {
-		txHash = tx.Hash()
-		cb.logger.Debug("submitClaimToBlockchain:success",
-			"appContractAddress", application.IApplicationAddress,
-			"machine_merkle_root", proof.MachineHash,
-			"outputs_merkle_root", proof.TxBufferDataBlock,
-			"last_block", epoch.LastBlock,
-			"TxHash", txHash)
-	}
-	return txHash, err
-}
-
-// authorityOwnerMismatch carries owner evidence without depending on the
-// ownership library's revert ABI. The original submission error is preserved.
-type authorityOwnerMismatch struct {
-	signer          common.Address
-	configuredOwner common.Address
-	latestOwner     common.Address
-	submissionErr   error
-}
-
-func (e *authorityOwnerMismatch) Error() string {
-	return fmt.Sprintf("Authority owner check: signer %s, configured owner %s, latest owner %s: %v",
-		e.signer, e.configuredOwner, e.latestOwner, e.submissionErr)
-}
-
-func (e *authorityOwnerMismatch) Unwrap() error { return e.submissionErr }
-
-func (cb *claimerBlockchain) diagnoseAuthorityOwner(
-	ctx context.Context,
-	app *model.Application,
-	signer common.Address,
-	submissionErr error,
-) error {
-	if app.ConsensusType != model.Consensus_Authority {
-		return submissionErr
-	}
-	// Known submit errors already have a more specific diagnosis. Keep owner
-	// reads for otherwise-unclassified reverts, using the actual transaction signer.
-	if ethutil.IsNonceTooLowError(submissionErr) || submitClaimRevertName(submissionErr) != "" {
-		return submissionErr
-	}
-	if _, reverted := ethclient.RevertErrorData(submissionErr); !reverted {
-		return submissionErr
-	}
-	block, err := cb.getDefaultBlockNumber(ctx)
-	if err != nil {
-		return errors.Join(submissionErr, fmt.Errorf("resolving block for Authority owner check: %w", err))
-	}
-	if block == nil || block.Sign() < 0 {
-		return errors.Join(submissionErr, errors.New("authority owner check returned an invalid configured block"))
-	}
-	authority, err := iauthority.NewIAuthorityCaller(app.IConsensusAddress, cb.client)
-	if err != nil {
-		return errors.Join(submissionErr, fmt.Errorf("binding Authority for owner check: %w", err))
-	}
-	configuredOwner, err := authority.Owner(&bind.CallOpts{Context: ctx, BlockNumber: block})
-	if err != nil {
-		return errors.Join(submissionErr, fmt.Errorf("reading Authority owner at configured block %s: %w", block, err))
-	}
-	latestOwner, err := authority.Owner(&bind.CallOpts{Context: ctx})
-	if err != nil {
-		return errors.Join(submissionErr, fmt.Errorf("reading latest Authority owner: %w", err))
-	}
-	if configuredOwner == signer && latestOwner == signer {
-		return submissionErr
-	}
-	return &authorityOwnerMismatch{
-		signer: signer, configuredOwner: configuredOwner, latestOwner: latestOwner, submissionErr: submissionErr,
-	}
 }
 
 type eventIterator interface {
@@ -232,15 +128,23 @@ type eventIterator interface {
 
 // newOracle adapts a contract counter getter to the function shape expected by
 // ethutil.FindTransitions. The getter is called for one app at one block.
-func newOracle(
+func (cb *claimerBlockchain) newOracle(
 	addr common.Address,
 	nr func(*bind.CallOpts, common.Address) (*big.Int, error),
 ) func(ctx context.Context, block uint64) (*big.Int, error) {
 	return func(ctx context.Context, block uint64) (*big.Int, error) {
-		return nr(&bind.CallOpts{
-			Context:     ctx,
-			BlockNumber: new(big.Int).SetUint64(block),
-		}, addr)
+		opts := cb.callOpts(ctx, new(big.Int).SetUint64(block))
+		if opts.BlockHash == (common.Hash{}) {
+			header, err := cb.client.HeaderByNumber(ctx, new(big.Int).SetUint64(block))
+			if err != nil {
+				return nil, err
+			}
+			if header == nil || header.Number == nil || header.Number.Uint64() != block {
+				return nil, txsender.ErrInconclusive
+			}
+			opts = &bind.CallOpts{Context: ctx, BlockHash: header.Hash()}
+		}
+		return nr(opts, addr)
 	}
 }
 
@@ -271,9 +175,25 @@ func newOnHit[IT eventIterator](
 	ctx context.Context,
 	address common.Address,
 	filter func(*bind.FilterOpts, []common.Address, []common.Address) (IT, error),
-	onEvent func(IT),
+	oracle func(context.Context, uint64) (*big.Int, error),
+	onEvent func(IT) error,
 ) func(block uint64) error {
-	return func(block uint64) error {
+	return func(block uint64) (err error) {
+		before := new(big.Int)
+		if block > 0 {
+			before, err = oracle(ctx, block-1)
+			if err != nil {
+				return err
+			}
+		}
+		after, err := oracle(ctx, block)
+		if err != nil {
+			return err
+		}
+		if before == nil || after == nil || after.Cmp(before) < 0 {
+			return txsender.ErrInconclusive
+		}
+		expected := new(big.Int).Sub(after, before)
 		filterOpts := &bind.FilterOpts{
 			Context: ctx,
 			Start:   block,
@@ -283,11 +203,22 @@ func newOnHit[IT eventIterator](
 		if err != nil {
 			return err
 		}
-		defer it.Close()
+		defer func() { err = errors.Join(err, it.Close()) }()
+		var count uint64
 		for it.Next() {
-			onEvent(it)
+			count++
+			if err := onEvent(it); err != nil {
+				return err
+			}
 		}
-		return it.Error()
+		if err := it.Error(); err != nil {
+			return err
+		}
+		if expected.Cmp(new(big.Int).SetUint64(count)) != 0 {
+			return fmt.Errorf("%w: event window at block %d returned %d logs, counter advanced %s",
+				txsender.ErrInconclusive, block, count, expected)
+		}
+		return nil
 	}
 }
 
@@ -310,14 +241,22 @@ func (cb *claimerBlockchain) findClaimSubmittedEventAndSucc(
 		return nil, nil, fmt.Errorf("creating IConsensus binding for submitted events of application: %v, epoch: %v (%v): %w",
 			application.IApplicationAddress, epoch.Index, epoch.VirtualIndex, err)
 	}
-	oracle := newOracle(application.IApplicationAddress, ic.GetNumberOfSubmittedClaims)
+	caller, err := iconsensus.NewIConsensusCaller(application.IConsensusAddress, txsender.ProtectedClient{Client: cb.client})
+	if err != nil {
+		return nil, nil, err
+	}
+	oracle := cb.newOracle(application.IApplicationAddress, caller.GetNumberOfSubmittedClaims)
 	events := []*iconsensus.IConsensusClaimSubmitted{}
-	onHit := newOnHit(ctx, application.IApplicationAddress, ic.FilterClaimSubmitted,
-		func(it *iconsensus.IConsensusClaimSubmittedIterator) {
+	onHit := newOnHit(ctx, application.IApplicationAddress, ic.FilterClaimSubmitted, oracle,
+		func(it *iconsensus.IConsensusClaimSubmittedIterator) error {
 			event := it.Event
+			if err := cb.validateObservedLog(ctx, event.Raw, toBlock); err != nil {
+				return err
+			}
 			if (len(events) > 0) || claimSubmittedEventMatchesEpoch(application, epoch, event) {
 				events = append(events, event)
 			}
+			return nil
 		},
 	)
 
@@ -358,7 +297,11 @@ func (cb *claimerBlockchain) findClaimStagedEventAndSucc(
 		return nil, nil, nil, fmt.Errorf("creating IConsensus binding for staged events: %w", err)
 	}
 
-	oracle := newOracle(application.IApplicationAddress, ic.GetNumberOfStagedClaims)
+	caller, err := iconsensus.NewIConsensusCaller(application.IConsensusAddress, txsender.ProtectedClient{Client: cb.client})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	oracle := cb.newOracle(application.IApplicationAddress, caller.GetNumberOfStagedClaims)
 	events := []*iconsensus.IConsensusClaimStaged{}
 	filter := func(
 		opts *bind.FilterOpts,
@@ -367,12 +310,16 @@ func (cb *claimerBlockchain) findClaimStagedEventAndSucc(
 	) (*iconsensus.IConsensusClaimStagedIterator, error) {
 		return ic.FilterClaimStaged(opts, appContract)
 	}
-	onHit := newOnHit(ctx, application.IApplicationAddress, filter,
-		func(it *iconsensus.IConsensusClaimStagedIterator) {
+	onHit := newOnHit(ctx, application.IApplicationAddress, filter, oracle,
+		func(it *iconsensus.IConsensusClaimStagedIterator) error {
 			event := it.Event
+			if err := cb.validateObservedLog(ctx, event.Raw, toBlock); err != nil {
+				return err
+			}
 			if (len(events) > 0) || claimStagedEventMatchesEpoch(application, epoch, event) {
 				events = append(events, event)
 			}
+			return nil
 		},
 	)
 
@@ -417,7 +364,11 @@ func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 		return nil, nil, nil, fmt.Errorf("creating IConsensus binding for accepted events: %w", err)
 	}
 
-	oracle := newOracle(application.IApplicationAddress, ic.GetNumberOfAcceptedClaims)
+	caller, err := iconsensus.NewIConsensusCaller(application.IConsensusAddress, txsender.ProtectedClient{Client: cb.client})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	oracle := cb.newOracle(application.IApplicationAddress, caller.GetNumberOfAcceptedClaims)
 	events := []*iconsensus.IConsensusClaimAccepted{}
 	filter := func(
 		opts *bind.FilterOpts,
@@ -426,15 +377,19 @@ func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 	) (*iconsensus.IConsensusClaimAcceptedIterator, error) {
 		return ic.FilterClaimAccepted(opts, appContract)
 	}
-	onHit := newOnHit(ctx, application.IApplicationAddress, filter,
-		func(it *iconsensus.IConsensusClaimAcceptedIterator) {
+	onHit := newOnHit(ctx, application.IApplicationAddress, filter, oracle,
+		func(it *iconsensus.IConsensusClaimAcceptedIterator) error {
 			event := it.Event
+			if err := cb.validateObservedLog(ctx, event.Raw, toBlock); err != nil {
+				return err
+			}
 			// Match only app and lastBlock. Do not require the Merkle root to
 			// match here. The caller still needs to see a ClaimAccepted event
 			// from a different claim, especially in Quorum.
 			if (len(events) > 0) || claimAcceptedEventMatchesEpoch(application, epoch, event) {
 				events = append(events, event)
 			}
+			return nil
 		},
 	)
 
@@ -463,60 +418,17 @@ func (cb *claimerBlockchain) getConsensusAddress(
 	app *model.Application,
 	blockNumber *big.Int,
 ) (common.Address, error) {
-	return ethutil.GetConsensusAt(ctx, cb.client, app.IApplicationAddress, blockNumber)
-}
-
-// acceptClaimOnBlockchain calls IConsensus.acceptClaim for an epoch whose
-// claim is already STAGED on chain and whose staging period has elapsed.
-// The contract validates the period server-side and reverts with
-// ClaimStagingPeriodNotOverYet if the math is off; the caller handles that
-// revert via handleAcceptClaimRevert.
-func (cb *claimerBlockchain) acceptClaimOnBlockchain(
-	ctx context.Context,
-	application *model.Application,
-	epoch *model.Epoch,
-) (common.Hash, error) {
-	txHash := common.Hash{}
-	if cb.txOptsFactory == nil {
-		return txHash, fmt.Errorf("txOpts is required for claim acceptance")
-	}
-	if epoch.MachineHash == nil {
-		return txHash, fmt.Errorf(
-			"epoch %d (%d) has no machine_hash; refusing to accept claim",
-			epoch.Index, epoch.VirtualIndex)
-	}
-	ic, err := iconsensus.NewIConsensus(application.IConsensusAddress, cb.client)
+	binding, err := iapplication.NewIApplicationCaller(app.IApplicationAddress, txsender.ProtectedClient{Client: cb.client})
 	if err != nil {
-		return txHash, fmt.Errorf("creating IConsensus binding for acceptClaim: %w", err)
+		return common.Address{}, err
 	}
-	txOpts, err := cb.txOptsFactory.NewTransactOpts(ctx)
-	if err != nil {
-		return txHash, fmt.Errorf("creating transaction options for claim acceptance: %w", err)
-	}
-	lastBlockNumber := new(big.Int).SetUint64(epoch.LastBlock)
-	tx, err := ic.AcceptClaim(txOpts, application.IApplicationAddress,
-		lastBlockNumber, *epoch.MachineHash)
-	if err != nil {
-		cb.logger.Warn("acceptClaimOnBlockchain:failed",
-			"appContractAddress", application.IApplicationAddress,
-			"machineHash", *epoch.MachineHash,
-			"last_block", epoch.LastBlock,
-			"error", err)
-	} else {
-		txHash = tx.Hash()
-		cb.logger.Debug("acceptClaimOnBlockchain:success",
-			"appContractAddress", application.IApplicationAddress,
-			"machineHash", *epoch.MachineHash,
-			"last_block", epoch.LastBlock,
-			"TxHash", txHash)
-	}
-	return txHash, err
+	return binding.GetOutputsMerkleRootValidator(cb.callOpts(ctx, blockNumber))
 }
 
 // getClaimStatus reads the on-chain Claim record for this app, last processed
 // block, and machine root.
 //
-// The caller passes the tick's finalized block number. That makes all chain
+// The caller passes the tick's configured observation block. That makes all chain
 // reads in the same tick use the same block.
 func (cb *claimerBlockchain) getClaimStatus(
 	ctx context.Context,
@@ -530,48 +442,21 @@ func (cb *claimerBlockchain) getClaimStatus(
 			"epoch %d (%d) has no machine_hash; cannot query getClaim",
 			epoch.Index, epoch.VirtualIndex)
 	}
-	ic, err := iconsensus.NewIConsensusCaller(application.IConsensusAddress, cb.client)
+	ic, err := iconsensus.NewIConsensusCaller(application.IConsensusAddress, txsender.ProtectedClient{Client: cb.client})
 	if err != nil {
 		return zero, fmt.Errorf("creating IConsensus caller for getClaim: %w", err)
 	}
-	opts := &bind.CallOpts{Context: ctx, BlockNumber: blockNumber}
+	opts := cb.callOpts(ctx, blockNumber)
 	return ic.GetClaim(opts, application.IApplicationAddress,
 		new(big.Int).SetUint64(epoch.LastBlock), *epoch.MachineHash)
-}
-
-// isCustomConsensusError matches a typed Solidity error against an RPC revert.
-// Checks IConsensus first; falls back to IQuorum so Quorum-only errors such
-// as CallerIsNotValidator are also recognised. Selectors are name+type-based,
-// so an error declared in both interfaces has the same selector either way.
-func isCustomConsensusError(err error, name string) bool {
-	return ethutil.IsCustomError(err, iconsensus.IConsensusMetaData, name) ||
-		ethutil.IsCustomError(err, iquorum.IQuorumMetaData, name)
-}
-
-// poll a transaction for its receipt
-func (cb *claimerBlockchain) pollTransaction(
-	ctx context.Context,
-	txHash common.Hash,
-	endBlockNumber *big.Int,
-) (bool, *types.Receipt, error) {
-	receipt, err := cb.client.TransactionReceipt(ctx, txHash)
-	if err != nil {
-		// TransactionReceipt returns ethereum.NotFound while the transaction is still pending.
-		// Treat this as "not ready yet" rather than a hard failure so that callers keep
-		// the claim in-flight and avoid duplicate submissions.
-		if errors.Is(err, ethereum.NotFound) {
-			return false, nil, nil
-		}
-		return false, nil, fmt.Errorf("fetching transaction receipt for %v: %w", txHash, err)
-	}
-
-	// receipt must be committed before use. Return false until it is.
-	return receipt.BlockNumber.Cmp(endBlockNumber) <= 0, receipt, nil
 }
 
 /* Retrieve the block number for the configured commitment level in ethereum terms,
  * that is: `latest`, `safe`, `finalized`, etc. Which may be many blocks behind. */
 func (cb *claimerBlockchain) getDefaultBlockNumber(ctx context.Context) (*big.Int, error) {
+	if cb.fault != nil {
+		return nil, cb.fault
+	}
 	var nr int64
 	switch cb.defaultBlock {
 	case model.DefaultBlock_Pending:
@@ -590,8 +475,57 @@ func (cb *claimerBlockchain) getDefaultBlockNumber(ctx context.Context) (*big.In
 	if err != nil {
 		return nil, fmt.Errorf("fetching header for block %v: %w", nr, err)
 	}
-	if hdr == nil {
-		return nil, fmt.Errorf("returned header for block %v is nil", nr)
+	if hdr == nil || hdr.Number == nil || !hdr.Number.IsUint64() {
+		return nil, fmt.Errorf("returned header for block %v is invalid", nr)
 	}
+	candidate := txsender.BlockRef{Number: hdr.Number.Uint64(), Hash: hdr.Hash()}
+	canonical, err := cb.backend.Canonical(ctx, candidate)
+	if err != nil {
+		return nil, err
+	}
+	if !canonical {
+		return nil, txsender.ErrInconclusive
+	}
+	if cb.observed.Hash != (common.Hash{}) && cb.defaultBlock == model.DefaultBlock_Finalized {
+		if hdr.Number.Uint64() < cb.observed.Number {
+			return nil, txsender.ErrInconclusive
+		}
+		savedHeader, err := cb.client.HeaderByNumber(ctx, new(big.Int).SetUint64(cb.observed.Number))
+		if err != nil {
+			return nil, err
+		}
+		if savedHeader == nil || savedHeader.Number == nil || savedHeader.Number.Uint64() != cb.observed.Number {
+			return nil, txsender.ErrInconclusive
+		}
+		if savedHeader.Hash() != cb.observed.Hash {
+			cb.fault = fmt.Errorf("%w: finalized block %d saved %s now %s",
+				txsender.ErrFinality, cb.observed.Number, cb.observed.Hash, savedHeader.Hash())
+			return nil, cb.fault
+		}
+	}
+	cb.observed = candidate
 	return hdr.Number, nil
+}
+
+// Current observations use the exact header selected at the start of Observe.
+// The protected adapter requires that hash to remain canonical on this backend.
+func (cb *claimerBlockchain) callOpts(ctx context.Context, block *big.Int) *bind.CallOpts {
+	if block != nil && block.IsUint64() && block.Uint64() == cb.observed.Number && cb.observed.Hash != (common.Hash{}) {
+		return &bind.CallOpts{Context: ctx, BlockHash: cb.observed.Hash}
+	}
+	return &bind.CallOpts{Context: ctx, BlockNumber: block}
+}
+
+func (cb *claimerBlockchain) validateObservedLog(ctx context.Context, log types.Log, end uint64) error {
+	if log.Removed || log.BlockNumber > end || log.BlockHash == (common.Hash{}) {
+		return txsender.ErrInconclusive
+	}
+	canonical, err := cb.backend.Canonical(ctx, txsender.BlockRef{Number: log.BlockNumber, Hash: log.BlockHash})
+	if err != nil {
+		return err
+	}
+	if !canonical {
+		return txsender.ErrNonCanonical
+	}
+	return nil
 }

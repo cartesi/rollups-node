@@ -313,7 +313,11 @@ func (s *Service) checkConsensusForAddressChange(
 			return err
 		}
 		err := s.checkConsensusForAddressChangeUncached(ctx, app, defaultBlockNumber)
-		s.consensusAddressChecks[key] = err
+		// A later stage has its own deadline and can retry a failed read.
+		// Cache only a successful check of this fixed block.
+		if err == nil {
+			s.consensusAddressChecks[key] = nil
+		}
 		return err
 	}
 	return s.checkConsensusForAddressChangeUncached(ctx, app, defaultBlockNumber)

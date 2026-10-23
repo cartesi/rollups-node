@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# (c) Cartesi and individual authors (see AUTHORS)
+# SPDX-License-Identifier: Apache-2.0 (see LICENSE)
+
+set -euo pipefail
+
+# Development only: the CLI payer is account 5, the node Claimer is account 0,
+# and PRT is account 6. Deployment must assign Authority ownership to Claimer.
+repository_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cli_binary="${CARTESI_DEV_CLI_BINARY:-${repository_dir}/cartesi-rollups-cli}"
+authority_owner="${CARTESI_DEV_AUTHORITY_OWNER:-0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266}"
+
+if [[ "${1:-}" == "deploy" && ( "${2:-}" == "application" || "${2:-}" == "authority" ) ]]; then
+    has_owner=false
+    for argument in "$@"; do
+        case "$argument" in
+            --authority-owner|--authority-owner=*|-O|-O*) has_owner=true ;;
+        esac
+    done
+    if [[ "$has_owner" == false ]]; then
+        set -- "$@" --authority-owner "$authority_owner"
+    fi
+fi
+
+export CARTESI_AUTH_KIND=mnemonic
+export CARTESI_AUTH_MNEMONIC='test test test test test test test test test test test junk'
+export CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX="${CARTESI_DEV_CLI_ACCOUNT_INDEX:-5}"
+exec "$cli_binary" "$@"

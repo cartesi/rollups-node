@@ -25,6 +25,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/cartesi/rollups-node/internal/httpclient"
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/hashicorp/go-retryablehttp"
@@ -103,9 +104,11 @@ func TestEthClientNonSuccessNonceClassification(t *testing.T) {
 					defer server.Close()
 					var logs bytes.Buffer
 					client := secretTestClient(t, server.URL+"/"+marker, retry, &logs)
-					_, err := client.ChainID(t.Context())
+					var hash common.Hash
+					err := client.Client().CallContext(t.Context(), &hash, "eth_sendRawTransaction", "0x01")
 					require.Error(t, err)
-					require.Equal(t, !retry || status == http.StatusBadRequest, IsNonceTooLowError(err))
+					wantNonce := body[0] == '{' && (!retry || status == http.StatusBadRequest)
+					require.Equal(t, wantNonce, IsNonceTooLowError(err))
 					require.Equal(t, int32(1), requests.Load())
 					require.NotContains(t, err.Error(), marker)
 				})

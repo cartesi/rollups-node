@@ -53,6 +53,7 @@ Via either environment variables or execution arguments.
 As an **example**, the development values can be found with `make env`.
 Node operators should get familiar with those and customize to their specific setup.
 For more on this topic, consult the [wiki](https://github.com/cartesi/rollups-node/wiki/Configuration).
+See [Transaction delivery](docs/transaction-delivery.md) for signer configuration, limits, recovery and removal.
 
 The node provides multiple binaries, one for each of its modules (advancer, claimer, evm-reader, validator, jsonrpc-api).
 They follow the naming convention `cartesi-rollups-<module>`.

@@ -4,85 +4,106 @@
 package remove
 
 import (
+	"context"
 	"fmt"
-	"os"
-
-	"github.com/spf13/cobra"
+	"log/slog"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/spf13/cobra"
 )
 
 var Cmd = &cobra.Command{
-	Use:     "remove [app-name-or-address]",
-	Aliases: []string{"rm"},
-	Short:   "Remove registered applications",
-	Example: examples,
-	Args:    cobra.ExactArgs(1),
-	Run:     run,
-	Long: `
-Supported Environment Variables:
-  CARTESI_DATABASE_CONNECTION                    Database connection string`,
+	Use: "remove [app-name-or-address]", Aliases: []string{"rm"}, Args: cobra.ExactArgs(1),
+	Short: "Remove registered applications", RunE: run,
+	Long: `Remove a disabled application and its stored data.
+Use --allow-abandonment to acknowledge that removal stops protection and alerts
+and abandons outstanding work. Transactions already sent or in progress may still
+execute. --yes skips only the prompt. The command does not inspect the blockchain
+for remaining obligations. The database connection uses CARTESI_DATABASE_CONNECTION.`,
+	Example: `cartesi-rollups-cli app remove echo-dapp --allow-abandonment
+cartesi-rollups-cli app remove echo-dapp --allow-abandonment --yes --timeout 10m`,
 }
 
-const examples = `# Remove application:
-cartesi-rollups-cli app remove echo-dapp
+const defaultRemovalTimeout = 10 * time.Minute
 
-# Remove application without confirmation:
-cartesi-rollups-cli app remove echo-dapp --yes`
-
-var yesFlag bool
+var yesFlag, allowAbandonment bool
+var removalTimeout time.Duration
 
 func init() {
-	Cmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Skip confirmation prompts")
-
-	origHelpFunc := Cmd.HelpFunc()
-	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
+	Cmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "Skip the confirmation prompt")
+	Cmd.Flags().BoolVar(&allowAbandonment, "allow-abandonment", false, "Acknowledge abandoned work, protection and alerts")
+	Cmd.Flags().DurationVar(&removalTimeout, "timeout", defaultRemovalTimeout, "Timeout for database access and deletion")
+	origHelp := Cmd.HelpFunc()
+	Cmd.SetHelpFunc(func(command *cobra.Command, args []string) {
 		command.Flags().Lookup("verbose").Hidden = false
 		command.Flags().Lookup("database-connection").Hidden = false
-		origHelpFunc(command, strings)
+		origHelp(command, args)
 	})
 }
 
-func run(cmd *cobra.Command, args []string) {
-	ctx := cmd.Context()
+func checkAcknowledgment() error {
+	if !allowAbandonment {
+		return fmt.Errorf("use --allow-abandonment to acknowledge abandoned work, protection and alerts")
+	}
+	return nil
+}
 
-	nameOrAddress, err := config.ToApplicationNameOrAddressFromString(args[0])
-	cobra.CheckErr(err)
-
+func run(cmd *cobra.Command, args []string) error {
+	if removalTimeout <= 0 {
+		return fmt.Errorf("--timeout must be greater than zero")
+	}
+	if err := checkAcknowledgment(); err != nil {
+		return err
+	}
+	name, err := config.ToApplicationNameOrAddressFromString(args[0])
+	if err != nil {
+		return err
+	}
 	dsn, err := config.GetDatabaseConnection()
-	cobra.CheckErr(err)
-
+	if err != nil {
+		return err
+	}
+	// Bound startup and lookup independently of operator time at the prompt.
+	ctx, cancel := context.WithTimeout(cmd.Context(), removalTimeout)
 	repo, err := cli.OpenRepository(ctx, dsn)
-	cobra.CheckErr(err)
+	if err != nil {
+		cancel()
+		return err
+	}
 	defer repo.Close()
-
-	app, err := repo.GetApplication(ctx, nameOrAddress)
-	cobra.CheckErr(err)
+	app, err := repo.GetApplication(ctx, name)
+	cancel()
+	if err != nil {
+		return err
+	}
 	if app == nil {
-		fmt.Fprintf(os.Stderr, "application %q not found\n", nameOrAddress)
-		repo.Close()
-		os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
+		return repository.ErrNotFound
 	}
-
 	if app.Enabled {
-		fmt.Fprintf(os.Stderr, "Error: Application %s has enabled=true. Must disable it first\n", app.Name)
-		repo.Close()
-		os.Exit(1)
+		return fmt.Errorf("application %s must be disabled before removal", app.Name)
 	}
-
+	fmt.Fprintln(cmd.OutOrStdout(), "Removal cannot be undone. The node stops protection and alerts for this application "+
+		"and abandons outstanding work. Transactions already sent or in progress may still execute.")
 	if !yesFlag {
-		confirmed, promptErr := cli.ConfirmPrompt(
-			fmt.Sprintf("Are you sure you want to remove application %s (%s)?",
-				app.Name, app.IApplicationAddress.String()))
-		if promptErr != nil || !confirmed {
-			fmt.Println("Operation cancelled")
-			return
+		confirmed, promptErr := cli.ConfirmPrompt(fmt.Sprintf("Remove application %s (%s)?", app.Name, app.IApplicationAddress))
+		if promptErr != nil {
+			return promptErr
+		}
+		if !confirmed {
+			fmt.Fprintln(cmd.OutOrStdout(), "Operation cancelled")
+			return nil
 		}
 	}
-
-	err = repo.DeleteApplication(ctx, app.ID)
-	cobra.CheckErr(err)
-
-	fmt.Printf("Application %s (%s) successfully removed\n", app.Name, app.IApplicationAddress.String())
+	slog.Info("Application removal requested with abandonment acknowledged", "application", app.Name,
+		"address", app.IApplicationAddress)
+	deleteCtx, deleteDone := context.WithTimeout(cmd.Context(), removalTimeout)
+	defer deleteDone()
+	if err = repo.DeleteApplication(deleteCtx, app.ID); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Application %s (%s) successfully removed\n", app.Name, app.IApplicationAddress)
+	return nil
 }

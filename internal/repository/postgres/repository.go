@@ -59,7 +59,8 @@ func NewPostgresRepository(ctx context.Context, conn string, maxRetries int, del
 
 	// Wait for database to be available
 	for i := range maxRetries {
-		if err := pool.Ping(ctx); err == nil {
+		pingErr := pool.Ping(ctx)
+		if pingErr == nil {
 			break
 		}
 		if err := ctx.Err(); err != nil {
@@ -68,7 +69,7 @@ func NewPostgresRepository(ctx context.Context, conn string, maxRetries int, del
 		}
 		if i == maxRetries-1 {
 			pool.Close()
-			return nil, fmt.Errorf("failed to ping Postgres after %d retries", maxRetries)
+			return nil, fmt.Errorf("failed to ping Postgres after %d retries: %s", maxRetries, safePostgresConnectCause(pingErr))
 		}
 		select {
 		case <-time.After(delay):

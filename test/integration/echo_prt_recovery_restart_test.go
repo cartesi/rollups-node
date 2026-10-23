@@ -26,7 +26,7 @@ import (
 
 // TestEchoPrtAcceptedBondRecoveryAfterRestart prepares an accepted epoch while
 // the node is stopped. Restart must discover its unpaid bond without another
-// acceptance callback, once the next epoch's join has had priority.
+// acceptance callback, independently of preparation of the next epoch's claim.
 func (s *EchoPrtSuite) TestEchoPrtAcceptedBondRecoveryAfterRestart() {
 	if !isNodeSelfManaged() {
 		s.T().Skip("bond recovery restart requires a test-managed node")
@@ -50,18 +50,19 @@ func (s *EchoPrtSuite) TestEchoPrtAcceptedBondRecoveryAfterRestart() {
 	}()
 	setAnvilIntervalMining(s.ctx, s.T(), 0)
 	setAnvilAutomine(s.ctx, s.T(), true)
-	s.appName = uniqueAppName("echo-prt-bond-restart")
-	_, err := deployApplication(s.ctx, s.appName,
-		envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp"),
-		"--salt", uniqueSalt(), prtFlag, claimStagingPeriodFlag, "5")
-	r.NoError(err, "deploy the recovery restart application")
-	waitForTournamentAndCommitment(s.ctx, s.T(), r, s.appName, 0)
-
 	dsn, err := config.GetDatabaseConnection()
 	r.NoError(err)
 	repo, err := factory.NewRepositoryFromConnectionString(s.ctx, dsn.Raw())
 	r.NoError(err)
 	defer repo.Close()
+	readerConfig, _, err := loadRecoveryFixtureConfig()
+	r.NoError(err)
+	s.appName = uniqueAppName("echo-prt-bond-restart")
+	_, err = deployApplication(s.ctx, s.appName,
+		envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp"),
+		"--salt", uniqueSalt(), prtFlag, claimStagingPeriodFlag, "5")
+	r.NoError(err, "deploy the recovery restart application")
+	s.waitForRecoveryFixtureCommitment(repo, readerConfig.BlockchainDefaultBlock, 0)
 	app, err := repo.GetApplication(s.ctx, s.appName)
 	r.NoError(err)
 	r.NotNil(app)
@@ -91,7 +92,7 @@ func (s *EchoPrtSuite) TestEchoPrtAcceptedBondRecoveryAfterRestart() {
 	consensus, err := idaveconsensus.NewIDaveConsensus(app.IConsensusAddress, s.ethClient)
 	r.NoError(err)
 	acceptReceipt := s.acceptStoppedPrtEpoch(consensus, app.IConsensusAddress, epoch, commitment.SubmitterAddress)
-	s.publishAcceptedRecoveryFixture(repo, epoch.Index+1, acceptReceipt.BlockNumber.Uint64())
+	observedBlock := s.publishAcceptedRecoveryFixture(repo, epoch.Index+1, acceptReceipt.BlockNumber.Uint64())
 	accepted, err := repo.GetEpoch(s.ctx, s.appName, epoch.Index)
 	r.NoError(err)
 	r.NotNil(accepted)
@@ -100,7 +101,7 @@ func (s *EchoPrtSuite) TestEchoPrtAcceptedBondRecoveryAfterRestart() {
 	r.Equal(acceptReceipt.TxHash, *accepted.ClaimTransactionHash)
 	app, err = repo.GetApplication(s.ctx, s.appName)
 	r.NoError(err)
-	r.Equal(acceptReceipt.BlockNumber.Uint64(), app.LastTournamentCheckBlock)
+	r.Equal(observedBlock, app.LastTournamentCheckBlock)
 	storedRoot, err := repo.GetTournament(s.ctx, s.appName, root.Address.Hex())
 	r.NoError(err)
 	r.NotNil(storedRoot)
@@ -120,7 +121,7 @@ func (s *EchoPrtSuite) TestEchoPrtAcceptedBondRecoveryAfterRestart() {
 	startSharedNode(s.T())
 	// Empty epoch 1 is computed normally after the full node resumes.
 	// With interval mining still stopped, its root stays open for the join.
-	nextRoot := waitForTournamentAndCommitment(s.ctx, s.T(), r, s.appName, 1)
+	nextRoot := s.waitForRecoveryFixtureCommitment(repo, readerConfig.BlockchainDefaultBlock, 1)
 	nextEpoch, err := repo.GetEpoch(s.ctx, s.appName, 1)
 	r.NoError(err)
 	r.NotNil(nextEpoch)
@@ -131,9 +132,20 @@ func (s *EchoPrtSuite) TestEchoPrtAcceptedBondRecoveryAfterRestart() {
 	r.NoError(err)
 	r.NotNil(nextCommitment)
 	r.Equal(commitment.SubmitterAddress, nextCommitment.SubmitterAddress)
+	recoveryCtx, cancelRecovery := context.WithTimeout(s.ctx, claimAcceptedTimeout)
+	defer cancelRecovery()
+	err = pollUntil(recoveryCtx, time.Second, func() (bool, error) {
+		_, finalityErr := advanceFixtureFinality(recoveryCtx, s.ethClient, readerConfig.BlockchainDefaultBlock)
+		if finalityErr != nil {
+			return false, finalityErr
+		}
+		recovery, readErr := contract.BondRecovery(&bind.CallOpts{Context: recoveryCtx})
+		return readErr == nil && recovery.Disposition == uint8(bondDispositionRecovered), readErr
+	})
+	r.NoError(err, "recover the old bond while keeping idle tournament blocks stopped")
 	recovered := s.waitForOwnedRootBondRecovery(root, commitment)
 	r.Greater(recovered.Raw.BlockNumber, acceptReceipt.BlockNumber.Uint64(), "the old bond must be recovered after restart")
-	r.Less(nextCommitment.BlockNumber, recovered.Raw.BlockNumber, "the new root's join must precede old-bond recovery")
+	r.Greater(nextCommitment.BlockNumber, acceptReceipt.BlockNumber.Uint64(), "the next root must be joined after restart")
 	nextContract, err := itournament.NewITournament(nextRoot.Address, s.ethClient)
 	r.NoError(err)
 	atRecovery := &bind.CallOpts{Context: s.ctx, BlockNumber: new(big.Int).SetUint64(recovered.Raw.BlockNumber)}
@@ -143,16 +155,25 @@ func (s *EchoPrtSuite) TestEchoPrtAcceptedBondRecoveryAfterRestart() {
 		"older recovery must run during the current root's known wait")
 	joined, err := nextContract.CommitmentStanding(atRecovery, *nextEpoch.Commitment)
 	r.NoError(err)
-	r.True(joined.Joined)
-	r.Equal(commitment.SubmitterAddress, joined.Claimer)
+	r.Equal(nextCommitment.BlockNumber <= recovered.Raw.BlockNumber, joined.Joined,
+		"the historical join view must agree with its actual inclusion block")
+	if joined.Joined {
+		r.Equal(commitment.SubmitterAddress, joined.Claimer)
+	}
 }
 
-func (s *EchoPrtSuite) publishAcceptedRecoveryFixture(repo repository.Repository, nextEpoch, acceptanceBlock uint64) {
+func (s *EchoPrtSuite) publishAcceptedRecoveryFixture(repo repository.Repository, nextEpoch, acceptanceBlock uint64) uint64 {
 	s.T().Helper()
 	r := s.Require()
-	// Run the real publication paths without the advancer or validator. The new
-	// epoch stays unprepared, so PRT cannot select a recovery slot in this tick.
+	// Run real observation without the advancer, validator, or a submitting
+	// signer. Recovery is independent of the new epoch's computation, so this
+	// stopped-node fixture must explicitly use observer-only PRT settings.
 	readerConfig, prtConfig, err := loadRecoveryFixtureConfig()
+	r.NoError(err)
+	observationBlock, err := advanceFixtureFinality(s.ctx, s.ethClient, readerConfig.BlockchainDefaultBlock)
+	r.NoError(err)
+	r.GreaterOrEqual(observationBlock, acceptanceBlock, "the acceptance must be visible at the configured block policy")
+	headBeforeObservation, err := s.ethClient.BlockNumber(s.ctx)
 	r.NoError(err)
 	readerService, err := evmreader.Create(s.ctx, &evmreader.CreateInfo{
 		Config: *readerConfig, Repository: repo, EthClient: s.ethClient,
@@ -160,16 +181,48 @@ func (s *EchoPrtSuite) publishAcceptedRecoveryFixture(repo repository.Repository
 	r.NoError(err)
 	reader, ok := readerService.(*evmreader.Service)
 	r.True(ok)
-	_, err = reader.Tick(s.ctx)
-	r.NoError(err)
+	// Reader Tick logs individual application read errors and can return nil
+	// without advancing this app. Retry the real observer after transient Anvil
+	// historical-read failures, and require its durable cursor as positive proof.
+	readerCtx, cancelReader := context.WithTimeout(s.ctx, time.Minute)
+	defer cancelReader()
+	err = pollUntil(readerCtx, time.Second, func() (bool, error) {
+		if _, tickErr := reader.Tick(readerCtx); tickErr != nil {
+			return false, tickErr
+		}
+		observed, readErr := repo.GetApplication(readerCtx, s.appName)
+		if readErr != nil {
+			return false, readErr
+		}
+		return observed != nil && observed.LastEpochCheckBlock == observationBlock, nil
+	})
+	r.NoError(err, "the real reader must publish the acceptance event within the fixture deadline")
 	app, err := repo.GetApplication(s.ctx, s.appName)
 	r.NoError(err)
-	r.Equal(acceptanceBlock, app.LastEpochCheckBlock, "the reader must publish the acceptance event")
+	r.Equal(observationBlock, app.LastEpochCheckBlock, "the reader must publish the acceptance event")
 	epoch, err := repo.GetEpoch(s.ctx, s.appName, nextEpoch)
 	r.NoError(err)
 	r.NotNil(epoch)
 	r.Equal(model.EpochStatus_Closed, epoch.Status)
 	r.False(epoch.HasCompleteStateProof())
+	r.Nil(sharedNode, "the saved-config override is permitted only while the test-managed node is stopped")
+	writer, ok := repo.(interface {
+		SaveNodeConfigRaw(context.Context, string, []byte) error
+	})
+	r.True(ok, "the stopped-node fixture requires its isolated PostgreSQL config writer")
+	original, _, _, err := repo.LoadNodeConfigRaw(s.ctx, prt.PrtConfigKey)
+	r.NoError(err)
+	updated, err := patchPassiveObserverConfig(original, map[string]any{
+		passiveClaimSubmissionField: false, "ResolvedSignerAddress": common.Address{},
+	})
+	r.NoError(err)
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		r.NoError(writer.SaveNodeConfigRaw(cleanupCtx, prt.PrtConfigKey, original), "restore the exact submitting record before restart")
+	}()
+	r.NoError(writer.SaveNodeConfigRaw(s.ctx, prt.PrtConfigKey, updated))
+	prtConfig.FeatureClaimSubmissionEnabled = false
 	prtService, err := prt.Create(s.ctx, &prt.CreateInfo{
 		Config: *prtConfig, Repository: repo, EthClient: s.ethClient,
 	})
@@ -183,7 +236,36 @@ func (s *EchoPrtSuite) publishAcceptedRecoveryFixture(repo repository.Repository
 	r.Equal(model.EpochStatus_Closed, epoch.Status, "the current claim must remain unprepared")
 	head, err := s.ethClient.BlockNumber(s.ctx)
 	r.NoError(err)
-	r.Equal(acceptanceBlock, head, "fixture publication must not send a transaction")
+	r.Equal(headBeforeObservation, head, "fixture publication must not send a transaction")
+	return observationBlock
+}
+
+func (s *EchoPrtSuite) waitForRecoveryFixtureCommitment(
+	repo repository.Repository, policy model.DefaultBlock, epochIndex uint64,
+) *model.Tournament {
+	s.T().Helper()
+	ctx, cancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
+	defer cancel()
+	var tournament *model.Tournament
+	err := pollUntil(ctx, time.Second, func() (bool, error) {
+		// Only transaction-bearing blocks need successors for finality. An idle
+		// node gets no empty blocks, so this wait cannot expire the active root.
+		if _, finalityErr := advanceFixtureFinality(ctx, s.ethClient, policy); finalityErr != nil {
+			return false, finalityErr
+		}
+		epoch, readErr := repo.GetEpoch(ctx, s.appName, epochIndex)
+		if readErr != nil || epoch == nil || epoch.TournamentAddress == nil || epoch.Commitment == nil {
+			return false, readErr
+		}
+		commitment, readErr := repo.GetCommitment(ctx, s.appName, epochIndex, epoch.TournamentAddress.Hex(), epoch.Commitment.Hex())
+		if readErr != nil || commitment == nil {
+			return false, readErr
+		}
+		tournament, readErr = repo.GetTournament(ctx, s.appName, epoch.TournamentAddress.Hex())
+		return tournament != nil, readErr
+	})
+	s.Require().NoError(err, "wait for epoch %d commitment with bounded finality advancement", epochIndex)
+	return tournament
 }
 
 func (s *EchoPrtSuite) acceptStoppedPrtEpoch(

@@ -42,6 +42,8 @@ type AwsKmsIntegrationSuite struct {
 func (s *AwsKmsIntegrationSuite) SetupSuite() {
 	t := s.T()
 	ctx := t.Context()
+	// The test process must load defaults separately from the managed node.
+	config.SetDefaults()
 
 	region := os.Getenv("AWS_REGION")
 	if region == "" {
@@ -153,14 +155,18 @@ func (s *AwsKmsIntegrationSuite) sendFunds(
 }
 
 func (s *AwsKmsIntegrationSuite) TestLocalStackAWSSignedTransaction() {
-	// Keep funding transactions isolated from the node submitter (index 0) and
-	// the guardian/quorum accounts used by the other integration suites.
-	const fundingAccountIndex uint32 = 9
+	// Keep funding transactions separate from the node signers (indexes 0 and 6).
+	// Other fixtures reuse this payer, so do not rely on its previous balance.
+	const (
+		fundingAccountIndex uint32 = 9
+		fundingBalanceWei          = "0x29a2241af62c0000" // 3 ETH covers the 2 ETH transfer and gas.
+	)
 	anvilPrivateKey, err := ethutil.MnemonicToPrivateKey(ethutil.FoundryMnemonic, fundingAccountIndex)
 	s.Require().NoError(err)
 
 	anvilPublicKey := anvilPrivateKey.Public().(*ecdsa.PublicKey)
 	anvilAddress := crypto.PubkeyToAddress(*anvilPublicKey)
+	s.Require().NoError(anvilSetBalance(s.T().Context(), anvilAddress.Hex(), fundingBalanceWei), "fund KMS test payer")
 	anvilSignTx := func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
 		if address != anvilAddress {
 			return nil, bind.ErrNotAuthorized

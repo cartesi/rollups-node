@@ -5,7 +5,6 @@ package claimer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/http/httptest"
@@ -13,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -34,12 +34,12 @@ func TestCreateWiresLegacyFees(t *testing.T) {
 					viper.Set(config.AUTH_KIND, nil)
 					viper.Set(config.AUTH_PRIVATE_KEY, nil)
 				})
-				raw, err := json.Marshal(PersistentConfig{
+				requested := PersistentConfig{
 					ChainID: 42, DefaultBlock: model.DefaultBlock_Finalized, ClaimSubmissionEnabled: true,
-				})
-				require.NoError(t, err)
+					ResolvedSignerAddress: common.HexToAddress("0x70997970C51812dc3a010C7d01b50e0d17dc79C8"),
+				}
 				repo := &claimerCreateRepositoryMock{}
-				repo.On("LoadNodeConfigRaw", mock.Anything, ClaimerConfigKey).Return(raw, time.Time{}, time.Time{}, nil).Once()
+				repo.On("RegisterSubmitter", mock.Anything, ClaimerConfigKey, requested).Return(requested, nil).Once()
 				backend := &claimerLegacyFeeRPC{chainIDRPC: chainIDRPC{chainID: 42}}
 				server := rpc.NewServer()
 				require.NoError(t, server.RegisterName("eth", backend))
@@ -59,7 +59,8 @@ func TestCreateWiresLegacyFees(t *testing.T) {
 						BlockchainId:           42, BlockchainDefaultBlock: model.DefaultBlock_Finalized,
 						BlockchainHttpEndpoint:        endpoint,
 						FeatureClaimSubmissionEnabled: true, BlockchainHttpRequestTimeout: time.Second,
-						BlockchainLegacyEnabled: legacy,
+						BlockchainLegacyEnabled:  legacy,
+						BlockchainTxMaxFeePerGas: "1000000000",
 					},
 					EthConn: client, Repository: repo,
 				})
@@ -69,21 +70,14 @@ func TestCreateWiresLegacyFees(t *testing.T) {
 				if !injectClient {
 					t.Cleanup(blockchain.client.Close)
 				}
-				for sequence := int64(1); sequence <= 2; sequence++ {
-					opts, err := blockchain.txOptsFactory.NewTransactOpts(t.Context())
-					require.NoError(t, err)
-					require.Zero(t, opts.GasLimit, "keep estimation enabled")
-					if legacy {
-						require.Equal(t, big.NewInt(100+sequence), opts.GasPrice)
-					} else {
-						require.Nil(t, opts.GasPrice)
-					}
-				}
-				if legacy {
-					require.EqualValues(t, 2, backend.prices.Load())
-				} else {
-					require.Zero(t, backend.prices.Load())
-				}
+				impl := s.(*Service)
+				require.NotNil(t, impl.publisher)
+				require.NotNil(t, impl.publisher.sender)
+				require.False(t, impl.Ready(), "Serve waits for the contributing observer before publication")
+				opts, err := blockchain.txOptsFactory.NewTransactOpts(t.Context())
+				require.NoError(t, err)
+				require.Nil(t, opts.GasPrice, "the signer factory does not perform unpinned fee reads")
+				require.Zero(t, backend.prices.Load())
 				repo.AssertExpectations(t)
 			})
 		}
