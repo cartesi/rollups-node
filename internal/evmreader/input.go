@@ -188,6 +188,9 @@ func (r *Service) scanIConsensusInputUnit(
 			if ctx.Err() != nil {
 				return false
 			}
+			if r.inputBudgetExhausted() {
+				return success
+			}
 			err := r.readAndStoreApplicationInputs(ctx, unit.lastInputCheckBlock, unit.endBlock, app)
 			if err != nil {
 				success = false
@@ -407,13 +410,25 @@ func (r *Service) readAndStoreApplicationInputs(
 	return nil
 }
 
-// inputBatchUpperBound returns an exclusive input index bound. Zero disables
-// batching; saturating the addition also prevents large limits from wrapping.
+func (r *Service) inputBudgetExhausted() bool {
+	return r.inputBudget != nil && *r.inputBudget == 0
+}
+
+// inputBatchUpperBound uses the remaining tick budget when a tick is active,
+// or the configured limit for standalone scans. Zero configuration is unlimited;
+// an exhausted tick budget yields an empty range. Addition saturates on overflow.
 func (r *Service) inputBatchUpperBound(lower uint64) uint64 {
-	if r.maxInputsPerStep == 0 || r.maxInputsPerStep > math.MaxUint64-lower {
+	limit := r.maxInputsPerStep
+	if r.inputBudget != nil {
+		limit = *r.inputBudget
+		if limit == 0 {
+			return lower
+		}
+	}
+	if limit == 0 || limit > math.MaxUint64-lower {
 		return math.MaxUint64
 	}
-	return lower + r.maxInputsPerStep
+	return lower + limit
 }
 
 // readApplicationInputs preserves the failure cause for the scan caller. It
@@ -505,6 +520,11 @@ func (r *Service) fetchInputs(
 		observedEndValue = new(big.Int).SetUint64(lastInputIdx)
 		if firstInputIdx >= lastInputIdx {
 			return nil
+		}
+		if r.inputBudget != nil {
+			// Reserve before allocating topics or calling RPC. Failed queries
+			// still consumed this tick's allowance and are retried next tick.
+			*r.inputBudget -= lastInputIdx - firstInputIdx
 		}
 		indices := make([]*big.Int, 0, max(0, lastInputIdx-firstInputIdx))
 		for i := firstInputIdx; i < lastInputIdx; i++ {

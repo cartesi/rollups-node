@@ -829,9 +829,10 @@ type EvmreaderConfig struct {
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
-	// Maximum number of new inputs fetched and stored by the EVM reader in a single service tick,
-	// shared across applications and sealed and open epochs. Inputs in the same block are split
-	// across ticks. Zero disables the limit.
+	// Maximum number of new input indices requested by the EVM reader in one service tick,
+	// shared across applications and sealed and open epochs. Failed input queries also consume
+	// their requested allowance. Inputs in the same block can be split across ticks.
+	// Zero disables the limit.
 	EvmReaderMaxInputsPerStep uint64 `mapstructure:"CARTESI_EVM_READER_MAX_INPUTS_PER_STEP"`
 
 	// Time in seconds to wait before checking for a new block header. The default (12s) is tuned for mainnet. Reduce for faster chains or devnets.
@@ -1214,9 +1215,10 @@ type NodeConfig struct {
 	// How many seconds the node will wait before querying the database for new claims.
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
 
-	// Maximum number of new inputs fetched and stored by the EVM reader in a single service tick,
-	// shared across applications and sealed and open epochs. Inputs in the same block are split
-	// across ticks. Zero disables the limit.
+	// Maximum number of new input indices requested by the EVM reader in one service tick,
+	// shared across applications and sealed and open epochs. Failed input queries also consume
+	// their requested allowance. Inputs in the same block can be split across ticks.
+	// Zero disables the limit.
 	EvmReaderMaxInputsPerStep uint64 `mapstructure:"CARTESI_EVM_READER_MAX_INPUTS_PER_STEP"`
 
 	// Time in seconds to wait before checking for a new block header. The default (12s) is tuned for mainnet. Reduce for faster chains or devnets.

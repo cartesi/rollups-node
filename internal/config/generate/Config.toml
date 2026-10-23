@@ -116,9 +116,10 @@ used-by = ["advancer", "node"]
 default = "500"
 go-type = "uint64"
 description = """
-Maximum number of new inputs fetched and stored by the EVM reader in a single service tick,
-shared across applications and sealed and open epochs. Inputs in the same block are split
-across ticks. Zero disables the limit."""
+Maximum number of new input indices requested by the EVM reader in one service tick,
+shared across applications and sealed and open epochs. Failed input queries also consume
+their requested allowance. Inputs in the same block can be split across ticks.
+Zero disables the limit."""
 used-by = ["evmreader", "node"]
 
 [rollups.CARTESI_EVM_READER_POLLING_INTERVAL]

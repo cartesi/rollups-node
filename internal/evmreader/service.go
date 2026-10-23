@@ -43,7 +43,8 @@ type Service struct {
 	consecutiveScanFailures atomic.Uint32
 	readyMaxStaleness       time.Duration
 	maxInputsPerStep        uint64
-	inputBudget             *uint64
+	// inputBudget is scoped to runBlockScanners; nil means no shared budget.
+	inputBudget *uint64
 }
 
 const EvmReaderConfigKey = "evm-reader"
