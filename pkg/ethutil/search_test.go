@@ -316,7 +316,7 @@ func (s *SearchSuite) TestLastProcessedBlockExcludesFailedCallback() {
 		completed []uint64
 	}{
 		{failBlock: 10, last: 9},
-		{failBlock: 12, last: 10, completed: []uint64{10}},
+		{failBlock: 12, last: 11, completed: []uint64{10}},
 		{failBlock: 14, last: 13, completed: []uint64{10, 12}},
 		{failBlock: 16, last: 15, completed: []uint64{10, 12, 14}},
 	} {
@@ -338,6 +338,38 @@ func (s *SearchSuite) TestLastProcessedBlockExcludesFailedCallback() {
 			s.Equal(test.last, last)
 			s.Equal(test.completed, completed)
 			s.Equal(uint64(len(completed)), count)
+		})
+	}
+}
+
+func (s *SearchSuite) TestIncompleteTransitionResumesAfterGap() {
+	for _, initial := range []bool{false, true} {
+		s.Run(fmt.Sprintf("initial_transition_%t", initial), func() {
+			var completed []uint64
+			count, last, err := FindTransitions(s.ctx, 10, 30, big.NewInt(0), nil,
+				func(_ context.Context, block uint64) (*big.Int, error) {
+					if block >= 20 {
+						return big.NewInt(1000), nil
+					}
+					if initial {
+						return big.NewInt(1), nil
+					}
+					return big.NewInt(0), nil
+				}, func(block uint64, _, _ *big.Int) error {
+					if block == 20 {
+						return ErrIncompleteProcessing
+					}
+					completed = append(completed, block)
+					return nil
+				})
+			s.Require().ErrorIs(err, ErrIncompleteProcessing)
+			s.Equal(uint64(19), last)
+			s.Equal(uint64(len(completed)), count)
+			if initial {
+				s.Equal([]uint64{10}, completed)
+			} else {
+				s.Empty(completed)
+			}
 		})
 	}
 }

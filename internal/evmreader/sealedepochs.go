@@ -85,6 +85,11 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 			if errors.Is(err, context.Canceled) {
 				return false // shutting down
 			}
+			if errors.Is(err, ethutil.ErrIncompleteProcessing) {
+				// This epoch has a known seal boundary. Finish its batches before
+				// the open scan can ingest inputs belonging to a later epoch.
+				continue
+			}
 			if errors.Is(err, errContractNotDeployedAtBlock) {
 				// Registration can precede deployment visibility at the configured
 				// block. Neither sealed nor open epochs can be observed yet.
@@ -209,9 +214,10 @@ func (r *Service) processApplicationSealedEpochs(
 
 	// Use FindTransitions to find epoch transitions
 	_, lastProcessedBlock, err := ethutil.FindTransitions(ctx, nextSearchBlock, mostRecentBlockNumber, prevValue, nil, oracle, onHit)
+	var incomplete bool
 	switch {
 	case errors.Is(err, ethutil.ErrIncompleteProcessing):
-		return nil
+		incomplete = true
 	case err != nil:
 		return fmt.Errorf("failed to walk epoch transitions: %w", err)
 	}
@@ -220,6 +226,9 @@ func (r *Service) processApplicationSealedEpochs(
 	err = r.repository.UpdateEventLastCheckBlock(ctx, []int64{app.application.ID}, MonitoredEvent_EpochSealed, lastProcessedBlock)
 	if err != nil {
 		return fmt.Errorf("failed to update last epoch check block: %w", err)
+	}
+	if incomplete {
+		return ethutil.ErrIncompleteProcessing
 	}
 	if initializing {
 		r.Logger.Info("Application sealed epoch sync initialized",
@@ -386,7 +395,7 @@ func (r *Service) processSealedEpochEvent(
 		}
 
 		// backup markers that indicate which part of the epoch was already processed
-		unprocessedFirstBlock = epoch.LastBlock+1
+		unprocessedFirstBlock = epoch.LastBlock + 1
 		unprocessedIndexLowerBound = epoch.InputIndexUpperBound
 
 		epoch.LastBlock = event.Raw.BlockNumber
@@ -405,12 +414,11 @@ func (r *Service) processSealedEpochEvent(
 	if unprocessedIndexLowerBound < unprocessedIndexUpperBound {
 		var err error
 		var lastInputBlock uint64
-		prevValue := new(big.Int).SetUint64(unprocessedIndexLowerBound)
 		inputs, lastInputBlock, _, err = r.fetchInputs(ctx, app,
 			unprocessedFirstBlock, epoch.LastBlock,
-			prevValue,
+			new(big.Int).SetUint64(unprocessedIndexLowerBound),
 			unprocessedIndexLowerBound, unprocessedIndexUpperBound)
-		if err != nil /*&& !errors.Is(err, ErrIncompleteProcessing)*/ {
+		if err != nil && !errors.Is(err, ethutil.ErrIncompleteProcessing) {
 			return fmt.Errorf("failed to fetch inputs for epoch %d: %w", epoch.Index, err)
 		}
 
@@ -537,10 +545,9 @@ func (r *Service) processApplicationOpenEpoch(
 		return fmt.Errorf(
 			"failed to get number of inputs from repository: %w", err)
 	}
-	prevValue := new(big.Int).SetUint64(inputCount)
 	inputs, lastInputBlock, endCount, err := r.fetchInputs(ctx, app,
 		lastInputCheckBlock+1, mostRecentBlockNumber,
-		prevValue,
+		new(big.Int).SetUint64(inputCount),
 		openEpoch.InputIndexUpperBound, openEpoch.InputIndexUpperBound+r.maxInputsPerStep)
 	if err != nil {
 		return fmt.Errorf("failed to fetch inputs for epoch %d: %w", openEpoch.Index, err)

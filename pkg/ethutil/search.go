@@ -38,27 +38,26 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBoun
 
 	type interval struct {
 		StartBlock, EndBlock, LastBlock uint64
-		StartValue, EndValue *big.Int
+		StartValue, EndValue            *big.Int
 	}
 
 	startValue, err := transitionQuery(ctx, startBlock)
 	if err != nil {
-		return 0, startBlock-1, fmt.Errorf("transitionQuery(startBlock=%d): %w", startBlock, err)
+		return 0, startBlock - 1, fmt.Errorf("transitionQuery(startBlock=%d): %w", startBlock, err)
 	}
 
 	var count uint64
 	if lowerBound != nil {
 		comparisonResult := lowerBound.Cmp(startValue)
 		if comparisonResult > 0 {
-			return 0, startBlock-1, fmt.Errorf("%w: lowerBound %s > startValue %s at block %d",
+			return 0, startBlock - 1, fmt.Errorf("%w: lowerBound %s > startValue %s at block %d",
 				ErrMonotonicViolation, lowerBound.String(), startValue.String(), startBlock)
 		}
 		if comparisonResult < 0 {
 			if err := onHit(startBlock, lowerBound, startValue); err != nil {
-				if errors.Is(err, ErrIncompleteProcessing) {
-					err = nil
-				}
-				return count, startBlock-1, err
+				// Resume at this block with the partially consumed counter,
+				// rather than querying an older block with a smaller counter.
+				return count, startBlock - 1, err
 			}
 			count++
 		}
@@ -70,7 +69,7 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBoun
 
 	endValue, err := transitionQuery(ctx, endBlock)
 	if err != nil {
-		return count, startBlock-1, fmt.Errorf("transitionQuery(endBlock=%d): %w", endBlock, err)
+		return count, startBlock - 1, fmt.Errorf("transitionQuery(endBlock=%d): %w", endBlock, err)
 	}
 
 	if startValue.Cmp(endValue) == 0 {
@@ -103,10 +102,9 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBoun
 		if iv.StartBlock == iv.EndBlock {
 			// Found a transition block
 			if err := onHit(iv.StartBlock, iv.StartValue, iv.EndValue); err != nil {
-				if errors.Is(err, ErrIncompleteProcessing) {
-					err = nil
-				}
-				return count, lastProcessedBlock, err
+				// Resume at this block with the partially consumed counter,
+				// rather than querying an older block with a smaller counter.
+				return count, iv.StartBlock - 1, err
 			}
 			count++
 			lastProcessedBlock = iv.LastBlock
