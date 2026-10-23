@@ -73,20 +73,26 @@ func TestDecodeRejectsCorruptRecords(t *testing.T) {
 		require.False(t, ok)
 	})
 
-	t.Run("zero balance is invalid", func(t *testing.T) {
+	t.Run("zero balance is a non-empty account", func(t *testing.T) {
 		var account [AccountSize]byte
 		copy(account[usdBalanceSize:], common.HexToAddress("0x1111111111111111111111111111111111111111").Bytes())
 
-		_, _, _, err := Decode(account[:])
-		require.ErrorContains(t, err, "zero balance")
+		address, balance, ok, err := Decode(account[:])
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.Equal(t, common.HexToAddress("0x1111111111111111111111111111111111111111"), address)
+		require.Zero(t, balance.Sign())
 	})
 
-	t.Run("zero address is invalid", func(t *testing.T) {
+	t.Run("zero address with nonzero balance is a non-empty account", func(t *testing.T) {
 		var account [AccountSize]byte
 		account[0] = 1
 
-		_, _, _, err := Decode(account[:])
-		require.ErrorContains(t, err, "zero address")
+		address, balance, ok, err := Decode(account[:])
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.Equal(t, common.Address{}, address)
+		require.Equal(t, big.NewInt(1), balance)
 	})
 }
 
@@ -108,6 +114,43 @@ func TestBuildProof_BuildsVerifiableAccountProof(t *testing.T) {
 	require.Equal(t, uint64(1), proof.AccountIndex)
 	require.Equal(t, account2, proof.Account)
 	require.Len(t, proof.Siblings, DefaultLog2MaxAccount)
+	require.Equal(t, proof.DriveRoot, RootFromProof(proof.AccountRoot, proof.AccountIndex, proof.Siblings))
+}
+
+func zeroBalanceAccount(address common.Address) [AccountSize]byte {
+	var account [AccountSize]byte
+	copy(account[usdBalanceSize:], address.Bytes())
+	return account
+}
+
+func TestBuildProof_FindsAccountAmongZeroBalanceEntries(t *testing.T) {
+	zeroBefore := zeroBalanceAccount(common.HexToAddress("0x4444444444444444444444444444444444444444"))
+	target, err := Encode(common.HexToAddress("0x5555555555555555555555555555555555555555"), big.NewInt(10))
+	require.NoError(t, err)
+	zeroAfter := zeroBalanceAccount(common.HexToAddress("0x6666666666666666666666666666666666666666"))
+
+	drive := make([]byte, 3*AccountSize)
+	copy(drive[0:AccountSize], zeroBefore[:])
+	copy(drive[AccountSize:2*AccountSize], target[:])
+	copy(drive[2*AccountSize:3*AccountSize], zeroAfter[:])
+
+	proof, err := BuildProof(drive, common.HexToAddress("0x5555555555555555555555555555555555555555"), 2, 0)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), proof.AccountIndex)
+	require.Equal(t, target, proof.Account)
+	require.Equal(t, proof.DriveRoot, RootFromProof(proof.AccountRoot, proof.AccountIndex, proof.Siblings))
+}
+
+func TestBuildProof_ProvesZeroBalanceAccount(t *testing.T) {
+	target := zeroBalanceAccount(common.HexToAddress("0x7777777777777777777777777777777777777777"))
+
+	drive := make([]byte, 2*AccountSize)
+	copy(drive[0:AccountSize], target[:])
+
+	proof, err := BuildProof(drive, common.HexToAddress("0x7777777777777777777777777777777777777777"), 2, 0)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), proof.AccountIndex)
+	require.Equal(t, target, proof.Account)
 	require.Equal(t, proof.DriveRoot, RootFromProof(proof.AccountRoot, proof.AccountIndex, proof.Siblings))
 }
 

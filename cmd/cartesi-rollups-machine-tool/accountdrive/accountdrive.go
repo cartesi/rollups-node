@@ -76,13 +76,7 @@ func Decode(account []byte) (common.Address, *big.Int, bool, error) {
 		balanceBytes[len(balanceBytes)-1-i] = account[i]
 	}
 	balance := new(big.Int).SetBytes(balanceBytes[:])
-	if balance.Sign() == 0 {
-		return common.Address{}, nil, false, errors.New("non-empty account has zero balance")
-	}
 	address := common.BytesToAddress(account[usdBalanceSize:])
-	if address == (common.Address{}) {
-		return common.Address{}, nil, false, errors.New("non-empty account has zero address")
-	}
 	return address, balance, true, nil
 }
 
