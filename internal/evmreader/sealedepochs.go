@@ -403,7 +403,7 @@ func (r *Service) processSealedEpochEvent(
 		epoch.TournamentAddress = &event.Tournament
 	}
 
-	unprocessedIndexUpperBound := min(epoch.InputIndexUpperBound, unprocessedIndexLowerBound+r.maxInputsPerStep)
+	unprocessedIndexUpperBound := min(epoch.InputIndexUpperBound, r.inputBatchUpperBound(unprocessedIndexLowerBound))
 
 	// Fetch inputs for this epoch from the InputBox.
 	// Always search from unprocessedFirstBlock (not lastInputCheckBlock+1) because with
@@ -548,7 +548,7 @@ func (r *Service) processApplicationOpenEpoch(
 	inputs, lastInputBlock, endCount, err := r.fetchInputs(ctx, app,
 		lastInputCheckBlock+1, mostRecentBlockNumber,
 		new(big.Int).SetUint64(inputCount),
-		openEpoch.InputIndexUpperBound, openEpoch.InputIndexUpperBound+r.maxInputsPerStep)
+		openEpoch.InputIndexUpperBound, r.inputBatchUpperBound(openEpoch.InputIndexUpperBound))
 	if err != nil {
 		return fmt.Errorf("failed to fetch inputs for epoch %d: %w", openEpoch.Index, err)
 	}

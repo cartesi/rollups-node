@@ -4,6 +4,7 @@
 package evmreader
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
@@ -14,6 +15,64 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func TestInputBatchWithoutLimit(t *testing.T) {
+	for _, test := range []struct {
+		name                 string
+		limit, stored, added uint64
+	}{
+		{name: "zero limit from first input", added: 1000},
+		{name: "zero limit after stored inputs", stored: 500, added: 1000},
+		{name: "zero limit without new inputs", stored: 500},
+		{name: "large limit does not wrap", limit: math.MaxUint64, stored: 500, added: 1000},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newMockRepository()
+			source := newMockInputBox()
+			reader := &Service{repository: repo, maxInputsPerStep: test.limit}
+			reader.Logger = testLogger(t)
+			app := newDaveAppContracts(source, nil)
+			end := test.stored + test.added
+			repo.On("GetNumberOfInputs", t.Context(), app1Addr.Hex()).Return(test.stored, nil).Once()
+			source.On("GetNumberOfInputs", blockRange(100, 105), app1Addr).
+				Return(new(big.Int).SetUint64(test.stored), nil)
+			source.On("GetNumberOfInputs", blockFrom(105), app1Addr).
+				Return(new(big.Int).SetUint64(end), nil)
+			if test.added > 0 {
+				source.On("RetrieveInputs", mock.Anything, []common.Address{app1Addr}, inputIndexRange(test.stored, end)).
+					Return(batchInputEvents(test.stored, end, 105), nil).Once()
+			}
+
+			inputs, last, err := reader.readApplicationInputs(t.Context(), app, 100, 110)
+			require.NoError(t, err)
+			require.Len(t, inputs, int(test.added))
+			require.Equal(t, uint64(110), last)
+			for i, input := range inputs {
+				require.Equal(t, test.stored+uint64(i), input.Index)
+			}
+			if test.added == 0 {
+				source.AssertNotCalled(t, "RetrieveInputs", mock.Anything, mock.Anything, mock.Anything)
+			}
+			repo.AssertExpectations(t)
+			source.AssertExpectations(t)
+		})
+	}
+}
+
+func TestEmptyInputBoundsDoNotQueryWildcardTopics(t *testing.T) {
+	source := newMockInputBox()
+	reader := &Service{}
+	reader.Logger = testLogger(t)
+	app := newDaveAppContracts(source, nil)
+	source.On("GetNumberOfInputs", mock.Anything, app1Addr).Return(big.NewInt(10), nil).Once()
+
+	inputs, _, _, err := reader.fetchInputs(t.Context(), app, 100, 100, big.NewInt(0), 5, 5)
+	require.NoError(t, err)
+	require.Empty(t, inputs)
+	// An empty index topic list would match every input, rather than none.
+	source.AssertNotCalled(t, "RetrieveInputs", mock.Anything, mock.Anything, mock.Anything)
+	source.AssertExpectations(t)
+}
 
 func batchInputEvents(first, end, block uint64) []iinputbox.IInputBoxInputAdded {
 	events := make([]iinputbox.IInputBoxInputAdded, 0, end-first)

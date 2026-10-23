@@ -30,6 +30,7 @@ func TestDaveOpenEpochChecksInputCountBeforePublication(t *testing.T) {
 			logIndices  []uint64
 			wantIndices []uint64
 			mismatch    bool
+			unlimited   bool
 		}{
 			{name: "missing first log", endCount: 2, logIndices: []uint64{1}, mismatch: true},
 			{name: "missing all logs", endCount: 1, mismatch: true},
@@ -42,11 +43,17 @@ func TestDaveOpenEpochChecksInputCountBeforePublication(t *testing.T) {
 				logIndices: []uint64{4}, wantIndices: []uint64{4}},
 			{name: "rescanned block includes stored open inputs", storedCount: 4, lowerBound: 2, endCount: 5,
 				logIndices: []uint64{2, 3, 4}, wantIndices: []uint64{4}},
+			{name: "zero limit includes new open inputs", storedCount: 4, lowerBound: 2, endCount: 6,
+				logIndices: []uint64{4, 5}, wantIndices: []uint64{4, 5}, unlimited: true},
+			{name: "zero limit without new inputs", storedCount: 4, lowerBound: 2, endCount: 4, unlimited: true},
 		} {
 			t.Run(name+"/"+test.name, func(t *testing.T) {
 				repo := newMockRepository()
 				inputBox := newMockInputBox()
 				r := &Service{repository: repo, maxInputsPerStep: 500}
+				if test.unlimited {
+					r.maxInputsPerStep = 0
+				}
 				r.Logger = testLogger(t)
 				app := newDaveAppContracts(inputBox, nil)
 				app.application.Status = model.ApplicationStatus_OK

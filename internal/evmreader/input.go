@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/errutil"
@@ -406,6 +407,15 @@ func (r *Service) readAndStoreApplicationInputs(
 	return nil
 }
 
+// inputBatchUpperBound returns an exclusive input index bound. Zero disables
+// batching; saturating the addition also prevents large limits from wrapping.
+func (r *Service) inputBatchUpperBound(lower uint64) uint64 {
+	if r.maxInputsPerStep == 0 || r.maxInputsPerStep > math.MaxUint64-lower {
+		return math.MaxUint64
+	}
+	return lower + r.maxInputsPerStep
+}
+
 // readApplicationInputs preserves the failure cause for the scan caller. It
 // validates the fetched logs against the counter observed in the same walk.
 func (r *Service) readApplicationInputs(
@@ -418,7 +428,7 @@ func (r *Service) readApplicationInputs(
 		return nil, startBlock - 1, fmt.Errorf("get stored input count: %w", err)
 	}
 	inputs, lastInputBlock, endCount, err := r.fetchInputs(
-		ctx, app, startBlock, endBlock, new(big.Int).SetUint64(inputCount), inputCount, inputCount+r.maxInputsPerStep)
+		ctx, app, startBlock, endBlock, new(big.Int).SetUint64(inputCount), inputCount, r.inputBatchUpperBound(inputCount))
 	if err != nil {
 		return nil, startBlock - 1, fmt.Errorf("fetch inputs: %w", err)
 	}
@@ -492,7 +502,7 @@ func (r *Service) fetchInputs(
 		firstInputIdx := max(lowerBound, prevValue.Uint64())
 		lastInputIdx := min(upperBound, currValue.Uint64())
 		observedEndValue = new(big.Int).SetUint64(lastInputIdx)
-		if firstInputIdx > lastInputIdx {
+		if firstInputIdx >= lastInputIdx {
 			return nil
 		}
 		indices := make([]*big.Int, 0, max(0, lastInputIdx-firstInputIdx))

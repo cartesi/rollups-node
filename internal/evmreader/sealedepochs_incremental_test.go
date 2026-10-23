@@ -18,20 +18,25 @@ import (
 func TestSealedEpochFetchesOnlyUnstoredInputs(t *testing.T) {
 	const sealBlock uint64 = 101
 	for _, test := range []struct {
-		name     string
-		upper    uint64
-		indices  []uint64
-		mismatch bool
+		name      string
+		upper     uint64
+		indices   []uint64
+		mismatch  bool
+		unlimited bool
 	}{
 		{name: "first unstored index is included", upper: 6, indices: []uint64{5}},
 		{name: "several new inputs and next epoch input", upper: 8, indices: []uint64{5, 6, 7, 8}},
 		{name: "all inputs already stored", upper: 5},
 		{name: "missing input prevents sealing", upper: 7, indices: []uint64{6}, mismatch: true},
+		{name: "zero limit includes all unstored inputs", upper: 8, indices: []uint64{5, 6, 7, 8}, unlimited: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			repo := newMockRepository()
 			inputBox := newMockInputBox()
 			reader := &Service{repository: repo, maxInputsPerStep: 500}
+			if test.unlimited {
+				reader.maxInputsPerStep = 0
+			}
 			reader.Logger = testLogger(t)
 			app := newDaveAppContracts(inputBox, nil)
 			previous := &Epoch{Index: 0, LastBlock: 50, InputIndexUpperBound: 3, Status: EpochStatus_Closed}
