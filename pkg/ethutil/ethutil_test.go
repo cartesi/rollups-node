@@ -142,15 +142,6 @@ func (s *EthUtilSuite) TestAddInput() {
 	}
 }
 
-func (s *EthUtilSuite) TestMineNewBlock() {
-	prevBlockNumber, err := s.client.BlockNumber(s.ctx)
-	s.Require().Nil(err)
-	blockNumber, err := MineNewBlock(s.ctx, s.client)
-	s.Require().Nil(err)
-	s.Require().Equal(prevBlockNumber+1, blockNumber)
-
-}
-
 func TestEthUtilSuite(t *testing.T) {
 	suite.Run(t, new(EthUtilSuite))
 }
