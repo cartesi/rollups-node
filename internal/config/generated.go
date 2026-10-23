@@ -1909,11 +1909,13 @@ func GetAuthMnemonic() (RedactedString, error) {
 	s := viper.GetString(AUTH_MNEMONIC)
 	if s == "" {
 		filename := viper.GetString(AUTH_MNEMONIC_FILE)
-		contents, err := readConfigFile(filename)
-		if err != nil {
-			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_MNEMONIC_FILE, err)
+		if filename != "" {
+			contents, err := readConfigFile(filename)
+			if err != nil {
+				return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_MNEMONIC_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toRedactedString(s)
@@ -1943,11 +1945,13 @@ func GetAuthPrivateKey() (RedactedString, error) {
 	s := viper.GetString(AUTH_PRIVATE_KEY)
 	if s == "" {
 		filename := viper.GetString(AUTH_PRIVATE_KEY_FILE)
-		contents, err := readConfigFile(filename)
-		if err != nil {
-			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_PRIVATE_KEY_FILE, err)
+		if filename != "" {
+			contents, err := readConfigFile(filename)
+			if err != nil {
+				return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", AUTH_PRIVATE_KEY_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toRedactedString(s)
@@ -1977,11 +1981,13 @@ func GetBlockchainHttpAuthorization() (RedactedString, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_HTTP_AUTHORIZATION_FILE)
-		contents, err := readConfigFile(filename)
-		if err != nil {
-			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_AUTHORIZATION_FILE, err)
+		if filename != "" {
+			contents, err := readConfigFile(filename)
+			if err != nil {
+				return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_AUTHORIZATION_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toRedactedString(s)
@@ -1998,11 +2004,13 @@ func GetBlockchainHttpEndpoint() (URL, error) {
 	s := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT)
 	if s == "" {
 		filename := viper.GetString(BLOCKCHAIN_HTTP_ENDPOINT_FILE)
-		contents, err := readConfigFile(filename)
-		if err != nil {
-			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_ENDPOINT_FILE, err)
+		if filename != "" {
+			contents, err := readConfigFile(filename)
+			if err != nil {
+				return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_HTTP_ENDPOINT_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toHTTPURL(s)
@@ -2123,11 +2131,13 @@ func GetDatabaseConnection() (URL, error) {
 	s := viper.GetString(DATABASE_CONNECTION)
 	if s == "" {
 		filename := viper.GetString(DATABASE_CONNECTION_FILE)
-		contents, err := readConfigFile(filename)
-		if err != nil {
-			return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_CONNECTION_FILE, err)
+		if filename != "" {
+			contents, err := readConfigFile(filename)
+			if err != nil {
+				return notDefinedURL(), fmt.Errorf("failed to parse %s: %w", DATABASE_CONNECTION_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toURL(s)
@@ -2534,11 +2544,13 @@ func GetPrtAuthMnemonic() (RedactedString, error) {
 	s := viper.GetString(PRT_AUTH_MNEMONIC)
 	if s == "" {
 		filename := viper.GetString(PRT_AUTH_MNEMONIC_FILE)
-		contents, err := readConfigFile(filename)
-		if err != nil {
-			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_MNEMONIC_FILE, err)
+		if filename != "" {
+			contents, err := readConfigFile(filename)
+			if err != nil {
+				return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_MNEMONIC_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toRedactedString(s)
@@ -2568,11 +2580,13 @@ func GetPrtAuthPrivateKey() (RedactedString, error) {
 	s := viper.GetString(PRT_AUTH_PRIVATE_KEY)
 	if s == "" {
 		filename := viper.GetString(PRT_AUTH_PRIVATE_KEY_FILE)
-		contents, err := readConfigFile(filename)
-		if err != nil {
-			return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_PRIVATE_KEY_FILE, err)
+		if filename != "" {
+			contents, err := readConfigFile(filename)
+			if err != nil {
+				return notDefinedRedactedString(), fmt.Errorf("failed to parse %s: %w", PRT_AUTH_PRIVATE_KEY_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	if s != "" {
 		v, err := toRedactedString(s)

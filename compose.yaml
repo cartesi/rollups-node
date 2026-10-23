@@ -40,16 +40,37 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: rollupsdb
 
+  # Compose file-backed secrets keep the host file's ownership and mode and
+  # ignore service-level uid/gid/mode. Normalize the public dev fixtures into a
+  # named volume so the node, which runs as UID/GID 102, can read them safely.
+  secret-init:
+    image: cartesi/rollups-node:devel
+    user: root
+    network_mode: "none"
+    restart: "no"
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        find /dst -mindepth 1 -delete
+        install -o 102 -g 102 -m 0400 /src/auth_mnemonic.txt /dst/auth_mnemonic
+        install -o 102 -g 102 -m 0400 /src/compose_blockchain_http_endpoint.txt /dst/blockchain_http_endpoint
+        install -o 102 -g 102 -m 0400 /src/compose_database_connection.txt /dst/database_connection
+    volumes:
+      - ./test/secrets:/src:ro
+      - node_secrets:/dst
+
   migration:
     image: cartesi/rollups-node:devel
     command: cartesi-rollups-cli db init
     depends_on:
+      secret-init:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
+    volumes:
+      - node_secrets:/run/secrets:ro
     networks:
       - devnet
-    secrets:
-      - database_connection
     restart: "no"
     environment:
       <<: *env
@@ -59,35 +80,27 @@ services:
     init: true
     command: cartesi-rollups-node
     depends_on:
+      secret-init:
+        condition: service_completed_successfully
       database:
         condition: service_healthy
       ethereum_provider:
         condition: service_healthy
     volumes:
       - node_data:/var/lib/cartesi-rollups-node/data
+      - node_secrets:/run/secrets:ro
     networks:
       - devnet
     ports:
       - "10000:10000" # Supervisor
       - "10011:10011" # Jsonrpc API service
       - "10012:10012" # Inspect Service
-    secrets:
-      - auth_mnemonic
-      - blockchain_http_endpoint
-      - database_connection
     environment:
       <<: *env
 
 volumes:
   node_data:
+  node_secrets:
 
 networks:
   devnet:
-
-secrets:
-  auth_mnemonic:
-    file: test/secrets/auth_mnemonic.txt
-  blockchain_http_endpoint:
-    file: test/secrets/blockchain_http_endpoint.txt
-  database_connection:
-    file: test/secrets/database_connection.txt

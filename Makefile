@@ -142,7 +142,7 @@ build: build-go ## Build all artifacts
 
 build-go: $(GO_ARTIFACTS) ## Build Go artifacts (node, cli, evm-reader)
 
-env:
+env: ## Print development environment variables using direct values
 	@echo export CGO_CFLAGS=\"$(CGO_CFLAGS)\"
 	@echo export CGO_LDFLAGS=\"$(CGO_LDFLAGS)\"
 	@echo export CARTESI_LOG_LEVEL="info"
@@ -169,6 +169,18 @@ env:
 	@echo export CARTESI_TEST_MACHINE_IMAGES_PATH=\"$(CARTESI_TEST_MACHINE_IMAGES_PATH)\"
 	@echo export PATH=\"$(CURDIR):$$PATH\"
 	@$(if $(MACOSX_DEPLOYMENT_TARGET),echo export MACOSX_DEPLOYMENT_TARGET=\"$(MACOSX_DEPLOYMENT_TARGET)\")
+
+env-secrets: .secrets ## Print *_FILE exports pointing at staged local secret fixtures
+	@echo export CARTESI_AUTH_MNEMONIC_FILE=\"$(CURDIR)/.secrets/auth_mnemonic.txt\"
+	@echo export CARTESI_PRT_AUTH_MNEMONIC_FILE=\"$(CURDIR)/.secrets/auth_mnemonic.txt\"
+	@echo export CARTESI_BLOCKCHAIN_HTTP_ENDPOINT_FILE=\"$(CURDIR)/.secrets/localhost_blockchain_http_endpoint.txt\"
+	@echo export CARTESI_DATABASE_CONNECTION_FILE=\"$(CURDIR)/.secrets/localhost_database_connection.txt\"
+SECRET_FILES=test/secrets/auth_mnemonic.txt \
+	     test/secrets/localhost_blockchain_http_endpoint.txt \
+	     test/secrets/localhost_database_connection.txt
+.secrets: $(SECRET_FILES)
+	@install -d -m 0700 $@
+	@install -m 0400 $^ $@
 
 # =============================================================================
 # Artifacts
@@ -921,4 +933,4 @@ build-debian-package: install
 	install copy-debian-package build-debian-package \
 	mcycle-overflow-dapp unexpected-yield-dapp invalid-outputs-root-dapps erc20-withdrawal-dapp erc20-withdrawal-nvram-dapp \
 	deploy-erc20-withdrawal-dapp fund-wallet withdraw-wallet \
-	env help version
+	env env-secrets .secrets help version

@@ -236,11 +236,13 @@ func Get{{ toFieldName .Name }}() ({{ .GoType }}, error) {
 	{{- if .File }}
 	if s == "" {
 		filename := viper.GetString({{toConstName .Name}}_FILE)
-		contents, err := readConfigFile(filename)
-		if err != nil {
-			return notDefined{{ .GoType }}(), fmt.Errorf("failed to parse %s: %w", {{ toConstName .Name }}_FILE, err)
+		if filename != "" {
+			contents, err := readConfigFile(filename)
+			if err != nil {
+				return notDefined{{ .GoType }}(), fmt.Errorf("failed to parse %s: %w", {{ toConstName .Name }}_FILE, err)
+			}
+			s = strings.TrimSpace(string(contents))
 		}
-		s = strings.TrimSpace(string(contents))
 	}
 	{{- end }}
 	{{- if hasEmptyStringDefault . }}
