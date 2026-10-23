@@ -333,7 +333,7 @@ func (r *Service) readOutputExecutionsFromBlockChain(
 
 	var executedOutputs []*iapplication.IApplicationOutputExecuted
 	// Define onHit function that accumulates executed outputs at transition blocks
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		filterOpts := &bind.FilterOpts{
 			Context: ctx,
 			Start:   block,
@@ -355,7 +355,7 @@ func (r *Service) readOutputExecutionsFromBlockChain(
 	prevValue.SetUint64(execCount)
 
 	// Use FindTransitions to find blocks where outputs were executed
-	_, err = ethutil.FindTransitions(ctx, startBlock, endBlock, prevValue, oracle, onHit)
+	_, _, err = ethutil.FindTransitions(ctx, startBlock, endBlock, prevValue, nil, oracle, onHit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk output execution transitions: %w", err)
 	}

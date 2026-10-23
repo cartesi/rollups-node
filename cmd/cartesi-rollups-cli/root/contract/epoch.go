@@ -136,7 +136,7 @@ func (c *chainClient) epochHistoryDave(consensusAddr common.Address) (*EpochHist
 	var epochs []EpochEvent
 	limit := epochLimitFlag
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		if limit > 0 && len(epochs) >= limit {
 			return errLimitReached
 		}
@@ -207,8 +207,8 @@ func (c *chainClient) epochHistoryDave(consensusAddr common.Address) (*EpochHist
 		prevValue = val
 	}
 
-	_, err = ethutil.FindTransitions(
-		c.callOpts.Context, fromBlock, toBlock, prevValue, oracle, onHit,
+	_, _, err = ethutil.FindTransitions(
+		c.callOpts.Context, fromBlock, toBlock, prevValue, nil, oracle, onHit,
 	)
 	if err != nil && !errors.Is(err, errLimitReached) {
 		return nil, fmt.Errorf("find sealed epoch transitions: %w", err)
@@ -261,7 +261,7 @@ func (c *chainClient) epochHistoryAuthority(
 	var claims []ClaimEvent
 	limit := epochLimitFlag
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		if limit > 0 && len(claims) >= limit {
 			return errLimitReached
 		}
@@ -360,8 +360,8 @@ func (c *chainClient) epochHistoryAuthority(
 		prevValue = val
 	}
 
-	_, err = ethutil.FindTransitions(
-		c.callOpts.Context, fromBlock, toBlock, prevValue, oracle, onHit,
+	_, _, err = ethutil.FindTransitions(
+		c.callOpts.Context, fromBlock, toBlock, prevValue, nil, oracle, onHit,
 	)
 	if err != nil && !errors.Is(err, errLimitReached) {
 		return nil, fmt.Errorf("find claim transitions: %w", err)
@@ -428,7 +428,7 @@ func (c *chainClient) epochHistoryQuorum(
 		return consensusCaller.GetNumberOfAcceptedClaims(opts, c.appAddr)
 	}
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		if limit > 0 && len(claims) >= limit {
 			return errLimitReached
 		}
@@ -489,8 +489,8 @@ func (c *chainClient) epochHistoryQuorum(
 		prevValue = val
 	}
 
-	_, err = ethutil.FindTransitions(
-		c.callOpts.Context, fromBlock, toBlock, prevValue, oracle, onHit,
+	_, _, err = ethutil.FindTransitions(
+		c.callOpts.Context, fromBlock, toBlock, prevValue, nil, oracle, onHit,
 	)
 	if err != nil && !errors.Is(err, errLimitReached) {
 		return nil, fmt.Errorf("find claim accepted transitions: %w", err)

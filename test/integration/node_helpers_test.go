@@ -142,7 +142,11 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 		return nil, fmt.Errorf("open log file %s: %w", logPath, err)
 	}
 
-	cmd := exec.Command(nodeBinary)
+	cmd, err := limitedNodeCommand(nodeBinary, logFile)
+	if err != nil {
+		logFile.Close()
+		return nil, err
+	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if workDir := os.Getenv("CARTESI_TEST_NODE_WORKDIR"); workDir != "" {
@@ -166,13 +170,15 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 		return nil, fmt.Errorf("start node: %w", err)
 	}
 
+	n := &nodeProcess{nodeSubprocess: proc, logFile: logFile}
+
 	// Stream the log file to the terminal via a separate tail process.
 	// We write to /dev/tty to bypass go test and gotestsum's output capture,
 	// so the user sees node logs in real time just like the old Makefile did.
 	// Falls back silently if /dev/tty is not available (e.g., CI, compose).
 	tty, ttyErr := os.OpenFile("/dev/tty", os.O_WRONLY, 0)
 	if ttyErr != nil {
-		return &nodeProcess{nodeSubprocess: proc, logFile: logFile}, nil
+		return n, nil
 	}
 
 	tail := exec.Command("tail", "-f", logPath) //nolint:gosec
@@ -180,10 +186,11 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 	tail.Stderr = tty
 	if err := tail.Start(); err != nil {
 		tty.Close()
-		return &nodeProcess{nodeSubprocess: proc, logFile: logFile}, nil
+		return n, nil
 	}
 
-	return &nodeProcess{nodeSubprocess: proc, logFile: logFile, tail: tail, tty: tty}, nil
+	n.tail, n.tty = tail, tty
+	return n, nil
 }
 
 // waitForHealth polls the node's readyz endpoint until it responds 200 OK

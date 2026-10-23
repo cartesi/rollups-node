@@ -261,7 +261,7 @@ func (c *chainClient) findMatchCommitments(
 		return caller.GetMatchCreatedCount(opts)
 	}
 
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, _, _ *big.Int) error {
 		q, qErr := buildEventFilterQuery(
 			tournamentAddr, "MatchCreated",
 			itournament.ITournamentMetaData, block, block,
@@ -291,8 +291,8 @@ func (c *chainClient) findMatchCommitments(
 		return nil
 	}
 
-	_, err = ethutil.FindTransitions(
-		c.callOpts.Context, deployBlock, c.blockNum, big.NewInt(0), oracle, onHit,
+	_, _, err = ethutil.FindTransitions(
+		c.callOpts.Context, deployBlock, c.blockNum, big.NewInt(0), nil, oracle, onHit,
 	)
 	if err != nil && !errors.Is(err, errFound) {
 		return [32]byte{}, [32]byte{}, fmt.Errorf("find match commitments: %w", err)
