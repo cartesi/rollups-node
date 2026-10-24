@@ -315,10 +315,10 @@ func (a *Application) IsDaveConsensus() bool {
 //
 //	OK ⇄ FAILED                                 (FAILED is recoverable)
 //	OK, FAILED → DIVERGED, CORRUPTED              (integrity terminal)
-//	OK, FAILED → INVALID_OUTPUTS_ROOT            (validation terminal)
+//	OK         → INVALID_OUTPUTS_ROOT            (validation terminal)
 //	OK         → GUEST_EXCEPTION, MACHINE_HALTED  (execution terminal)
 //	             MCYCLE_OVERFLOW, UNEXPECTED_YIELD
-//	execution terminal → CORRUPTED                 (integrity escalation)
+//	execution/validation terminal → DIVERGED, CORRUPTED (integrity escalation)
 //
 // FAILED is recoverable and suspends execution, but enabled applications in
 // every status continue L1 observation. Consequently, later evidence may
@@ -328,13 +328,14 @@ func (a *Application) IsDaveConsensus() bool {
 //
 // GUEST_EXCEPTION, MACHINE_HALTED, MCYCLE_OVERFLOW, and UNEXPECTED_YIELD record
 // deterministic machine outcomes that stop execution and must not be retried.
-// Later L1 observation may supersede one with CORRUPTED when it establishes
-// that local history is untrustworthy. The input retains its original
+// Later L1 observation may supersede one with DIVERGED or CORRUPTED when it
+// establishes an integrity failure. The input retains its original
 // completion status and terminal state proof. Foreclosure is orthogonal and
 // may coexist with any application status.
 // INVALID_OUTPUTS_ROOT records a failed outputs-root rule. It can be detected
 // during an advance or later by the validator, including for an empty epoch.
-// Its status and reason are immutable; it does not establish the fault's cause.
+// It does not establish the fault's cause. It may escalate to DIVERGED or
+// CORRUPTED; the typed stop boundary retains the original finding.
 type ApplicationStatus string
 
 //nolint:revive // Public enum names preserve the generated/API naming convention.
@@ -379,9 +380,10 @@ func (e ApplicationStatus) IsTerminal() bool {
 }
 
 // IsExecutionTerminal identifies outcomes that must be stored atomically with
-// an input result. These four states may escalate to CORRUPTED. The validation
+// an input result. These four states may escalate to DIVERGED/CORRUPTED. The validation
 // terminal INVALID_OUTPUTS_ROOT is separate: a validator can also set it after
-// input storage, and its original reason must be preserved.
+// input storage. A genuine integrity finding can replace its status and reason
+// while retaining the typed epoch stop boundary.
 func (e ApplicationStatus) IsExecutionTerminal() bool {
 	switch e {
 	case ApplicationStatus_GuestException,

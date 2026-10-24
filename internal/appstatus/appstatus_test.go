@@ -220,30 +220,24 @@ func (s *AppStatusSuite) TestSetCorrupted() {
 	require.Equal("machine snapshot missing", *app.Reason)
 }
 
-func (s *AppStatusSuite) TestExecutionTerminalCanEscalateOnlyToCorrupted() {
-	require := s.Require()
-	logger := slog.Default()
-
-	escalated := newTestApp()
-	escalated.Status = ApplicationStatus_MachineHalted
-	originalReason := "machine halted"
-	escalated.Reason = &originalReason
-	repo := &mockRepo{}
-	err := SetCorrupted(context.Background(), logger, repo, escalated, "L1 output mismatch")
-	require.Error(err)
-	require.Equal(1, repo.callCount)
-	require.Equal(ApplicationStatus_Corrupted, escalated.Status)
-	require.Equal("L1 output mismatch", *escalated.Reason)
-
-	preserved := newTestApp()
-	preserved.Status = ApplicationStatus_MachineHalted
-	preserved.Reason = &originalReason
-	repo = &mockRepo{}
-	err = SetDiverged(context.Background(), logger, repo, preserved, "later claim disagreement")
-	require.ErrorContains(err, "later claim disagreement")
-	require.Zero(repo.callCount)
-	require.Equal(ApplicationStatus_MachineHalted, preserved.Status)
-	require.Equal(originalReason, *preserved.Reason)
+func (s *AppStatusSuite) TestApplicationStopCanEscalateToIntegrityStop() {
+	for _, initial := range []ApplicationStatus{ApplicationStatus_GuestException, ApplicationStatus_MachineHalted,
+		ApplicationStatus_McycleOverflow, ApplicationStatus_UnexpectedYield,
+		ApplicationStatus_InvalidOutputsRoot, ApplicationStatus_Failed} {
+		for _, requested := range []ApplicationStatus{ApplicationStatus_Diverged, ApplicationStatus_Corrupted} {
+			s.Run(initial.String()+"/"+requested.String(), func() {
+				app := newTestApp()
+				app.Status = initial
+				app.Reason = new("execution stopped")
+				repo := &mockRepo{}
+				err := setTerminalStatus(s.T().Context(), slog.Default(), repo, app, requested, "integrity finding")
+				s.Require().ErrorContains(err, "integrity finding")
+				s.Equal(1, repo.callCount)
+				s.Equal(requested, app.Status)
+				s.Equal("integrity finding", *app.Reason)
+			})
+		}
+	}
 }
 
 func (s *AppStatusSuite) TestIntegrityTerminalStatusWritesAreIdempotent() {

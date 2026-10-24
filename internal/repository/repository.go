@@ -212,6 +212,8 @@ type EpochRepository interface {
 	CreateEpochsAndInputs(ctx context.Context, nameOrAddress string, epochInputMap map[*Epoch][]*Input, blockNumber uint64) error
 
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
+	GetEpochCompletionState(ctx context.Context, nameOrAddress string, index uint64) (*EpochCompletionState, error)
+	StoreInvalidOutputsRoot(ctx context.Context, appID int64, epochIndex uint64, reason string) error
 	GetLastAcceptedEpochIndex(ctx context.Context, nameOrAddress string) (uint64, error)
 	GetLastNonOpenEpoch(ctx context.Context, nameOrAddress string) (*Epoch, error)
 	GetLastNonOpenEpochIndex(ctx context.Context, nameOrAddress string) (*uint64, error)
@@ -443,8 +445,9 @@ type ClaimerRepository interface {
 	// RejectEpochAndSetApplicationDiverged atomically attempts to mark an epoch
 	// as CLAIM_REJECTED and the application as DIVERGED. The returned result
 	// reports which conditional writes applied, so callers can mirror only the
-	// durable transitions. The application remains unchanged when it already
-	// has a terminal status; an epoch outside CLAIM_COMPUTED/CLAIM_SUBMITTED is
+	// durable transitions. An existing DIVERGED/CORRUPTED diagnosis remains
+	// unchanged; execution/root stops may escalate while retaining their cutoff.
+	// An epoch outside CLAIM_COMPUTED/CLAIM_SUBMITTED is
 	// likewise left unchanged.
 	RejectEpochAndSetApplicationDiverged(
 		ctx context.Context,

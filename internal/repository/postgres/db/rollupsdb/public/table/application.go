@@ -36,6 +36,9 @@ type applicationTable struct {
 	Enabled                           postgres.ColumnBool
 	Status                            postgres.ColumnString
 	Reason                            postgres.ColumnString
+	ProblemEpochIndex                 postgres.ColumnFloat
+	ProblemKind                       postgres.ColumnString
+	ProblemInputIndex                 postgres.ColumnFloat
 	LastEpochCheckBlock               postgres.ColumnFloat
 	LastInputCheckBlock               postgres.ColumnFloat
 	LastOutputCheckBlock              postgres.ColumnFloat
@@ -111,6 +114,9 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		EnabledColumn                           = postgres.BoolColumn("enabled")
 		StatusColumn                            = postgres.StringColumn("status")
 		ReasonColumn                            = postgres.StringColumn("reason")
+		ProblemEpochIndexColumn                 = postgres.FloatColumn("problem_epoch_index")
+		ProblemKindColumn                       = postgres.StringColumn("problem_kind")
+		ProblemInputIndexColumn                 = postgres.FloatColumn("problem_input_index")
 		LastEpochCheckBlockColumn               = postgres.FloatColumn("last_epoch_check_block")
 		LastInputCheckBlockColumn               = postgres.FloatColumn("last_input_check_block")
 		LastOutputCheckBlockColumn              = postgres.FloatColumn("last_output_check_block")
@@ -126,8 +132,8 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		AccountsDriveMerkleRootColumn           = postgres.ByteaColumn("accounts_drive_merkle_root")
 		CreatedAtColumn                         = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn                         = postgres.TimestampzColumn("updated_at")
-		allColumns                              = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns                          = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns                              = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, ProblemEpochIndexColumn, ProblemKindColumn, ProblemInputIndexColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns                          = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, ProblemEpochIndexColumn, ProblemKindColumn, ProblemInputIndexColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
 		defaultColumns                          = postgres.ColumnList{ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, EnabledColumn, StatusColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ForecloseBlockColumn, AccountsDriveProvedBlockColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
@@ -154,6 +160,9 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		Enabled:                           EnabledColumn,
 		Status:                            StatusColumn,
 		Reason:                            ReasonColumn,
+		ProblemEpochIndex:                 ProblemEpochIndexColumn,
+		ProblemKind:                       ProblemKindColumn,
+		ProblemInputIndex:                 ProblemInputIndexColumn,
 		LastEpochCheckBlock:               LastEpochCheckBlockColumn,
 		LastInputCheckBlock:               LastInputCheckBlockColumn,
 		LastOutputCheckBlock:              LastOutputCheckBlockColumn,

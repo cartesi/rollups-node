@@ -33,10 +33,13 @@ func TestInvalidOutputsRootOutputObservation(t *testing.T) {
 			reader.Logger = slog.New(slog.NewTextHandler(&logs, nil))
 			app := &model.Application{
 				ID: 1, Name: "invalid-root", Enabled: true, Status: model.ApplicationStatus_InvalidOutputsRoot,
-				Reason: new("epoch 0: root rule failed"), ForecloseBlock: 0x12, LastOutputCheckBlock: 0x12,
+				Reason: new("epoch 12: root rule failed"), ForecloseBlock: 0x12, LastOutputCheckBlock: 0x12,
 			}
+			// An output originating before P can be executed against a later
+			// cumulative root. The event gives no root identity, so different
+			// bytes here must not create a false stop of that earlier prefix.
 			output := &model.Output{
-				Index: outputExecution0.OutputIndex, RawData: bytes.Clone(outputExecution0.Output),
+				EpochIndex: 11, Index: outputExecution0.OutputIndex, RawData: bytes.Clone(outputExecution0.Output),
 			}
 			if tc.mismatched {
 				output.RawData = common.Hex2Bytes("FFBBCCDDEE")
@@ -62,7 +65,7 @@ func TestInvalidOutputsRootOutputObservation(t *testing.T) {
 
 			require.True(t, ok, "terminal mismatch is handled under the existing event cursor policy")
 			require.Equal(t, model.ApplicationStatus_InvalidOutputsRoot, app.Status)
-			require.Equal(t, "epoch 0: root rule failed", *app.Reason)
+			require.Equal(t, "epoch 12: root rule failed", *app.Reason)
 			if tc.mismatched {
 				require.Nil(t, output.ExecutionTransactionHash)
 				require.Contains(t, logs.String(), "Output mismatch; preserving terminal application status")

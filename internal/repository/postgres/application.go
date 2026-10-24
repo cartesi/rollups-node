@@ -163,10 +163,16 @@ func (r *PostgresRepository) CreateApplication(
 }
 
 // GetApplication retrieves one application by ID, optionally loading status & execution parameters.
-func (r *PostgresRepository) GetApplication(
+func (r *PostgresRepository) GetApplication(ctx context.Context, nameOrAddress string) (*model.Application, error) {
+	app, _, err := getApplication(ctx, r.db, nameOrAddress)
+	return app, err
+}
+
+func getApplication(
 	ctx context.Context,
+	queryer rowQueryer,
 	nameOrAddress string,
-) (*model.Application, error) {
+) (*model.Application, *model.ApplicationProblem, error) {
 	ctx, cancel := beginDatabaseOperation(ctx)
 	defer cancel()
 
@@ -192,6 +198,7 @@ func (r *PostgresRepository) GetApplication(
 			table.Application.Enabled,
 			table.Application.Status,
 			table.Application.Reason,
+			table.Application.ProblemEpochIndex, table.Application.ProblemKind, table.Application.ProblemInputIndex,
 			table.Application.IinputboxBlock,
 			table.Application.LastEpochCheckBlock,
 			table.Application.LastInputCheckBlock,
@@ -234,9 +241,11 @@ func (r *PostgresRepository) GetApplication(
 		WHERE(whereClause)
 
 	sqlStr, args := stmt.Sql()
-	row := r.db.QueryRow(ctx, sqlStr, args...)
+	row := queryer.QueryRow(ctx, sqlStr, args...)
 
 	var app model.Application
+	var problemEpoch, problemInput *uint64
+	var problemKind *model.ApplicationStatus
 	err := row.Scan(
 		&app.ID,
 		&app.Name,
@@ -256,6 +265,7 @@ func (r *PostgresRepository) GetApplication(
 		&app.Enabled,
 		&app.Status,
 		&app.Reason,
+		&problemEpoch, &problemKind, &problemInput,
 		&app.IInputBoxBlock,
 		&app.LastEpochCheckBlock,
 		&app.LastInputCheckBlock,
@@ -290,13 +300,14 @@ func (r *PostgresRepository) GetApplication(
 		&app.ExecutionParameters.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil // not found
+		return nil, nil, nil // not found
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return &app, nil
+	problem, err := decodeApplicationProblem(problemEpoch, problemKind, problemInput)
+	return &app, problem, err
 }
 
 // GetProcessedInputCount retrieves the ProcessedInputs field from an application by Name or address.

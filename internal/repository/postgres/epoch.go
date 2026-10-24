@@ -274,8 +274,13 @@ func wrapInputLogIdentityConflict(err error) error {
 	return err
 }
 
-func (r *PostgresRepository) GetEpoch(
+func (r *PostgresRepository) GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*model.Epoch, error) {
+	return getEpoch(ctx, r.db, nameOrAddress, index)
+}
+
+func getEpoch(
 	ctx context.Context,
+	queryer rowQueryer,
 	nameOrAddress string,
 	index uint64,
 ) (*model.Epoch, error) {
@@ -321,7 +326,7 @@ func (r *PostgresRepository) GetEpoch(
 		)
 
 	sqlStr, args := stmt.Sql()
-	row := r.db.QueryRow(ctx, sqlStr, args...)
+	row := queryer.QueryRow(ctx, sqlStr, args...)
 
 	var ep model.Epoch
 	err := row.Scan(

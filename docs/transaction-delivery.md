@@ -15,8 +15,12 @@ RPC acceptance does not prove that an action executed or changed protocol state.
 
 The database stores no signed transactions or delivery journal. After a restart,
 the node reconstructs useful work from protocol facts and contract state. This
-design supports new deployments. Changes to a database's registered chain,
-observation policy, submission mode or signer are not supported.
+design supports new deployments. This pre-release changes the initial database
+schema to retain the epoch where execution or root validation stopped. Use a
+fresh database and re-ingest the chain when upgrading an existing deployment;
+there is no migration or inferred cutoff for an already populated database.
+Changes to a database's registered chain, observation policy, submission mode
+or signer are not supported.
 
 ## Prepare a deployment
 

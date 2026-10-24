@@ -593,7 +593,7 @@ func (s *ApplicationSuite) TestFailedCannotEnterExecutionTerminal() {
 	}
 }
 
-func (s *ApplicationSuite) TestExecutionTerminalRejectsOtherTerminalTransitions() {
+func (s *ApplicationSuite) TestExecutionTerminalAllowsOnlyIntegrityEscalation() {
 	executionStatuses := []ApplicationStatus{
 		ApplicationStatus_GuestException,
 		ApplicationStatus_MachineHalted,
@@ -604,6 +604,7 @@ func (s *ApplicationSuite) TestExecutionTerminalRejectsOtherTerminalTransitions(
 		for _, target := range []ApplicationStatus{
 			ApplicationStatus_Failed,
 			ApplicationStatus_Diverged,
+			ApplicationStatus_Corrupted,
 			executionStatuses[(index+1)%len(executionStatuses)],
 		} {
 			s.Run(current.String()+"To"+target.String(), func() {
@@ -612,14 +613,24 @@ func (s *ApplicationSuite) TestExecutionTerminalRejectsOtherTerminalTransitions(
 				s.Require().NoError(s.Repo.UpdateApplicationStatus(
 					s.Ctx, app.ID, current, &originalReason))
 
-				newReason := "invalid transition"
+				newReason := "later finding"
 				err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, target, &newReason)
-				s.Require().Error(err)
+				escalates := target == ApplicationStatus_Diverged || target == ApplicationStatus_Corrupted
+				if escalates {
+					s.Require().NoError(err)
+				} else {
+					s.Require().Error(err)
+				}
 
 				got, err := s.Repo.GetApplication(s.Ctx, app.Name)
 				s.Require().NoError(err)
-				s.Equal(current, got.Status)
-				s.Equal(originalReason, *got.Reason)
+				if escalates {
+					s.Equal(target, got.Status)
+					s.Equal(newReason, *got.Reason)
+				} else {
+					s.Equal(current, got.Status)
+					s.Equal(originalReason, *got.Reason)
+				}
 			})
 		}
 	}

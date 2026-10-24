@@ -118,6 +118,7 @@ type ValidatorRepository interface {
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error) // FIXME migrate to list
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
+	StoreInvalidOutputsRoot(ctx context.Context, appID int64, epochIndex uint64, reason string) error
 	ListStateHashes(
 		ctx context.Context, nameOrAddress string, f repository.StateHashFilter, p repository.Pagination, descending bool,
 	) ([]*StateHash, uint64, error)
@@ -285,9 +286,15 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		// the stored state identities. This also checks the pristine root of an
 		// empty first epoch; a mismatch alone does not establish its cause.
 		if *epoch.TxBufferDataBlock != *merkleRoot {
-			return appstatus.SetInvalidOutputsRootf(ctx, s.Logger, s.repository, app,
+			reason := appstatus.NormalizeReason(fmt.Sprintf(
 				"epoch %v: declared outputs root does not match the root calculated from stored outputs; declared=%s; calculated=%s",
-				epoch.Index, epoch.TxBufferDataBlock.Hex(), merkleRoot.Hex())
+				epoch.Index, epoch.TxBufferDataBlock.Hex(), merkleRoot.Hex()))
+			if err := s.repository.StoreInvalidOutputsRoot(ctx, app.ID, epoch.Index, reason); err != nil {
+				return fmt.Errorf("recording invalid outputs root for application %s epoch %d: %w", appAddress, epoch.Index, err)
+			}
+			s.Logger.Error("Invalid outputs root recorded", "application", app.Name, "address", appAddress,
+				"epoch_index", epoch.Index, "reason", reason)
+			return errors.New(reason)
 		}
 
 		if app.IsDaveConsensus() {

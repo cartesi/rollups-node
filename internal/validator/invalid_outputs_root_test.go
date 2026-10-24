@@ -39,19 +39,20 @@ func TestValidateInvalidOutputsRoot(t *testing.T) {
 						MachineHash: epoch.MachineHash, TxBufferDataBlock: epoch.TxBufferDataBlock,
 					}
 					expectRootValidationReads(repo, app, epoch, input, outputs)
-					repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_InvalidOutputsRoot,
-						mock.MatchedBy(func(reason *string) bool {
-							return reason != nil && strings.Contains(*reason, "declared="+declared.Hex()) &&
-								strings.Contains(*reason, "calculated=")
+					repo.On("StoreInvalidOutputsRoot", mock.Anything, app.ID, epoch.Index,
+						mock.MatchedBy(func(reason string) bool {
+							return strings.Contains(reason, "declared="+declared.Hex()) &&
+								strings.Contains(reason, "calculated=")
 						})).Return(nil).Once()
 
 					err := validator.validateApplication(t.Context(), app)
 
 					require.ErrorContains(t, err, "epoch 0: declared outputs root does not match the root calculated from stored outputs")
-					require.Equal(t, model.ApplicationStatus_InvalidOutputsRoot, app.Status)
-					require.Equal(t, err.Error(), *app.Reason)
-					require.NotContains(t, *app.Reason, "guest")
-					require.NotContains(t, *app.Reason, "corrupt")
+					// The repository owns the atomic status/boundary write;
+					// this pre-computation application object is not a cache.
+					require.Equal(t, model.ApplicationStatus_OK, app.Status)
+					require.NotContains(t, err.Error(), "guest")
+					require.NotContains(t, err.Error(), "corrupt")
 					require.Equal(t, model.InputCompletionStatus_Accepted, input.Status)
 					require.Equal(t, model.EpochStatus_InputsProcessed, epoch.Status)
 					repo.AssertNotCalled(t, "StoreClaimAndProofs", mock.Anything, mock.Anything, mock.Anything)
@@ -71,14 +72,13 @@ func TestValidateEmptyFirstEpochInvalidOutputsRoot(t *testing.T) {
 	expectRootValidationReads(repo, app, epoch, nil, nil)
 	reason := "epoch 0: declared outputs root does not match the root calculated from stored outputs; declared=" +
 		zero.Hex() + "; calculated=" + validator.pristineRootHash.Hex()
-	repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_InvalidOutputsRoot,
-		mock.MatchedBy(func(value *string) bool { return value != nil && *value == reason })).Return(nil).Once()
+	repo.On("StoreInvalidOutputsRoot", mock.Anything, app.ID, epoch.Index,
+		reason).Return(nil).Once()
 
 	err := validator.validateApplication(t.Context(), app)
 
 	require.EqualError(t, err, reason)
-	require.Equal(t, model.ApplicationStatus_InvalidOutputsRoot, app.Status)
-	require.Equal(t, reason, *app.Reason)
+	require.Equal(t, model.ApplicationStatus_OK, app.Status)
 	repo.AssertNotCalled(t, "StoreClaimAndProofs", mock.Anything, mock.Anything, mock.Anything)
 	repo.AssertExpectations(t)
 }

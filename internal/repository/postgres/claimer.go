@@ -225,11 +225,10 @@ func (r *PostgresRepository) UpdateEpochWithForeclosedClaim(
 // recorded, a different staged or accepted claim for the same epoch would
 // violate the contract's single-staged claim invariant.
 //
-// Unlike an executed-output byte mismatch, losing consensus does not prove the
-// node's stored history is corrupt. An existing terminal machine outcome is
-// therefore preserved while the epoch rejection is still attempted. For a
-// non-terminal application, the DIVERGED halt runs even when the epoch reject
-// matched no row. The returned flags identify the writes that committed.
+// Losing consensus does not prove local storage corruption. Record DIVERGED
+// even under an execution/root stop so earlier publication cannot reopen; keep
+// the first integrity diagnosis. The halt does not depend on an epoch rejection
+// matching a row. The returned flags identify the writes that committed.
 func (r *PostgresRepository) RejectEpochAndSetApplicationDiverged(
 	ctx context.Context,
 	applicationID int64,
@@ -290,10 +289,9 @@ func (r *PostgresRepository) RejectEpochAndSetApplicationDiverged(
 	}
 	result.EpochRejected = rejectCmd.RowsAffected() == 1
 
-	// Preserve an already-terminal cause. The best-effort epoch rejection still
-	// commits, but a later claim observation must not overwrite a stronger or
-	// earlier durable terminal status.
-	if !applicationStatus.IsTerminal() {
+	// Preserve the first integrity stop. A genuine mismatch under ET/IOR must
+	// become durable so the next tick cannot reopen earlier publication.
+	if applicationStatus != model.ApplicationStatus_Diverged && applicationStatus != model.ApplicationStatus_Corrupted {
 		appStmt := table.Application.
 			UPDATE(
 				table.Application.Status,

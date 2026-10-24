@@ -1134,3 +1134,8 @@ func (m *Mockrepo) UpdateApplicationStatus(ctx context.Context, appID int64, sta
 	args := m.Called(ctx, appID, status, reason)
 	return args.Error(0)
 }
+
+func (m *Mockrepo) StoreInvalidOutputsRoot(ctx context.Context, appID int64, epochIndex uint64, reason string) error {
+	args := m.Called(ctx, appID, epochIndex, reason)
+	return args.Error(0)
+}
