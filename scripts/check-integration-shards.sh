@@ -11,9 +11,8 @@
 #   [--profile=<name>=<regex>] [--profile-test=<name>=<TestName>] ...
 # Profiles overlap ordinary shards. Each listed profile test must exist and match.
 #
-# Test discovery uses `go test -list`, which builds the package and runs
-# TestMain (TestMain skips node management when listing). The package has no
-# CGo dependency on the Cartesi C library, so a plain Go toolchain suffices.
+# Test discovery parses Go-selected test files without compiling their imports
+# or running TestMain. A plain Go toolchain suffices even for native fixtures.
 
 set -euo pipefail
 
@@ -49,17 +48,18 @@ for arg in "$@"; do
     esac
 done
 
-# Discover top-level tests. Keep the build/list step separate from the grep so
-# a build failure surfaces as a build failure — otherwise the grep swallows the
-# empty output and the script misreports it as "no tests discovered".
-if ! list_output=$(go test -list '^Test' -tags=endtoendtests ./test/integration/... 2>&1); then
-    echo "ERROR: failed to list integration tests (build error?):" >&2
+# Go selects files for the current platform and build tags; the syntax reader
+# emits test names without linking the native runtime used by some fixtures.
+if ! list_output=$(
+    go list -json -tags=endtoendtests ./test/integration/... |
+        go run ./dev/list-integration-tests
+); then
+    echo "ERROR: failed to list integration tests:" >&2
     echo "$list_output" >&2
     exit 1
 fi
 
-# Filter out the trailing "ok <package>" summary line of -list.
-TESTS=$(printf '%s\n' "$list_output" | grep -E '^Test[A-Za-z0-9_]*$' || true)
+TESTS="$list_output"
 
 if [ -z "$TESTS" ]; then
     echo "ERROR: no top-level integration tests discovered" >&2

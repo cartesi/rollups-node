@@ -420,6 +420,10 @@ func (s *EchoQuorumSuite) TestForecloseQuorumWithoutInputs() {
 }
 
 func (s *EchoQuorumSuite) deployQuorumEchoApp(prefix string, extraApplicationArgs ...string) quorumAppDeployment {
+	return s.deployQuorumApp(prefix, envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp"), extraApplicationArgs...)
+}
+
+func (s *EchoQuorumSuite) deployQuorumApp(prefix, dappPath string, extraApplicationArgs ...string) quorumAppDeployment {
 	r := s.Require()
 
 	validators := quorumValidatorAddresses(s.T())
@@ -442,7 +446,6 @@ func (s *EchoQuorumSuite) deployQuorumEchoApp(prefix string, extraApplicationArg
 	r.NoError(json.Unmarshal([]byte(out), &quorumDeployment), "parse quorum deployment")
 	r.NotEmpty(quorumDeployment.Address, "quorum deployment missing address")
 
-	dappPath := envOrDefault("CARTESI_TEST_DAPP_PATH", "applications/echo-dapp")
 	appName := uniqueAppName(prefix)
 	applicationArgs := []string{
 		"--consensus", quorumDeployment.Address,
