@@ -227,12 +227,13 @@ type EpochRepository interface {
 
 	// HasUndrainedEpochsBeforeBlock reports whether any input for the given
 	// application has block_number <= blockBound and is still unprocessed
-	// in a non-terminal epoch.
+	// in a non-terminal epoch and is still executable. ET/IOR excludes NONE
+	// inputs at or beyond processed_inputs, independently of the epoch cutoff.
 	// The bound is inclusive because a valid InputAdded event in the same
 	// block as Foreclosure must have executed before the foreclosure
 	// transaction; post-foreclosure addInput calls revert and emit no event.
 	// PRT uses this gate to keep the post-foreclosure drain pending until
-	// the advancer has processed every pre-foreclosure input — it does NOT
+	// the advancer has processed every executable pre-foreclosure input. It does NOT
 	// wait for CLAIM_ACCEPTED because PRT tournaments cannot settle on a
 	// foreclosed IApplication, so waiting would stall forever.
 	HasUndrainedEpochsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
@@ -251,11 +252,11 @@ type EpochRepository interface {
 	HasUnreconciledClaimsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
 
 	// ForecloseUnacceptedEpochsAtOrAfterBlock marks Authority/Quorum epochs
-	// that overlap the foreclosure block as CLAIM_FORECLOSED. Such epochs
-	// cannot have an accepted on-chain claim because claim submission and
-	// acceptance are blocked once foreclosure is observed, and a claim whose
-	// last processed block is the foreclosure block cannot be accepted in that
-	// same block.
+	// that overlap the foreclosure block as CLAIM_FORECLOSED. Under ET/IOR it
+	// also closes the suffix at or beyond the typed epoch cutoff: that suffix
+	// has no valid local claim path. Earlier epochs retain validation and
+	// reconciliation; CLAIM_ACCEPTED is preserved. FAILED/DC and disabled apps
+	// cannot authorize this terminalization.
 	ForecloseUnacceptedEpochsAtOrAfterBlock(ctx context.Context, appID int64, blockBound uint64) (int64, error)
 }
 

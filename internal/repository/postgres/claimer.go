@@ -188,6 +188,8 @@ func (r *PostgresRepository) UpdateEpochWithAcceptedClaim(
 // no longer submit, and the PRT drain terminalizes a pre-foreclosure epoch the
 // tournament never accepted. Earlier non-terminal states are allowed because an
 // epoch that overlaps the foreclosure block may never reach a computable claim.
+// Existing CLAIM_* observations remain reconcilable under every health status;
+// earlier states retain the drain guards and pending-validation protection.
 func (r *PostgresRepository) UpdateEpochWithForeclosedClaim(
 	ctx context.Context,
 	applicationID int64,
@@ -205,7 +207,15 @@ func (r *PostgresRepository) UpdateEpochWithForeclosedClaim(
 				AND(table.Epoch.Index.EQ(uint64Expr(index))).
 				AND(table.Epoch.Status.IN(nonTerminalEpochStatusExpressions...)).
 				AND(table.Application.ID.EQ(table.Epoch.ApplicationID)).
-				AND(table.Application.ForecloseBlock.GT(uint64Expr(0))),
+				AND(table.Application.ForecloseBlock.GT(uint64Expr(0))).
+				AND(table.Epoch.Status.IN(enum.EpochStatus.ClaimComputed, enum.EpochStatus.ClaimSubmitted, enum.EpochStatus.ClaimStaged).
+					OR(table.Application.Enabled.EQ(postgres.Bool(true)).
+						AND(table.Application.Status.IN(
+							append([]postgres.Expression{enum.ApplicationStatus.Ok}, executionStopStatusExpressions...)...)).
+						AND(table.Epoch.Status.NOT_EQ(enum.EpochStatus.InputsProcessed).
+							OR(table.Epoch.LastBlock.GT_EQ(table.Application.ForecloseBlock)).
+							OR(table.Application.Status.IN(executionStopStatusExpressions...).
+								AND(table.Epoch.Index.GT_EQ(table.Application.ProblemEpochIndex)))))),
 		)
 
 	sqlStr, args := updStmt.Sql()

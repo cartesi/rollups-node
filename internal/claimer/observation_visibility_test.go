@@ -120,42 +120,46 @@ func TestBulkForeclosureWaitsForClaimerView(t *testing.T) {
 }
 
 func TestForeclosureAtObservationBoundaryStillTerminalizes(t *testing.T) {
-	for _, path := range []string{computedVisibilityPath, submittedVisibilityPath, stagedVisibilityPath} {
-		t.Run(path, func(t *testing.T) {
-			s, r, b := newServiceMock(t)
-			app := withForeclosed(makeApplication(), 105)
-			epoch := makeComputedEpoch(app, 3)
-			head := new(big.Int).SetUint64(app.ForecloseBlock)
-			b.On("getConsensusAddress", mock.Anything, app, mock.Anything).Return(app.IConsensusAddress, nil).Maybe()
-			r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, epoch.Index).Return(nil).Once()
-			var result claimStepResult
-			switch path {
-			case computedVisibilityPath:
-				expectNoForeignClaimAccepted(b, app, epoch, epoch.LastBlock+1, head.Uint64())
-				b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, epoch, epoch.LastBlock+1, head.Uint64()).
-					Return(&iconsensus.IConsensus{}, nil, nil, nil).Once()
-				expectGetClaimStatusUnstaged(b, app, epoch, head)
-				result = s.processComputedClaim(t.Context(), claimWork{app: app, epoch: epoch}, head)
-			case submittedVisibilityPath:
-				epoch.Status = model.EpochStatus_ClaimSubmitted
-				b.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, epoch.LastBlock+1, head.Uint64()).
-					Return(&iconsensus.IConsensus{}, (*iconsensus.IConsensusClaimStaged)(nil),
-						(*iconsensus.IConsensusClaimStaged)(nil), nil).Once()
-				result = s.processSubmittedClaim(t.Context(), claimWork{app: app, epoch: epoch}, head)
-			default:
-				epoch = makeStagedEpoch(app, 3, 50)
-				b.On("getClaimStatus", mock.Anything, app, epoch, head).
-					Return(makeClaimStatus(claimStatusStaged, epoch, 50), nil).Once()
-				result = s.processStagedClaim(t.Context(), claimWork{app: app, epoch: epoch}, head)
-			}
-			require.NoError(t, result.err)
-			require.Equal(t, 1, result.progress)
-			require.Equal(t, model.EpochStatus_ClaimForeclosed, epoch.Status)
-			require.Equal(t, model.ApplicationStatus_OK, app.Status)
-			r.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-			r.AssertExpectations(t)
-			b.AssertExpectations(t)
-		})
+	for _, status := range []model.ApplicationStatus{model.ApplicationStatus_OK, model.ApplicationStatus_Failed,
+		model.ApplicationStatus_Diverged, model.ApplicationStatus_Corrupted} {
+		for _, path := range []string{computedVisibilityPath, submittedVisibilityPath, stagedVisibilityPath} {
+			t.Run(status.String()+"/"+path, func(t *testing.T) {
+				s, r, b := newServiceMock(t)
+				app := withForeclosed(makeApplication(), 105)
+				app.Status = status
+				epoch := makeComputedEpoch(app, 3)
+				head := new(big.Int).SetUint64(app.ForecloseBlock)
+				b.On("getConsensusAddress", mock.Anything, app, mock.Anything).Return(app.IConsensusAddress, nil).Maybe()
+				r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, epoch.Index).Return(nil).Once()
+				var result claimStepResult
+				switch path {
+				case computedVisibilityPath:
+					expectNoForeignClaimAccepted(b, app, epoch, epoch.LastBlock+1, head.Uint64())
+					b.On("findClaimSubmittedEventAndSucc", mock.Anything, app, epoch, epoch.LastBlock+1, head.Uint64()).
+						Return(&iconsensus.IConsensus{}, nil, nil, nil).Once()
+					expectGetClaimStatusUnstaged(b, app, epoch, head)
+					result = s.processComputedClaim(t.Context(), claimWork{app: app, epoch: epoch}, head)
+				case submittedVisibilityPath:
+					epoch.Status = model.EpochStatus_ClaimSubmitted
+					b.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, epoch.LastBlock+1, head.Uint64()).
+						Return(&iconsensus.IConsensus{}, (*iconsensus.IConsensusClaimStaged)(nil),
+							(*iconsensus.IConsensusClaimStaged)(nil), nil).Once()
+					result = s.processSubmittedClaim(t.Context(), claimWork{app: app, epoch: epoch}, head)
+				default:
+					epoch = makeStagedEpoch(app, 3, 50)
+					b.On("getClaimStatus", mock.Anything, app, epoch, head).
+						Return(makeClaimStatus(claimStatusStaged, epoch, 50), nil).Once()
+					result = s.processStagedClaim(t.Context(), claimWork{app: app, epoch: epoch}, head)
+				}
+				require.NoError(t, result.err)
+				require.Equal(t, 1, result.progress)
+				require.Equal(t, model.EpochStatus_ClaimForeclosed, epoch.Status)
+				require.Equal(t, status, app.Status)
+				r.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+				r.AssertExpectations(t)
+				b.AssertExpectations(t)
+			})
+		}
 	}
 }
 

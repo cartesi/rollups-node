@@ -341,6 +341,17 @@ func (s *Service) foreclosePendingClaimEpochs(ctx context.Context, app *Applicat
 		if epoch.FirstBlock > app.ForecloseBlock {
 			continue
 		}
+		// A complete valid prefix epoch still needs the validator before its
+		// accepted result can be reconciled. Foreclosure must not erase it.
+		if epoch.Status == EpochStatus_InputsProcessed && epoch.LastBlock < app.ForecloseBlock {
+			pending, err := s.observerCompletionEpoch(ctx, app, epoch)
+			if err != nil {
+				return err
+			}
+			if pending != nil {
+				continue
+			}
+		}
 		if epoch.ClaimTransactionHash != nil {
 			s.Logger.Debug("Skipping foreclose terminalization for epoch with on-chain claim transaction",
 				"application", app.Name,
