@@ -369,14 +369,88 @@ Measure observation lag, provider latency, signing time and inclusion time again
 the deployed tournament allowance. Independent loops and urgent replacement do not
 guarantee meeting a deadline.
 
+## Execution stops and integrity findings
+
+An execution stop (`GUEST_EXCEPTION`, `MACHINE_HALTED`, `MCYCLE_OVERFLOW` or
+`UNEXPECTED_YIELD`) or `INVALID_OUTPUTS_ROOT` at epoch P stops further execution.
+An enabled application can still validate and complete a valid, complete epoch
+before P: Authority/Quorum submit or accept, and PRT join, stage or accept.
+An invalid root found in an earlier epoch moves P back, including after restart.
+The earlier work still needs valid proofs, signer authorization, time for
+inclusion, and all foreclosure and protocol checks. This does not provide active
+dispute defense or discovery of every other party's claim.
+
+With `finalized` observation, a stored `CLAIM_STAGED` row that reads `UNSTAGED`
+once the latest head reaches its recorded staging block causes publication to
+wait. A warning identifies the application, epoch, recorded staging block and
+latest block, at most once per minute for each application and epoch. The latest
+read does not itself establish finality. Check that the provider serves coherent
+views of the registered chain. A held transaction keeps its signer occupied;
+other applications sharing that signer can also wait. The warning does not
+cancel or replace that transaction.
+
+The observer checks for this contradiction after the configured view reaches the
+staging block plus the application's staging period, and only in submitting mode.
+If it sees the contradiction then, a healthy application becomes `FAILED`.
+Restore a coherent endpoint for the registered chain before re-enabling. If the
+persisted history no longer matches that chain, rebuild and re-ingest into a
+fresh database; do not edit individual saved facts to force progress.
+An application already stopped by execution or an invalid root becomes
+`CORRUPTED`, which also stops foreclosure drain. Re-enabling cannot clear
+`CORRUPTED`: correct the cause and re-ingest into a fresh database.
+Recorded foreclosure can instead terminalize the claim as `CLAIM_FORECLOSED`
+before this diagnosis. If the views disagree, the observer may not see the same
+contradiction. There is no guaranteed diagnosis deadline.
+
+The new integrity reason replaces the earlier reason. The database retains the
+earliest known stop's typed epoch boundary in `application.problem_epoch_index`,
+`problem_kind` and `problem_input_index`; logs provide further context if retained.
+Those columns are not separate JSON-RPC response fields. The current reason is
+not a full history of previous diagnostics.
+
+With `latest` or `safe`, the publisher can repair a vanished stage by resubmitting.
+A claim recorded only as `CLAIM_SUBMITTED` has no persisted staging fact and
+remains eligible for that repair even with `finalized`. Transactions distributed
+earlier, independent actors and changes after the pre-send check can still affect
+the chain.
+
+An unknown consensus-contract claim status is refused. A healthy application can
+become `FAILED`; an application stopped at P keeps its status. If a transaction
+is already held, this refusal can also hold up other applications on the signer.
+Restore a supported contract/provider and inspect the held transaction; restarting
+does not revoke already distributed bytes. If the validator cannot build a PRT
+commitment proof under a stop, it retries the epoch, which can keep foreclosure
+drain pending.
+
+The node may not discover other parties' claims at or after P. After foreclosure,
+Authority/Quorum can mark those epochs `CLAIM_FORECLOSED` even if a foreign claim
+was accepted. PRT leaves an epoch pending when it has seen a claim transaction
+but has no validated local claim to compare, so drain can remain pending.
+Neither case authorizes publication of that epoch. Earlier validated epochs
+retain their normal reconciliation.
+
+Known limitations:
+
+- An `OutputExecuted` event names an output index and bytes, but not the accepted
+  cumulative root proving them. After an execution stop, different bytes can
+  cause a false `CORRUPTED` diagnosis when a later invalid root proves them.
+  This can also happen after an earlier invalid-root finding has moved P back,
+  because the application status may still name the execution stop.
+- A machine can be released before a closed epoch of a foreclosed application
+  has been finalized.
+- The output reader can stall on an executed output index that is absent locally.
+
 ## Disable and remove an application
 
 Disable stops observation, fresh action discovery, useful replacements and bond
 recovery at the next iteration. Work already in progress can finish. A transaction
 already sent can still execute. Neutral nonce maintenance can still spend fees.
 Disabling also stops protection alerts.
-Non-OK application health also prevents useful publication and can trigger
-best-effort cancellation of current work, including when FAILED is recoverable.
+`FAILED`, `DIVERGED` and `CORRUPTED` prevent useful publication and can trigger
+best-effort cancellation of current work, including when `FAILED` is recoverable.
+A missing stop boundary or a failed read is inconclusive: that evidence alone
+cannot justify cancelling or replacing retained work. An independently verified
+priority replacement still follows the planner's normal rules.
 PRT bond recovery is an exception: an enabled application's recoverable bond can
 still be returned when its on-chain payee is the configured signer, even when the
 application's health is not OK. Disabling the application stops this recovery too.
@@ -431,9 +505,12 @@ It is ignored; there is no cumulative application revert breaker.
 | PRT cannot publish consensus action with the registered contracts | Check the named contract link or geometry; staging and acceptance for that application are paused |
 | Action prefixed with "cancel obsolete" | The node is trying to replace a sent action; check funds, the fee ceiling and pool replacement policy |
 | PRT cannot join a tournament | Check the named geometry, registration link or missed join window; protection for that epoch is unavailable |
-| Recorded claim is absent from the current chain | Check for a provisional reorg; same-claim delivery can recover, but invalidated inputs require a rebuild |
+| Recorded submission or provisional staging is absent from the current chain | Check provider consistency or a provisional reorg; same-claim delivery can recover, but invalidated inputs require a rebuild |
 | Input observation is inconclusive | The count and logs disagree; the cursor stays unchanged and the next poll retries. Restore a coherent provider if failures persist |
 | Finality or call-content contradiction | Stop and investigate; do not edit saved facts to force progress |
+| Claim publication waiting: recorded staging contradicts latest view | Check endpoint/chain consistency and compare the named blocks. The observer can wait for staging maturity; a held transaction also holds the shared signer |
+| Application FAILED: getClaim returned UNSTAGED for recorded CLAIM_STAGED | Restore the correct coherent endpoint before re-enabling. If saved history no longer matches the chain, re-ingest into a fresh database |
+| Application CORRUPTED: getClaim returned UNSTAGED for recorded CLAIM_STAGED | Correct the cause and re-ingest into a fresh database. Re-enabling cannot clear CORRUPTED |
 
 Alert on sustained publication-deferred, could-not-publish, waiting-for-funding,
 stalled-nonce or frozen-head warnings, and on join-deadline or cannot-join warnings.
