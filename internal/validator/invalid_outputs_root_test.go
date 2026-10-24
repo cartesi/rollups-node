@@ -140,6 +140,7 @@ func rootValidationFixture() (*Mockrepo, *Service, *model.Application, *model.Ep
 		Status: model.EpochStatus_InputsProcessed, MachineHash: &app.TemplateHash,
 		TxBufferDataBlock: &validator.pristineRootHash,
 	}
+	repo.application = app
 	return repo, validator, app, epoch
 }
 

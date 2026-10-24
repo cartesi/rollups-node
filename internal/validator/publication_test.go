@@ -39,13 +39,14 @@ func TestClaimPublicationOutcome(t *testing.T) {
 			// Keep the application snapshot stale. The repository outcome, not
 			// this object's foreclosure field, must decide whether work is obsolete.
 			app := &Application{ID: 7, Name: "publication-app", ConsensusType: Consensus_PRT,
-				Status: ApplicationStatus_OK, TemplateHash: s.pristineRootHash}
+				Status: ApplicationStatus_OK, Enabled: true, TemplateHash: s.pristineRootHash}
 			epochs := []*Epoch{
 				{ApplicationID: app.ID, Index: 0, VirtualIndex: 0, LastBlock: 9, Status: EpochStatus_InputsProcessed,
 					MachineHash: &s.pristineRootHash, TxBufferDataBlock: &s.pristineRootHash},
 				{ApplicationID: app.ID, Index: 1, VirtualIndex: 1, FirstBlock: 10, LastBlock: 19, Status: EpochStatus_InputsProcessed,
 					MachineHash: &s.pristineRootHash, TxBufferDataBlock: &s.pristineRootHash},
 			}
+			repo.application = app
 			appAddress := app.IApplicationAddress.String()
 			repo.On("ListEpochs", mock.Anything, appAddress, mock.Anything, repository.Pagination{}, false).
 				Return(epochs, uint64(len(epochs)), nil).Once()
