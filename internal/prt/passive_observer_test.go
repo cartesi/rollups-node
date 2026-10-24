@@ -48,6 +48,14 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 				if !pendingClaim {
 					epoch.Commitment, epoch.MachineHash, epoch.TxBufferDataBlock = nil, nil, nil
 				}
+				if status.IsExecutionTerminal() || status == model.ApplicationStatus_InvalidOutputsRoot {
+					problem := &model.ApplicationProblem{EpochIndex: 0, Kind: status}
+					if status.IsExecutionTerminal() {
+						problem.InputIndex = new(uint64(0))
+					}
+					f.repo.On("GetEpochCompletionState", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).
+						Return(&repository.EpochCompletionState{Application: f.app, Epoch: epoch, Problem: problem}, nil).Maybe()
+				}
 				f.epochs(epoch)
 				f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(1), nil).Once()
 				f.tournament(epoch, *epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
@@ -87,7 +95,7 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 	}
 }
 
-func TestForeclosedInvalidOutputsRootObservesWithoutDrainOrSubmission(t *testing.T) {
+func TestForeclosedInvalidOutputsRootObservesWhileInputDrainPending(t *testing.T) {
 	f := newObserverCheckpointFixture(t)
 	f.s.defaultBlock = model.DefaultBlock_Finalized
 	f.s.submissionEnabled = true
@@ -95,7 +103,7 @@ func TestForeclosedInvalidOutputsRootObservesWithoutDrainOrSubmission(t *testing
 	f.app.Reason = new("epoch 0: declared outputs root does not match the calculated root")
 	f.app.ForecloseBlock = 90
 	f.app.LastEpochCheckBlock, f.app.LastInputCheckBlock = 100, 100
-	require.True(t, f.app.ForeclosureScanCaughtUp(), "health, not scanner readiness, must block the drain")
+	require.True(t, f.app.ForeclosureScanCaughtUp(), "input drain still applies after scanner readiness")
 	epoch := checkpointEpoch(0, "0x100")
 	applyPRTStateProof(epoch, repotest.KeccakStateProof(common.HexToHash("0x1234")))
 	_, err := epoch.StateProof()
@@ -109,6 +117,7 @@ func TestForeclosedInvalidOutputsRootObservesWithoutDrainOrSubmission(t *testing
 				batches[0].Tournament.Snapshot.BondRecovery.Disposition == model.BondDispositionRecoverable
 		}), uint64(100)).Return(nil).Once()
 
+	f.repo.On("HasUndrainedEpochsBeforeBlock", mock.Anything, f.app.ID, f.app.ForecloseBlock).Return(true, nil).Once()
 	err = f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 
 	require.NoError(t, err)
@@ -118,7 +127,6 @@ func TestForeclosedInvalidOutputsRootObservesWithoutDrainOrSubmission(t *testing
 	require.Equal(t, model.EpochStatus_ClaimComputed, epoch.Status)
 	require.Empty(t, f.s.delivery.sender)
 	require.Empty(t, f.s.delivery.rootBondRecoveryScans)
-	f.repo.AssertNotCalled(t, "HasUndrainedEpochsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
 	f.repo.AssertNotCalled(t, "HasUnreconciledClaimsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
 	f.repo.AssertNotCalled(t, "GetLastNonOpenEpochIndex", mock.Anything, mock.Anything)
 	f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)

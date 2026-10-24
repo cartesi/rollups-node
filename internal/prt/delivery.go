@@ -115,7 +115,7 @@ func applicationEligible(app *model.Application, snapshot txsender.BlockRef) err
 	if app.ForecloseBlock > snapshot.Number {
 		return txsender.ErrInconclusive
 	}
-	if app.Status != model.ApplicationStatus_OK || app.IsForeclosed() {
+	if !completionStatusAllowed(app.Status) || app.IsForeclosed() {
 		return txsender.ErrIneligible
 	}
 	return nil
@@ -154,14 +154,38 @@ func (s *delivery) planEpochAction(
 	if revalidating && view.sealed.EpochNumber != expected.Epoch {
 		return nil, txsender.ErrIneligible
 	}
-	epoch, err := s.repository.GetEpoch(ctx, app.IApplicationAddress.Hex(), view.sealed.EpochNumber)
+	state, err := s.repository.GetEpochCompletionState(ctx, app.IApplicationAddress.Hex(), view.sealed.EpochNumber)
 	if err != nil {
 		return nil, err
 	}
-	if revalidating {
-		if epoch == nil {
+	if state == nil || state.Application == nil || state.Application.ID != app.ID {
+		return nil, txsender.ErrIneligible
+	}
+	current := state.Application
+	if current.ConsensusType != model.Consensus_PRT || current.IConsensusAddress != app.IConsensusAddress {
+		return nil, txsender.ErrIneligible
+	}
+	if err := applicationEligible(current, snap); err != nil {
+		return nil, err
+	}
+	if state.Epoch == nil {
+		if retained {
 			return nil, txsender.ErrInconclusive
 		}
+		return nil, txsender.ErrIneligible
+	}
+	allowed, err := state.AllowsEpochCompletion()
+	if err != nil {
+		return nil, fmt.Errorf("%w: application %s epoch %d: %w", txsender.ErrInconclusive, current.Name, view.sealed.EpochNumber, err)
+	}
+	if !allowed {
+		return nil, txsender.ErrIneligible
+	}
+	app, epoch := current, state.Epoch
+	if epoch.Index != view.sealed.EpochNumber {
+		return nil, txsender.ErrInconclusive
+	}
+	if revalidating {
 		if epoch.StagedAtBlock != nil && *epoch.StagedAtBlock > snap.Number {
 			return nil, txsender.ErrInconclusive
 		}
@@ -177,7 +201,7 @@ func (s *delivery) planEpochAction(
 	}
 	// Stored progress selects fresh work. A retained call instead follows the
 	// current protocol state, even if a provisional terminal observation remains.
-	if epoch == nil || !retained && !pendingTournamentResult(epoch) {
+	if !retained && !pendingTournamentResult(epoch) {
 		return nil, txsender.ErrIneligible
 	}
 	if epoch.TournamentAddress == nil || epoch.Commitment == nil || epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {

@@ -51,6 +51,8 @@ type deliveryRepoFake struct {
 	onBoundary      func()
 	onPage          func()
 	publishedRoots  map[string]*model.Tournament
+	problems        map[int64]*model.ApplicationProblem
+	stateRead       func(context.Context, string, uint64) (*repository.EpochCompletionState, error)
 }
 
 func (r *deliveryRepoFake) publishRoot(app *model.Application, epoch *model.Epoch, through uint64) {
@@ -173,6 +175,26 @@ func (r *deliveryRepoFake) GetApplication(_ context.Context, address string) (*m
 	}
 	return nil, repository.ErrNotFound
 }
+func (r *deliveryRepoFake) GetEpochCompletionState(
+	ctx context.Context, address string, index uint64,
+) (*repository.EpochCompletionState, error) {
+	if r.stateRead != nil {
+		return r.stateRead(ctx, address, index)
+	}
+	app, err := r.GetApplication(ctx, address)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	epoch, err := r.GetEpoch(ctx, address, index)
+	if err != nil {
+		return nil, err
+	}
+	return &repository.EpochCompletionState{Application: app, Epoch: epoch, Problem: r.problems[app.ID]}, nil
+}
+
 func (r *deliveryRepoFake) GetApplicationIDBoundary(context.Context, repository.ApplicationFilter) (int64, error) {
 	if r.onBoundary != nil {
 		r.onBoundary()

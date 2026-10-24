@@ -45,6 +45,14 @@ func (m *prtRepositoryMock) GetApplication(ctx context.Context, address string) 
 	return app, args.Error(1)
 }
 
+func (m *prtRepositoryMock) GetEpochCompletionState(
+	ctx context.Context, address string, index uint64,
+) (*repository.EpochCompletionState, error) {
+	args := m.Called(ctx, address, index)
+	state, _ := args.Get(0).(*repository.EpochCompletionState)
+	return state, args.Error(1)
+}
+
 func (m *prtRepositoryMock) GetApplicationIDBoundary(ctx context.Context, filter repository.ApplicationFilter) (int64, error) {
 	args := m.Called(ctx, filter)
 	return args.Get(0).(int64), args.Error(1)
