@@ -450,12 +450,12 @@ func (r *PostgresRepository) selectClaimsPage(
 		ConsensusTypes: []model.Consensus{model.Consensus_Authority, model.Consensus_Quorum}}
 	// Rotate over applications with work in this source. Observers keep every
 	// health status; publisher cursors exclude applications that cannot send.
-	next, err := r.nextClaimApplication(ctx, cursor.AfterApplicationID, status, cursor.HealthyOnly)
+	next, err := r.nextClaimApplication(ctx, cursor.AfterApplicationID, status, cursor.PublishableOnly)
 	if err != nil {
 		return repository.ClaimPage{}, err
 	}
 	if next == 0 && cursor.AfterApplicationID != 0 {
-		next, err = r.nextClaimApplication(ctx, 0, status, cursor.HealthyOnly)
+		next, err = r.nextClaimApplication(ctx, 0, status, cursor.PublishableOnly)
 		if err != nil {
 			return repository.ClaimPage{}, err
 		}
@@ -475,7 +475,7 @@ func (r *PostgresRepository) selectClaimsPage(
 		return page, err
 	}
 	defer rollbackDeliveryTx(tx)
-	oldest, err := claimWindowRows(ctx, tx, app.ID, status, nil, 1)
+	oldest, err := claimWindowRows(ctx, tx, app.ID, status, nil, 1, cursor.PublishableOnly)
 	if err != nil {
 		return page, err
 	}
@@ -487,7 +487,7 @@ func (r *PostgresRepository) selectClaimsPage(
 	if saved, ok := cursor.Epochs[app.ID]; ok && saved > after {
 		after = saved
 	}
-	later, err := claimWindowRows(ctx, tx, app.ID, status, &after, int64(limit))
+	later, err := claimWindowRows(ctx, tx, app.ID, status, &after, int64(limit), cursor.PublishableOnly)
 	if err != nil {
 		return repository.ClaimPage{}, err
 	}
@@ -502,19 +502,21 @@ func (r *PostgresRepository) selectClaimsPage(
 }
 
 func (r *PostgresRepository) nextClaimApplication(
-	ctx context.Context, after int64, status model.EpochStatus, healthyOnly bool,
+	ctx context.Context, after int64, status model.EpochStatus, publishableOnly bool,
 ) (int64, error) {
-	pending := table.Epoch.SELECT(table.Epoch.ApplicationID).WHERE(table.Epoch.ApplicationID.EQ(table.Application.ID).
-		AND(table.Epoch.Status.EQ(postgres.NewEnumValue(status.String()))))
+	pendingConditions := []postgres.BoolExpression{
+		table.Epoch.ApplicationID.EQ(table.Application.ID),
+		table.Epoch.Status.EQ(postgres.NewEnumValue(status.String())),
+	}
+	if publishableOnly {
+		pendingConditions = append(pendingConditions, claimPublicationCondition())
+	}
+	pending := table.Epoch.SELECT(table.Epoch.ApplicationID).WHERE(postgres.AND(pendingConditions...))
 	conditions := []postgres.BoolExpression{
 		table.Application.Enabled.EQ(postgres.Bool(true)),
 		table.Application.ConsensusType.IN(enum.Consensus.Authority, enum.Consensus.Quorum),
 		table.Application.ID.GT(postgres.Int64(after)),
 		postgres.EXISTS(pending),
-	}
-	if healthyOnly {
-		conditions = append(conditions, table.Application.Status.EQ(enum.ApplicationStatus.Ok),
-			table.Application.ForecloseBlock.EQ(uint64Expr(0)))
 	}
 	stmt := table.Application.SELECT(table.Application.ID).WHERE(postgres.AND(conditions...)).
 		ORDER_BY(table.Application.ID.ASC()).LIMIT(1)
@@ -528,13 +530,29 @@ func (r *PostgresRepository) nextClaimApplication(
 	return id, nil
 }
 
+// Discovery must not spend publisher turns on FAILED/DC, foreclosure, or a
+// suffix with no permitted epoch. The domain rechecks the coherent source
+// before signing and again before POST.
+func claimPublicationCondition() postgres.BoolExpression {
+	return table.Application.Status.IN(enum.ApplicationStatus.Ok, enum.ApplicationStatus.GuestException,
+		enum.ApplicationStatus.MachineHalted, enum.ApplicationStatus.McycleOverflow,
+		enum.ApplicationStatus.UnexpectedYield, enum.ApplicationStatus.InvalidOutputsRoot).
+		AND(table.Application.ForecloseBlock.EQ(uint64Expr(0))).
+		AND(table.Application.ProblemEpochIndex.IS_NULL().AND(table.Application.Status.EQ(enum.ApplicationStatus.Ok)).
+			OR(table.Epoch.Index.LT(table.Application.ProblemEpochIndex)))
+}
+
 func claimWindowRows(
-	ctx context.Context, tx pgx.Tx, appID int64, status model.EpochStatus, after *uint64, limit int64,
+	ctx context.Context, tx pgx.Tx, appID int64, status model.EpochStatus, after *uint64, limit int64, publishableOnly bool,
 ) ([]*model.Epoch, error) {
 	conditions := []postgres.BoolExpression{table.Epoch.ApplicationID.EQ(postgres.Int64(appID)),
 		table.Epoch.Status.EQ(postgres.NewEnumValue(status.String()))}
 	if after != nil {
 		conditions = append(conditions, table.Epoch.Index.GT(uint64Expr(*after)))
+	}
+	if publishableOnly {
+		conditions = append(conditions, postgres.EXISTS(table.Application.SELECT(table.Application.ID).
+			WHERE(table.Application.ID.EQ(table.Epoch.ApplicationID).AND(claimPublicationCondition()))))
 	}
 	stmt := table.Epoch.SELECT(table.Epoch.ApplicationID, table.Epoch.Index, table.Epoch.FirstBlock, table.Epoch.LastBlock,
 		table.Epoch.MachineHash, table.Epoch.TxBufferDataBlock, table.Epoch.TxBufferProof,

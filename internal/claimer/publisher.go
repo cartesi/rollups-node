@@ -33,9 +33,11 @@ type claimPublisher struct {
 	backend                                               txsender.Backend
 	sender                                                *txsender.Sender[claimAction]
 	signer                                                common.Address
+	observationPolicy                                     model.DefaultBlock
 	Logger                                                *slog.Logger
 	interval                                              time.Duration
 	cooldowns                                             map[claimAction]time.Time
+	stagingWarnings                                       map[claimAction]time.Time
 	pages                                                 [candidatePageCount]repository.ClaimCursor
 	failure                                               *atomic.Pointer[error]
 	candidates                                            []claimCandidate
@@ -100,6 +102,11 @@ func (s *claimPublisher) tick(ctx context.Context) error {
 	for action, until := range s.cooldowns {
 		if !now.Before(until) {
 			delete(s.cooldowns, action)
+		}
+	}
+	for epoch, until := range s.stagingWarnings {
+		if !now.Before(until) {
+			delete(s.stagingWarnings, epoch)
 		}
 	}
 	var result error
@@ -212,6 +219,23 @@ func (s *claimPublisher) decorate(candidate claimCandidate) txsender.Request {
 	return request
 }
 
+// Staging warnings have their own per-epoch clock: a different refusal must
+// not hide this cause, and a diagnostic must not delay an otherwise useful action.
+func (s *claimPublisher) warnStagingContradiction(app *model.Application, epoch *model.Epoch, latest uint64) {
+	key := claimAction{ApplicationID: app.ID, Address: app.IApplicationAddress, Epoch: epoch.Index}
+	now := time.Now()
+	if now.Before(s.stagingWarnings[key]) {
+		return
+	}
+	if s.stagingWarnings == nil {
+		s.stagingWarnings = make(map[claimAction]time.Time)
+	}
+	s.Logger.Warn("Claim publication waiting: recorded staging contradicts latest view",
+		"application", app.Name, "address", app.IApplicationAddress, "epoch", epoch.Index,
+		"staged_at_block", *epoch.StagedAtBlock, "latest_block", latest, "observation_policy", s.observationPolicy)
+	s.stagingWarnings[key] = now.Add(claimWarningInterval)
+}
+
 func (s *claimPublisher) prepareCandidates(ctx context.Context, block txsender.BlockRef) error {
 	var result error
 	// Each source reserves later-row capacity. All rows in these windows are
@@ -229,7 +253,7 @@ func (s *claimPublisher) prepareCandidates(ctx context.Context, block txsender.B
 		if source.kind == repairCandidatePage {
 			query = s.repository.SelectClaimsToStagePage
 		}
-		s.pages[source.kind].HealthyOnly = true
+		s.pages[source.kind].PublishableOnly = true
 		page, err := query(ctx, s.pages[source.kind], source.size)
 		if err != nil {
 			result = errors.Join(result, err)
@@ -238,9 +262,6 @@ func (s *claimPublisher) prepareCandidates(ctx context.Context, block txsender.B
 		s.pages[source.kind].AfterApplicationID = page.ApplicationID
 		for _, work := range page.Work {
 			s.pages[source.kind].Advance(work, page)
-			if !work.Application.Enabled || work.Application.Status != model.ApplicationStatus_OK {
-				continue
-			}
 			candidate, state, err := s.decide(ctx, block, work, false)
 			if err != nil {
 				var mismatch *claimSignerMismatch

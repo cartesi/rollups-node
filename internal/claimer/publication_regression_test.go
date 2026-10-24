@@ -48,7 +48,7 @@ func TestClaimOperationalRefusalsRecoverWithoutApplicationPause(t *testing.T) {
 	require.Len(t, backend.published, 1, "funding restores publication without operator action")
 }
 
-func TestHeldClaimReadFailureCannotSwitchToAnotherApplication(t *testing.T) {
+func TestHeldClaimReadFailureAloneDoesNotJustifyReplacement(t *testing.T) {
 	s, backend, lookup := newDeliveryFixture(t)
 	app, _ := queueDelivery(t, backend, lookup, 1)
 	require.NoError(t, s.publisher.tick(t.Context()))
@@ -59,7 +59,7 @@ func TestHeldClaimReadFailureCannotSwitchToAnotherApplication(t *testing.T) {
 	require.ErrorIs(t, err, failure)
 	require.ErrorContains(t, err, "application "+app.IApplicationAddress.Hex())
 	require.ErrorContains(t, err, "action authority-submit, epoch 3, nonce 0")
-	require.Len(t, backend.published, 1, "unrelated readable work cannot replace a request on failed-read evidence")
+	require.Len(t, backend.published, 1, "read failure alone supplies no cancellation or replacement evidence")
 }
 
 func TestClaimSubmissionWaitsPastFinalBlockWithoutDelayingAcceptance(t *testing.T) {

@@ -305,7 +305,11 @@ func (s *Service) planComputedClaim(
 	currEpoch *model.Epoch,
 	defaultBlockNumber *big.Int,
 ) claimStepResult {
-	if !app.Enabled || app.Status != model.ApplicationStatus_OK || app.ForecloseBlock != 0 {
+	// This diagnoses persisted proof integrity; publication has its own coherent
+	// epoch eligibility check. A later execution stop must not hide a DC finding.
+	status := app.Status
+	if !app.Enabled || app.ForecloseBlock != 0 ||
+		(status != model.ApplicationStatus_OK && !status.IsExecutionTerminal() && status != model.ApplicationStatus_InvalidOutputsRoot) {
 		return claimNoProgress()
 	}
 	_, err := currEpoch.StateProof()

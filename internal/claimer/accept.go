@@ -219,13 +219,21 @@ func (s *Service) handlePreAcceptClaimStatus(
 				txsender.ErrInconclusive, currEpoch.Index, currentBlock)), true
 		}
 		// A finalized view at or above the stored staging block contradicts
-		// this fact. Keep the recoverable diagnosis for operator repair.
-		if ferr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
+		// the persisted history. Under an execution/root stop, FAILED cannot
+		// replace the terminal status; persist the integrity finding instead.
+		reason := fmt.Sprintf(
 			"getClaim returned UNSTAGED for epoch %d (%d) recorded as CLAIM_STAGED at block %d; "+
-				"current block %d. Check chain configuration and provisional-state reorgs; "+
-				"rollback is unsupported. Repair stored state before re-enabling.",
-			currEpoch.Index, currEpoch.VirtualIndex,
-			*currEpoch.StagedAtBlock, currentBlock); ferr != nil {
+				"current block %d. Check the RPC endpoint and the registered chain's history; "+
+				"rollback is unsupported.",
+			currEpoch.Index, currEpoch.VirtualIndex, *currEpoch.StagedAtBlock, currentBlock)
+		if app.Status.IsExecutionTerminal() || app.Status == model.ApplicationStatus_InvalidOutputsRoot {
+			reason += " This integrity finding is terminal and stops claim work and foreclosure drain. " +
+				"Rebuild and re-ingest into a fresh database after correcting the cause; re-enabling cannot clear CORRUPTED."
+			return claimRetryLater(appstatus.SetCorrupted(ctx, s.Logger, s.repository, app, reason)), true
+		}
+		reason += " Restore a coherent endpoint for the registered chain before re-enabling the application. " +
+			"If the persisted history no longer matches that chain, rebuild and re-ingest into a fresh database."
+		if ferr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, reason); ferr != nil {
 			return claimRetryLater(fmt.Errorf("marking app FAILED on UNSTAGED pre-accept getClaim: %w", ferr)), true
 		}
 		return claimNoProgress(), true
@@ -245,9 +253,10 @@ func (s *Service) handlePreAcceptClaimStatus(
 	default:
 		// getClaim returned a ClaimStatus this node does not model (the enum is
 		// 0/1/2). This is not a transient hiccup: the value came from a typed
-		// view call, so the IConsensus contract is most likely a newer version
-		// than this node. Mark the app FAILED (recoverable) so an operator sees
-		// it, rather than skipping silently every tick forever.
+		// view call, so the IConsensus contract may be newer than this node.
+		// SetFailed records a recoverable failure only while the application is
+		// nonterminal; it preserves ET/IOR. The publisher independently refuses
+		// this epoch with ErrUnsupported in either case.
 		if ferr := appstatus.SetFailedf(ctx, s.Logger, s.repository, app,
 			"getClaim returned unmodeled ClaimStatus %d for epoch %d (%d) — this node models "+
 				"only 0/1/2. The IConsensus contract may be newer than this node supports; "+

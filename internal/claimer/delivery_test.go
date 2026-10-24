@@ -40,6 +40,7 @@ type deliveryLookup struct {
 	missingNil  bool
 	pageErr     error
 	hidden      map[int64]bool
+	problems    map[int64]*model.ApplicationProblem
 }
 
 func (r *deliveryLookup) add(app *model.Application, epoch *model.Epoch) {
@@ -78,6 +79,26 @@ func (r *deliveryLookup) GetEpoch(_ context.Context, address string, index uint6
 		return nil, repository.ErrNotFound
 	}
 	return epoch, nil
+}
+
+func (r *deliveryLookup) GetEpochCompletionState(
+	ctx context.Context, address string, index uint64,
+) (*repository.EpochCompletionState, error) {
+	app, err := r.GetApplication(ctx, address)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil || app == nil {
+		return nil, err
+	}
+	epoch, err := r.GetEpoch(ctx, address, index)
+	if errors.Is(err, repository.ErrNotFound) {
+		err = nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &repository.EpochCompletionState{Application: app, Epoch: epoch, Problem: r.problems[app.ID]}, nil
 }
 
 type deliveryBackend struct {
@@ -300,7 +321,7 @@ func newDeliveryFixture(t *testing.T, policies ...model.DefaultBlock) (*Service,
 	s.defaultBlock = selected
 	s.publisher = &claimPublisher{
 		repository: &deliveryCandidateRepository{lookup: lookup}, lookup: lookup, backend: backend,
-		signer: opts.From, Logger: s.Logger,
+		signer: opts.From, Logger: s.Logger, observationPolicy: selected,
 		cooldowns: map[claimAction]time.Time{}, failure: &s.failure,
 	}
 	s.publisher.sender, err = txsender.New[claimAction](backend, ethutil.NewStaticTransactOptsFactory(opts), 31337, policy,
@@ -326,10 +347,10 @@ func (r *deliveryCandidateRepository) page(after repository.ClaimCursor, limit u
 	for address, app := range r.lookup.apps {
 		pending := false
 		for _, epoch := range r.lookup.epochs[address] {
-			pending = pending || epoch.Status == status
+			publishable := !after.PublishableOnly || fixtureClaimPublishable(app, epoch, r.lookup.problems[app.ID])
+			pending = pending || epoch.Status == status && publishable
 		}
-		healthy := app.Status == model.ApplicationStatus_OK && app.ForecloseBlock == 0
-		if app.Enabled && !r.lookup.hidden[app.ID] && pending && (!after.HealthyOnly || healthy) {
+		if app.Enabled && !r.lookup.hidden[app.ID] && pending {
 			ids = append(ids, app.ID)
 		}
 	}
@@ -351,7 +372,7 @@ func (r *deliveryCandidateRepository) page(after repository.ClaimCursor, limit u
 		}
 		var epochs []*model.Epoch
 		for _, epoch := range r.lookup.epochs[address] {
-			if epoch.Status == status {
+			if epoch.Status == status && (!after.PublishableOnly || fixtureClaimPublishable(app, epoch, r.lookup.problems[app.ID])) {
 				epochs = append(epochs, epoch)
 			}
 		}

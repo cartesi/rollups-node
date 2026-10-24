@@ -199,7 +199,7 @@ func TestClaimObserverKeepsUnhealthyApplicationsInEveryPageSource(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, repo.pageReads, 3)
 	for _, cursor := range repo.pageReads {
-		require.False(t, cursor.HealthyOnly, "only publisher pages may filter stopped or foreclosed applications")
+		require.False(t, cursor.PublishableOnly, "only publisher pages may filter stopped or foreclosed applications")
 	}
 	repo.AssertExpectations(t)
 	blockchain.AssertExpectations(t)

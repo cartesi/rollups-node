@@ -309,7 +309,7 @@ func TestClaimPublisherPagesSkipStoppedApplicationsBeforePagination(t *testing.T
 	for _, query := range []func(context.Context, repository.ClaimCursor, uint64) (repository.ClaimPage, error){
 		r.SelectClaimsToSubmitPage, r.SelectClaimsToStagePage, r.SelectClaimsToAcceptPage,
 	} {
-		cursor := repository.ClaimCursor{HealthyOnly: true}
+		cursor := repository.ClaimCursor{PublishableOnly: true}
 		for _, expected := range []int64{first.ID, second.ID, first.ID} {
 			page, err := query(t.Context(), cursor, 2)
 			require.NoError(t, err)
@@ -337,7 +337,7 @@ func TestClaimPublisherPageMembershipChangesAcrossWrap(t *testing.T) {
 	for _, app := range []*model.Application{first, second} {
 		seedClaimPageEpochs(t, r, app, model.EpochStatus_ClaimComputed)
 	}
-	cursor := repository.ClaimCursor{HealthyOnly: true}
+	cursor := repository.ClaimCursor{PublishableOnly: true}
 	page, err := r.SelectClaimsToSubmitPage(t.Context(), cursor, 2)
 	require.NoError(t, err)
 	require.Equal(t, first.ID, page.ApplicationID)
@@ -354,4 +354,53 @@ func TestClaimPublisherPageMembershipChangesAcrossWrap(t *testing.T) {
 	page, err = r.SelectClaimsToSubmitPage(t.Context(), cursor, 2)
 	require.NoError(t, err)
 	require.Equal(t, second.ID, page.ApplicationID, "a repaired app rejoins after wrapping; disabled apps stay excluded")
+}
+
+func TestClaimPublisherPagesSelectOnlyTerminalPrefix(t *testing.T) {
+	for _, kind := range []model.ApplicationStatus{model.ApplicationStatus_MachineHalted, model.ApplicationStatus_InvalidOutputsRoot} {
+		for _, status := range []model.EpochStatus{model.EpochStatus_ClaimComputed,
+			model.EpochStatus_ClaimSubmitted, model.EpochStatus_ClaimStaged} {
+			t.Run(kind.String()+"/"+status.String(), func(t *testing.T) {
+				r := newEpochPublicationRepository(t).(*PostgresRepository)
+				app := repotest.NewApplicationBuilder().Create(t.Context(), t, r)
+				seedClaimPageEpochs(t, r, app, status, status, status, status, status)
+				// Source production/rollback has separate real-writer tests.
+				// Keep suffix rows here to check both SQL pagination gates.
+				var input *uint64
+				if kind.IsExecutionTerminal() {
+					input = new(uint64(99))
+				}
+				_, err := r.db.Exec(t.Context(), `UPDATE application SET status=$2, reason='prefix pagination fixture',
+                    problem_epoch_index=2,
+                    problem_kind=$2, problem_input_index=$3 WHERE id=$1`, app.ID, kind, input)
+				require.NoError(t, err)
+				query := r.SelectClaimsToSubmitPage
+				if status == model.EpochStatus_ClaimSubmitted {
+					query = r.SelectClaimsToStagePage
+				}
+				if status == model.EpochStatus_ClaimStaged {
+					query = r.SelectClaimsToAcceptPage
+				}
+				cursor := repository.ClaimCursor{PublishableOnly: true}
+				for range 3 {
+					page, err := query(t.Context(), cursor, 2)
+					require.NoError(t, err)
+					require.Equal(t, app.ID, page.ApplicationID)
+					require.Len(t, page.Work, 2)
+					require.Equal(t, uint64(0), page.Work[0].Epoch.Index)
+					require.Equal(t, uint64(1), page.Work[1].Epoch.Index)
+					consumeClaimPage(&cursor, page)
+				}
+				page, err := query(t.Context(), repository.ClaimCursor{}, 16)
+				require.NoError(t, err)
+				require.Len(t, page.Work, 5, "observation keeps every stored claim")
+				_, err = r.db.Exec(t.Context(), `UPDATE application SET problem_epoch_index=0 WHERE id=$1`, app.ID)
+				require.NoError(t, err)
+				page, err = query(t.Context(), repository.ClaimCursor{PublishableOnly: true}, 16)
+				require.NoError(t, err)
+				require.Empty(t, page.Work, "an application with no eligible prefix consumes no turn")
+				require.Zero(t, page.ApplicationID)
+			})
+		}
+	}
 }

@@ -157,6 +157,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 			repository: c.Repository, lookup: c.Repository, backend: backend,
 			signer: s.signer, Logger: s.Logger, interval: c.Config.ClaimerPollingInterval,
 			failure: &s.failure, cooldowns: map[claimAction]time.Time{},
+			observationPolicy: nodeConfig.DefaultBlock,
 		}
 		publisher.sender, err = txsender.New[claimAction](backend, txOptsFactory, chainID.Uint64(), policy,
 			s.guardClaimPublication, s.Logger)

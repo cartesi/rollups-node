@@ -47,8 +47,7 @@ type claimCandidate struct {
 }
 
 type claimLookup interface {
-	GetApplication(context.Context, string) (*model.Application, error)
-	GetEpoch(context.Context, string, uint64) (*model.Epoch, error)
+	GetEpochCompletionState(context.Context, string, uint64) (*repository.EpochCompletionState, error)
 }
 
 type claimSignerMismatch struct{ reason string }
@@ -98,14 +97,17 @@ func claimCall(app *model.Application, epoch *model.Epoch, proof model.StateProo
 func (s *claimPublisher) decide(
 	ctx context.Context, block txsender.BlockRef, work repository.ClaimWork, held bool,
 ) (claimCandidate, txsender.Eligibility, error) {
-	app, err := s.lookup.GetApplication(ctx, work.Application.IApplicationAddress.Hex())
-	if errors.Is(err, repository.ErrNotFound) || (err == nil && app == nil) {
-		return claimCandidate{}, txsender.Obsolete, nil
-	}
+	state, err := s.lookup.GetEpochCompletionState(ctx, work.Application.IApplicationAddress.Hex(), work.Epoch.Index)
 	if err != nil {
 		return claimCandidate{}, 0, err
 	}
-	if app.ID != work.Application.ID || !app.Enabled || app.Status != model.ApplicationStatus_OK ||
+	if state == nil || state.Application == nil {
+		return claimCandidate{}, txsender.Obsolete, nil
+	}
+	app := state.Application
+	status := app.Status
+	if app.ID != work.Application.ID || !app.Enabled ||
+		(status != model.ApplicationStatus_OK && !status.IsExecutionTerminal() && status != model.ApplicationStatus_InvalidOutputsRoot) ||
 		(app.ConsensusType != model.Consensus_Authority && app.ConsensusType != model.Consensus_Quorum) {
 		return claimCandidate{}, txsender.Obsolete, nil
 	}
@@ -115,14 +117,21 @@ func (s *claimPublisher) decide(
 	if app.ForecloseBlock != 0 {
 		return claimCandidate{}, txsender.Obsolete, nil
 	}
-	epoch, err := s.lookup.GetEpoch(ctx, app.IApplicationAddress.Hex(), work.Epoch.Index)
-	if errors.Is(err, repository.ErrNotFound) || (err == nil && epoch == nil) {
-		return claimCandidate{}, 0, fmt.Errorf("%w: application %s (%s), epoch %d: stored claim source is unavailable",
-			txsender.ErrInconclusive, app.Name, app.IApplicationAddress, work.Epoch.Index)
+	if state.Epoch == nil {
+		if held {
+			return claimCandidate{}, 0, txsender.ErrInconclusive
+		}
+		return claimCandidate{}, txsender.Obsolete, nil
 	}
+	allowed, err := state.AllowsEpochCompletion()
 	if err != nil {
-		return claimCandidate{}, 0, err
+		return claimCandidate{}, 0, fmt.Errorf("%w: application %s (%s), epoch %d: %w",
+			txsender.ErrInconclusive, app.Name, app.IApplicationAddress, work.Epoch.Index, err)
 	}
+	if !allowed {
+		return claimCandidate{}, txsender.Obsolete, nil
+	}
+	epoch := state.Epoch
 	if epoch.Index != work.Epoch.Index || epoch.ApplicationID != app.ID {
 		return claimCandidate{}, txsender.Obsolete, nil
 	}
@@ -207,6 +216,15 @@ func (s *claimPublisher) decide(
 		}
 		return candidate, txsender.Useful, nil
 	case claimStatusUnstaged:
+		// Publication reads latest. A persisted stage under a non-provisional
+		// observation policy cannot be repaired by resubmission: leave the
+		// contradiction visible for the independently running observer.
+		// requireObservedStaging above already excludes a head below the fact.
+		if epoch.Status == model.EpochStatus_ClaimStaged && !s.observationPolicy.Provisional() {
+			s.warnStagingContradiction(app, epoch, block.Number)
+			return claimCandidate{}, 0, fmt.Errorf("%w: epoch %d recorded as CLAIM_STAGED is UNSTAGED at block %d",
+				txsender.ErrInconclusive, epoch.Index, block.Number)
+		}
 		// submitClaim requires a block strictly after the epoch's final block.
 		// This wait does not apply to accepting an already staged claim.
 		if block.Number == epoch.LastBlock {
