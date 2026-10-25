@@ -358,6 +358,10 @@ CREATE TABLE "epoch"
 
 CREATE INDEX "epoch_last_block_idx" ON "epoch"("application_id", "last_block");
 CREATE INDEX "epoch_status_idx" ON "epoch"("application_id", "status");
+-- Seek unpublished epochs without walking an INPUTS_PROCESSED prefix. At the
+-- caught-up A/Q foreclosure frontier there is at most one OPEN boundary epoch.
+CREATE INDEX "epoch_unpublished_idx" ON "epoch"("application_id", "first_block")
+    WHERE "status" IN ('OPEN','CLOSED');
 -- Supports HasUnreconciledClaimsBeforeBlock: the broad Authority/Quorum drain
 -- gate scans epoch rows for (application_id, first_block <= $foreclose_block)
 -- restricted to the set of actionable pre-terminal statuses. A partial index keyed on

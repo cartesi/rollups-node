@@ -1807,6 +1807,15 @@ func (m *MockMachineRepository) HasUndrainedEpochsBeforeBlock(
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockMachineRepository) HasUnpublishedEpochBeforeBlock(
+	ctx context.Context,
+	appID int64,
+	blockBound uint64,
+) (bool, error) {
+	args := m.Called(ctx, appID, blockBound)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockMachineRepository) GetLastSnapshot(
 	ctx context.Context,
 	nameOrAddress string) (*model.Input, error) {
