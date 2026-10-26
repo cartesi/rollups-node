@@ -29,10 +29,12 @@ func TestComputationHashDimensions(t *testing.T) {
 	require.Equal(t, uint64(1)<<24, MaxAdvanceStatesPerEpoch)
 	require.Equal(
 		t,
-		model.Log2InputHashCollectionCapacity,
+		model.Log2InputComputationHashLeafCount,
 		Log2MaxMCyclesPerAdvanceState-Log2MCycleComputationHashPeriod,
-		"the execution window and sampling period must derive the protocol input hash collection capacity",
+		"the execution window and sampling period derive the sample count",
 	)
+	require.Equal(t, model.Log2InputHashCollectionCapacity, model.Log2InputComputationHashLeafCount-Log2StateHashesPerEntry)
+	require.Equal(t, uint64(0), Log2StateHashesPerEntry)
 }
 
 func TestComputationHashCollectionChunkMatchesEmulatorCLI(t *testing.T) {

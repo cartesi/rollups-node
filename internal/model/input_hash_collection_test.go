@@ -4,9 +4,13 @@
 package model
 
 import (
+	"encoding/binary"
+	"fmt"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/sha3"
 )
 
 func TestInputHashCollectionDimensions(t *testing.T) {
@@ -16,6 +20,12 @@ func TestInputHashCollectionDimensions(t *testing.T) {
 	require.Equal(t, uint64(24), Log2InputHashCollectionCapacity)
 	require.Equal(t, uint64(1)<<24, InputHashCollectionCapacity)
 	require.Equal(t, uint64(48), Log2EpochComputationHashLeafCount)
+	require.Equal(t, uint64(20), Log2MaxUarchCyclesPerMCycle)
+	require.Equal(t, uint64(44), Log2RootTournamentStride)
+	require.Equal(t, uint64(24), Log2MCycleComputationHashPeriod)
+	require.Equal(t, uint64(24), Log2MCyclesPerStateHashEntry)
+	require.Equal(t, uint64(0), Log2StateHashesPerEntry)
+	require.Equal(t, uint64(24), Log2InputComputationHashLeafCount)
 }
 
 func TestValidateInputHashCollectionSpan(t *testing.T) {
@@ -43,4 +53,134 @@ func TestValidateInputHashCollectionSpan(t *testing.T) {
 			}
 		})
 	}
+}
+
+// denseEntryRoot builds every level from explicit leaves with a separate Keccak implementation.
+func denseEntryRoot(leaves [][32]byte) [32]byte {
+	level := append([][32]byte(nil), leaves...)
+	for len(level) > 1 {
+		next := make([][32]byte, len(level)/2)
+		for index := range next {
+			hasher := sha3.NewLegacyKeccak256()
+			_, _ = hasher.Write(level[2*index][:])
+			_, _ = hasher.Write(level[2*index+1][:])
+			hasher.Sum(next[index][:0])
+		}
+		level = next
+	}
+	return level[0]
+}
+
+func TestRepeatedStateHashRootMatchesDenseTree(t *testing.T) {
+	hash := common.HexToHash("0x123456789abcdef")
+	require.Equal(t, hash, RepeatedStateHashRoot(hash, 0))
+	leaves := make([][32]byte, 64)
+	for index := range leaves {
+		leaves[index] = hash
+	}
+	require.Equal(t, common.Hash(denseEntryRoot(leaves)), RepeatedStateHashRoot(hash, 6))
+	require.Equal(t, RepeatedStateHashRoot(hash, Log2StateHashesPerEntry), FinalStateEntry(hash))
+}
+
+// denseTerminalEntries follows sample pushes, bundle completion, and final padding.
+func denseTerminalEntries(periodic [][32]byte, final [32]byte, width int) (raw, kept [][32]byte) {
+	leaves := append(append([][32]byte(nil), periodic...), final)
+	for start := 0; start < len(leaves); start += width {
+		bundle := make([][32]byte, width)
+		for index := range bundle {
+			bundle[index] = final
+			if start+index < len(leaves) {
+				bundle[index] = leaves[start+index]
+			}
+		}
+		entry := denseEntryRoot(bundle)
+		raw = append(raw, entry)
+		if start < len(periodic) {
+			kept = append(kept, entry)
+		}
+	}
+	if width > 1 {
+		padding := make([][32]byte, width)
+		for index := range padding {
+			padding[index] = final
+		}
+		raw = append(raw, denseEntryRoot(padding))
+	}
+	return raw, kept
+}
+
+func TestCanonicalInputHashCollectionMatchesDenseSamples(t *testing.T) {
+	final := [32]byte{0xff}
+	for _, geometry := range [][2]uint64{{24, 0}} {
+		period, width := uint64(1)<<geometry[0], 1<<geometry[1]
+		sampleCounts := []uint64{0, 1, 63, 64, 65, 127, 128, 191}
+		deltas := make([]uint64, 1, 1+3*len(sampleCounts))
+		for _, samples := range sampleCounts {
+			boundary := (samples + 1) * period
+			deltas = append(deltas, boundary-1, boundary, boundary+1)
+		}
+		for _, delta := range deltas {
+			t.Run(fmt.Sprintf("period=%d/k=%d/delta=%d", geometry[0], geometry[1], delta), func(t *testing.T) {
+				var periodic [][32]byte
+				for cycle := period; cycle < delta; cycle += period {
+					var leaf [32]byte
+					binary.BigEndian.PutUint64(leaf[:8], cycle)
+					periodic = append(periodic, leaf)
+				}
+				raw, wantKept := denseTerminalEntries(periodic, final, width)
+				before := append([][32]byte(nil), raw...)
+				kept, padding, gotFinal, err := CanonicalInputHashCollection(raw, delta)
+				require.NoError(t, err)
+				require.Equal(t, wantKept, append([][32]byte(nil), kept...))
+				require.Equal(t, InputHashCollectionCapacity-uint64(len(wantKept)), padding)
+				require.Equal(t, raw[len(raw)-1], gotFinal)
+				require.Equal(t, before, raw)
+			})
+		}
+	}
+}
+
+func TestCanonicalInputHashCollectionFoldsFinalOnlyEntries(t *testing.T) {
+	final, sampled := [32]byte{0xff}, [32]byte{0x11}
+	const period = uint64(1) << 24
+	for _, test := range []struct {
+		name      string
+		delta     uint64
+		raw, kept [][32]byte
+	}{
+		{name: "immediate fixed point", raw: [][32]byte{final}},
+		{name: "periodic sample", delta: period + 1, raw: [][32]byte{sampled, final}, kept: [][32]byte{sampled}},
+		{name: "periodic entry equals final", delta: period + 1, raw: [][32]byte{final, final}, kept: [][32]byte{final}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			kept, padding, gotFinal, err := CanonicalInputHashCollection(test.raw, test.delta)
+			require.NoError(t, err)
+			require.Equal(t, test.kept, append([][32]byte(nil), kept...))
+			require.Equal(t, (uint64(1)<<24)-uint64(len(test.kept)), padding)
+			require.Equal(t, final, gotFinal)
+		})
+	}
+	for _, raw := range [][][32]byte{nil, {final, final}, {final, final, final}} {
+		_, _, _, err := CanonicalInputHashCollection(raw, 0)
+		require.ErrorContains(t, err, "state hash entries, expected 1")
+	}
+}
+
+func TestCanonicalInputHashCollectionWindowCounts(t *testing.T) {
+	const totalSamples = uint64(1) << 24
+	for _, removed := range []uint64{128, 127, 65, 64, 63, 1} {
+		t.Run(fmt.Sprintf("samples=%d", totalSamples-removed), func(t *testing.T) {
+			delta := ((totalSamples - removed) << 24) + 1
+			raw, kept, padding, err := canonicalInputHashCollectionCounts(delta)
+			require.NoError(t, err)
+			require.Equal(t, totalSamples-removed+1, raw)
+			require.Equal(t, totalSamples-removed, kept)
+			require.Equal(t, removed, padding)
+		})
+	}
+	raw, kept, padding, err := canonicalInputHashCollectionCounts(MaxExecutionCycleSpan)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1)<<24, raw)
+	require.Equal(t, (uint64(1)<<24)-1, kept)
+	require.Equal(t, uint64(1), padding)
 }

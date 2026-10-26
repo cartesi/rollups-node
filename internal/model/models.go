@@ -1372,15 +1372,17 @@ func copyStateProofSiblings(siblings []common.Hash) [][32]byte {
 
 type AdvanceResult struct {
 	StateProof
-	EpochIndex          uint64
-	InputIndex          uint64
-	Status              InputCompletionStatus
-	Outputs             [][]byte
-	Reports             [][]byte
-	ExceptionData       []byte
+	EpochIndex    uint64
+	InputIndex    uint64
+	Status        InputCompletionStatus
+	Outputs       [][]byte
+	Reports       [][]byte
+	ExceptionData []byte
+	// PeriodicStateHashes holds sampled entry roots; see input_hash_collection.go.
 	PeriodicStateHashes [][32]byte
-	PaddingRepetitions  uint64
-	IsDaveConsensus     bool
+	// PaddingRepetitions counts final-state entries; see input_hash_collection.go.
+	PaddingRepetitions uint64
+	IsDaveConsensus    bool
 }
 
 // ReplaySummary identifies the immutable completed-input prefix selected for
@@ -1405,9 +1407,8 @@ type ReplayInput struct {
 	TxBufferDataBlock *common.Hash
 }
 
-// ReplayStateHash is one persisted row of a PRT input hash collection. Keeping
-// this projection narrow matters because one input may contain millions of
-// rows.
+// ReplayStateHash is a persisted entry row, as defined in input_hash_collection.go.
+// Repetitions counts entries. Index is a row ordinal in the epoch.
 type ReplayStateHash struct {
 	Index       uint64
 	MachineHash common.Hash
@@ -1796,6 +1797,8 @@ func WinnerCommitmentFromUint8(v uint8) (WinnerCommitment, error) {
 	}
 }
 
+// StateHash is a persisted collection entry, as defined in input_hash_collection.go.
+// Index is the epoch row ordinal. Rows are consecutive in input order; Repetitions counts entries.
 type StateHash struct {
 	InputEpochApplicationID int64       `sql:"primary_key" json:"-"`
 	EpochIndex              uint64      `json:"epoch_index"`
