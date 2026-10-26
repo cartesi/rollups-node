@@ -338,34 +338,22 @@ const (
 )
 
 type MachineRuntimeConfig struct {
-	Concurrency       *ConcurrencyRuntimeConfig `json:"concurrency,omitempty"`
-	Htif              *HtifRuntimeConfig        `json:"htif,omitempty"`
-	SkipRootHashCheck bool                      `json:"skip_root_hash_check"`
-	SkipRootHashStore bool                      `json:"skip_root_hash_store"`
-	SkipVersionCheck  bool                      `json:"skip_version_check"`
-	SoftYield         bool                      `json:"soft_yield"`
-}
-
-type HtifRuntimeConfig struct {
-	NoConsolePutchar bool `json:"no_console_putchar"`
+	Concurrency      *ConcurrencyRuntimeConfig `json:"concurrency,omitempty"`
+	SkipVersionCheck bool                      `json:"skip_version_check"`
+	SoftYield        bool                      `json:"soft_yield"`
 }
 
 type ConcurrencyRuntimeConfig struct {
-	UpdateMerkleTree uint64 `json:"update_merkle_tree"`
+	UpdateHashTree uint64 `json:"update_hash_tree"`
 }
 
 func NewMachineRuntimeConfig() *MachineRuntimeConfig {
 	return &MachineRuntimeConfig{
 		Concurrency: &ConcurrencyRuntimeConfig{
-			UpdateMerkleTree: 0,
+			UpdateHashTree: 0,
 		},
-		Htif: &HtifRuntimeConfig{
-			NoConsolePutchar: false,
-		},
-		SkipRootHashCheck: false,
-		SkipRootHashStore: false,
-		SkipVersionCheck:  false,
-		SoftYield:         false,
+		SkipVersionCheck: false,
+		SoftYield:        false,
 	}
 }
 
