@@ -26,6 +26,7 @@ type EchoPrtSuite struct {
 }
 
 func TestEchoPrt(t *testing.T) {
+	t.Run("cleanup after cancellation", testEchoPrtCleanup)
 	suite.Run(t, new(EchoPrtSuite))
 }
 
@@ -51,8 +52,10 @@ func (s *EchoPrtSuite) SetupTest() {
 func (s *EchoPrtSuite) TearDownTest() {
 	defer s.cancel()
 	if s.appName != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
 		s.T().Logf("Disabling application %s", s.appName)
-		if err := disableApplication(s.ctx, s.appName); err != nil {
+		if err := disableApplication(ctx, s.appName); err != nil {
 			s.T().Errorf("failed to disable application %s: %v", s.appName, err)
 		}
 	}

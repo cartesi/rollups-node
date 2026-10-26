@@ -169,6 +169,7 @@ func TestPRTStageIsPersistedOnlyWhenTrustedHeadCatchesUp(t *testing.T) {
 	f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, repository.Pagination{}, false).
 		Return([]*model.Epoch{f.epoch}, uint64(1), nil).Twice()
 	expectPRTBlockSnapshot(f, 100, unstaged)
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), f.epoch)
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, observerFacts(100)))
 	assertPRTPlanDidNotWrite(t, f)
 	staged := resultTestSnapshot(f.epoch, true)
@@ -177,6 +178,7 @@ func TestPRTStageIsPersistedOnlyWhenTrustedHeadCatchesUp(t *testing.T) {
 	f.repo.publishRoot(f.app, f.epoch, 119)
 	expectPRTBlockSnapshot(f, 119, staged)
 	f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, f.epoch.Index, uint64(118)).Return(nil).Once()
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(119), f.epoch)
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, observerFacts(119)))
 	require.Equal(t, model.EpochStatus_ClaimStaged, f.epoch.Status)
 	require.Equal(t, new(uint64(118)), f.epoch.StagedAtBlock)
@@ -247,6 +249,7 @@ func TestPRTObserverStopsAtTrustedHead(t *testing.T) {
 			})).Return(&TournamentEvents{}, nil).Once()
 			adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 			f.checkpoint.emptyParticipants(f.epoch, *f.epoch.TournamentAddress)
+			expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
 			require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.facts))
 			require.Len(t, f.repo.windows, 1)
 			require.Equal(t, uint64(100), f.repo.windows[0].ThroughBlock)
@@ -302,6 +305,7 @@ func TestPRTReaderUsesOnlyConfiguredHead(t *testing.T) {
 	f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, repository.Pagination{}, false).
 		Return([]*model.Epoch{f.epoch}, uint64(1), nil).Once()
 	f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, f.epoch.Index, uint64(99)).Return(nil).Once()
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), f.epoch)
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, observerFacts(100)))
 	require.Equal(t, model.EpochStatus_ClaimStaged, f.epoch.Status)
 	require.Empty(t, f.backend.headerReads)

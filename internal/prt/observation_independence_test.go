@@ -37,6 +37,7 @@ func TestObservationHasNoPublicationTimeShare(t *testing.T) {
 	f.repo.storedTournaments = nil
 	f.d.repository = &slowObservationRepository{deliveryRepoFake: f.repo, delay: 40 * time.Millisecond}
 	tickHead(client, 110)
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(110))
 	_, err := f.d.Tick(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, f.backend.headerReads)

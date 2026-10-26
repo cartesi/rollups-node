@@ -20,7 +20,7 @@ func (s *delivery) tick(ctx context.Context) (err error) {
 	defer func() {
 		if txsender.HardFailure(err) {
 			s.stopPublication(err)
-			s.reportHardPublicationFailure(err)
+			s.reportHardPublicationFailure(ctx, err)
 		}
 	}()
 	if s.publicationStopped() {

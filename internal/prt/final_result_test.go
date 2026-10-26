@@ -78,6 +78,9 @@ func TestTournamentFinalResultObserverIgnoresCommitmentIdentity(t *testing.T) {
 			} else {
 				statusWrite.Maybe()
 			}
+			if falseState {
+				expectStoredProtection(t, repo, app, epoch)
+			}
 			deferred, err := service.reconcileAcceptedEpochs(t.Context(), app, []*model.Epoch{epoch}, nil, 100)
 			if falseState {
 				require.ErrorContains(t, err, "inconsistent machine hash")
@@ -118,6 +121,9 @@ func TestTournamentFinalResultObservationChecksBothComponents(t *testing.T) {
 					model.ApplicationStatus_Diverged, mock.Anything).Return(nil).Once()
 				f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, f.epoch.Index,
 					view.sealed.StagingBlockNumber).Return(nil).Maybe()
+			}
+			if component != matchingFinalResult {
+				expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
 			}
 			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
 			if component == matchingFinalResult {

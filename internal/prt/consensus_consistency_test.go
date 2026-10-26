@@ -31,6 +31,7 @@ func TestInconsistentConsensusViewsRetryWithoutWritesAndReportPersistentFailure(
 			ready := f.d.Ready()
 			for _, head := range []uint64{101, 101, 102, 103, 104, 105} {
 				tickHead(client, head)
+				expectProtectionReads(t, f.factory, f.consensus, observerFacts(head), f.epoch)
 				reschedule, err := f.d.Tick(t.Context())
 				require.NoError(t, err, "inconsistent views retry without an ERROR from the tick loop")
 				require.False(t, reschedule)
@@ -71,6 +72,7 @@ func TestFinalizedStagingClockContradictionPreservesSavedStage(t *testing.T) {
 					return reason != nil && strings.Contains(*reason, "staging block inconsistent with DaveConsensus")
 				})).Return(nil).Once()
 
+			expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
 			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
 			require.ErrorContains(t, err, "staging block inconsistent with DaveConsensus")
 			require.Equal(t, model.ApplicationStatus_Corrupted, f.app.Status)

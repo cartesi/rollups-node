@@ -188,9 +188,16 @@ func (s *delivery) reportPublicationError(ctx context.Context, err error) {
 	s.diagnostics.warnedPublication = time.Now()
 }
 
-func (s *delivery) reportHardPublicationFailure(err error) {
+func (s *delivery) reportHardPublicationFailure(ctx context.Context, err error) {
 	if warningDue(s.diagnostics.warnedHardFailure) {
 		s.Logger.Error("PRT publication stopped by a protected-state contradiction; operator intervention required", "error", err)
 		s.diagnostics.warnedHardFailure = time.Now()
+		filter := repository.ApplicationFilter{ConsensusType: new(model.Consensus_PRT), Enabled: new(true)}
+		through, readErr := s.repository.GetApplicationIDBoundary(ctx, filter)
+		if readErr != nil {
+			s.Logger.Error("PRT global stop deadline discovery unavailable", "clock_available", false, "cause", errors.Join(err, readErr))
+			return
+		}
+		s.reportGlobalProtectionStop(ctx, through, err)
 	}
 }

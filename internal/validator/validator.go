@@ -19,6 +19,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/prtprotection"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/service"
 )
@@ -104,6 +105,7 @@ func (s *Service) Tick(ctx context.Context) (reschedule bool, err error) {
 }
 
 type ValidatorRepository interface {
+	prtprotection.Repository
 	ListApplications(
 		ctx context.Context, f repository.ApplicationFilter, p repository.Pagination, descending bool,
 	) ([]*Application, uint64, error)
@@ -149,7 +151,10 @@ func getProcessedEpochs(ctx context.Context, er ValidatorRepository, address str
 }
 
 func (s *Service) setApplicationCorrupted(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetCorruptedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
+	reason := fmt.Sprintf(reasonFmt, args...)
+	err := appstatus.SetCorrupted(ctx, s.Logger, s.repository, app, reason)
+	prtprotection.ReportStop(ctx, s.Logger, s.repository, app, 0, errors.New(reason))
+	return err
 }
 
 // validateApplication calculates, validates and stores the claim and/or proofs
@@ -320,6 +325,7 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 			if err := s.repository.StoreInvalidOutputsRoot(ctx, app.ID, epoch.Index, reason); err != nil {
 				return fmt.Errorf("recording invalid outputs root for application %s epoch %d: %w", appAddress, epoch.Index, err)
 			}
+			prtprotection.ReportStop(ctx, s.Logger, s.repository, app, epoch.Index, errors.New(reason))
 			s.Logger.Error("Invalid outputs root recorded", "application", app.Name, "address", appAddress,
 				"epoch_index", epoch.Index, "reason", reason)
 			return errors.New(reason)
@@ -457,6 +463,7 @@ func (s *Service) proveCommitment(
 		// newly built tree is an internal error, even an out-of-range child index.
 		failure := fmt.Errorf("failed to retrieve commitment proof for epoch %d of application %s: %w", epoch.Index, app.Name, err)
 		statusErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, failure.Error())
+		prtprotection.ReportStop(ctx, s.Logger, s.repository, app, 0, failure)
 		return nil, nil, errors.Join(failure, statusErr)
 	}
 	// PRT reconstructs the root children from (epoch.MachineHash, proof).

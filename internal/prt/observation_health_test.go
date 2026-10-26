@@ -166,6 +166,8 @@ func TestTournamentObservationHealthKeepsHealthyApplicationsRunning(t *testing.T
 	f.consensus.On("TournamentLevelCount", mock.Anything).Return(uint64(0), errors.New("invalid descriptor"))
 	for head := uint64(101); head < 107; head++ {
 		tickHead(client, head)
+		expectProtectionReads(t, f.factory, f.consensus, observerFacts(head), f.epoch)
+		expectProtectionReads(t, f.factory, consensus, observerFacts(head))
 		_, err := f.d.Tick(t.Context())
 		require.ErrorContains(t, err, "invalid descriptor")
 		require.Equal(t, uint64(100), healthy.LastTournamentCheckBlock, "a healthy app with no tournament has no new coverage to record")

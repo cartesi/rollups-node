@@ -46,6 +46,7 @@ func TestOrdinaryApplicationObservationDoesNotRunForeclosureDrain(t *testing.T) 
 	f.consensus.On("CanStageTournamentResult", opts).Return(view.stage, nil)
 	f.consensus.On("CanAcceptStagedTournamentResult", opts).Return(view.accept, nil)
 	f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).Return([]*model.Epoch{}, uint64(0), nil)
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, observerFacts(100)))
 	f.repo.AssertNotCalled(t, "HasUndrainedEpochsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
 }
@@ -61,6 +62,7 @@ func TestObserveRetainsTerminalApplicationStatus(t *testing.T) {
 			f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).Return([]*model.Epoch{}, uint64(0), nil)
 			f.repo.publishedRoots = nil
 			tickHead(client, 110)
+			expectProtectionReads(t, f.factory, f.consensus, observerFacts(110))
 			require.NoError(t, f.d.observe(t.Context()))
 			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock, "empty observation does not invent coverage")
 			require.Equal(t, status, f.app.Status)
@@ -78,6 +80,7 @@ func TestForeclosureDrainDefersNewerSavedForeclosure(t *testing.T) {
 	f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).
 		Return([]*model.Epoch{}, uint64(0), nil).Once()
 
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
 	err := f.d.observeApplication(t.Context(), f.app, observerFacts(100))
 	require.ErrorIs(t, err, txsender.ErrInconclusive)
 	f.repo.AssertNotCalled(t, "HasUndrainedEpochsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)

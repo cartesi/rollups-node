@@ -48,6 +48,9 @@ func TestDeliveryHardPublicationFailureLatchesReadiness(t *testing.T) {
 			f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).Return([]*model.Epoch{}, uint64(0), nil)
 			tickHead(client, 100)
 			f.backend.headerError = cause
+			if errors.Is(cause, txsender.ErrFinality) || errors.Is(cause, txsender.ErrContent) {
+				expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
+			}
 			err := f.d.tick(t.Context())
 			require.ErrorIs(t, err, cause)
 			hard := errors.Is(cause, txsender.ErrFinality) || errors.Is(cause, txsender.ErrContent)
@@ -69,6 +72,7 @@ func TestDeliveryHardObservationFailureBlocksSamePassPublication(t *testing.T) {
 	f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).
 		Return([]*model.Epoch(nil), uint64(0), txsender.ErrUnsupported)
 	tickHead(client, 100)
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
 	_, err := f.d.Tick(t.Context())
 	require.ErrorIs(t, err, txsender.ErrUnsupported)
 	require.False(t, f.d.publicationStopped())

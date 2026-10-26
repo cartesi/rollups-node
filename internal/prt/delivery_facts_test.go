@@ -104,6 +104,7 @@ func TestObservedComputedEpochIncompleteProofMarksCorrupted(t *testing.T) {
 			}
 			f.repo.On("UpdateApplicationStatus", mock.Anything, f.app.ID, model.ApplicationStatus_Corrupted,
 				mock.Anything).Return(nil).Once()
+			expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
 			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
 			require.ErrorContains(t, err, "persisted machine state proof is incomplete")
 			require.Equal(t, model.ApplicationStatus_Corrupted, f.app.Status)

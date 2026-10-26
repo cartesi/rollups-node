@@ -73,6 +73,7 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 					f.consensus.On("CanAcceptStagedTournamentResult", opts).Return(snapshot.accept, nil).Once()
 					f.repo.On("GetEpoch", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).Return(epoch, nil).Once()
 				}
+				expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
 				err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 				require.NoError(t, err)
 				require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
@@ -86,7 +87,7 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 				if status != model.ApplicationStatus_OK {
 					// Tick must stop after observation, before any result-action
 					// query. An unexpected broadcast also fails the strict mocks.
-					f.consensus.AssertNotCalled(t, "GetCurrentSealedEpoch", mock.Anything)
+					f.consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 1)
 					f.consensus.AssertNotCalled(t, "CanStageTournamentResult", mock.Anything)
 					f.consensus.AssertNotCalled(t, "CanAcceptStagedTournamentResult", mock.Anything)
 				}
@@ -118,6 +119,9 @@ func TestForeclosedInvalidOutputsRootObservesWhileInputDrainPending(t *testing.T
 		}), uint64(100)).Return(nil).Once()
 
 	f.repo.On("HasUndrainedEpochsBeforeBlock", mock.Anything, f.app.ID, f.app.ForecloseBlock).Return(true, nil).Once()
+	f.repo.On("GetEpochCompletionState", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).
+		Return(&repository.EpochCompletionState{Application: f.app, Epoch: epoch, Problem: prtTestProblem(f.app.Status, 0)}, nil).Once()
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
 	err = f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 
 	require.NoError(t, err)
@@ -133,7 +137,7 @@ func TestForeclosedInvalidOutputsRootObservesWhileInputDrainPending(t *testing.T
 	// The strict tournament mocks permit observation only. A join or recovery
 	// broadcast would fail, as would a new latest-block read for either action.
 	f.client.AssertNotCalled(t, "BlockNumber", mock.Anything)
-	f.consensus.AssertNotCalled(t, "GetCurrentSealedEpoch", mock.Anything)
+	f.consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 1)
 }
 
 func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
@@ -160,6 +164,7 @@ func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
 	f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, epoch.Index, uint64(95)).
 		Run(func(mock.Arguments) { require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock) }).Return(nil).Once()
 
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
 	err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 	require.NoError(t, err)
 	require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
@@ -214,6 +219,7 @@ func TestFalseFinalStatePublishesBeforeLocalDivergence(t *testing.T) {
 			require.NotNil(t, published)
 			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 		}).Return(nil).Once()
+	expectStoredProtection(t, f.repo, f.app, epoch)
 	deferActions, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
 	require.ErrorContains(t, err, "inconsistent machine hash")
 	require.True(t, deferActions)

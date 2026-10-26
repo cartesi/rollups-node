@@ -15,6 +15,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/prtprotection"
 	"github.com/cartesi/rollups-node/internal/repository"
 )
 
@@ -28,6 +29,7 @@ var (
 
 // AdvancerRepository defines the repository interface needed by the Advancer service
 type AdvancerRepository interface {
+	prtprotection.Repository
 	ListEpochs(
 		ctx context.Context, nameOrAddress string, f repository.EpochFilter, p repository.Pagination, descending bool,
 	) ([]*Epoch, uint64, error)
@@ -326,6 +328,8 @@ func (s *Service) processInputs(
 		// Store the result in the database
 		err = s.repository.StoreAdvanceResult(ctx, input.EpochApplicationID, result)
 		if err != nil {
+			stopLogger := s.Logger.With("origin_application", app.Name, "origin_address", app.IApplicationAddress,
+				"origin_epoch", input.EpochIndex)
 			var errCause string
 			switch {
 			case errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err):
@@ -359,7 +363,12 @@ func (s *Service) processInputs(
 					"epoch", input.EpochIndex,
 					"index", input.Index,
 					"error", err)
-				s.supervisor.Fatal(fmt.Errorf("unconfirmed advance result for %s: %w", app.Name, err))
+				if app.IsDaveConsensus() {
+					prtprotection.ReportUnavailable(s.Logger.With("epoch_index", input.EpochIndex), app, err)
+				}
+				persistenceFailure := fmt.Errorf("unconfirmed advance result for %s: %w", app.Name, err)
+				prtprotection.ReportGlobalUnavailable(stopLogger, persistenceFailure)
+				s.supervisor.Fatal(persistenceFailure)
 			}
 
 			// Try to close the machine now so the already-advanced runtime cannot
@@ -372,13 +381,17 @@ func (s *Service) processInputs(
 				s.Logger.Error("Could not close the machine after "+errCause,
 					"application", app.Name,
 					"error", closeErr)
-				s.supervisor.Fatal(fmt.Errorf("close machine for %s after %s: %w", app.Name, errCause, closeErr))
+				closeFailure := fmt.Errorf("close machine for %s after %s: %w", app.Name, errCause, closeErr)
+				prtprotection.ReportGlobalUnavailable(stopLogger, closeFailure)
+				s.supervisor.Fatal(closeFailure)
 			}
 			return processed, false, errors.Join(err, closeErr)
 		}
 		processed++
 		if result.Status.IsTerminal() {
 			applicationStatus, _ := result.Status.TerminalApplicationStatus()
+			prtprotection.ReportStop(ctx, s.Logger, s.repository, app, result.EpochIndex,
+				fmt.Errorf("execution terminated: %s", applicationStatus))
 			s.Logger.Error("Application execution terminated",
 				"application", app.Name,
 				"address", app.IApplicationAddress,
@@ -433,6 +446,7 @@ func (s *Service) markApplicationFailed(ctx context.Context, app *Application, r
 			"db_error", err,
 		)
 	}
+	prtprotection.ReportStop(ctx, s.Logger, s.repository, app, 0, errors.New(reason))
 }
 
 func (s *Service) isEpochLastInput(ctx context.Context, app *Application, input *Input) (bool, error) {
