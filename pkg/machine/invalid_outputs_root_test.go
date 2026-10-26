@@ -33,7 +33,7 @@ func (s *ImplementationSuite) TestAdvanceOutputsRootLength() {
 					backend.On("RunAndCollectRootHashes", mock.Anything, mock.Anything, mock.Anything).
 						Run(func(args mock.Arguments) {
 							collector := args.Get(1).(*HashCollectorState)
-							collector.Hashes = []Hash{periodic, {0x22}}
+							collectTestEntries(collector, 1, true, periodic, Hash{0x22})
 						}).Return(YieldedManually, nil).Once()
 				} else {
 					backend.On("Run", mock.Anything, mock.Anything).Return(YieldedManually, nil).Once()
@@ -54,8 +54,9 @@ func (s *ImplementationSuite) TestAdvanceOutputsRootLength() {
 				s.Equal(want, result.Status)
 				s.Nil(result.ExceptionData)
 				if collect {
-					s.Equal([]Hash{periodic}, result.PeriodicStateHashes)
-					s.Equal(InputEntryCapacity-1, result.PaddingRepetitions)
+					s.Empty(result.PeriodicStateHashes)
+					s.Equal(InputEntryCapacity, result.PaddingRepetitions)
+					s.Equal(Hash(model.FinalStateEntry(Hash{0x22})), result.FinalStateEntry)
 				} else {
 					s.Empty(result.PeriodicStateHashes)
 					s.Zero(result.PaddingRepetitions)

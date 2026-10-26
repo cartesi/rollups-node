@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -144,4 +145,33 @@ func TestCollectUarchCycleRootHashes_AcceptsOpaqueRevertTail(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rawResult, &result))
 	require.NotEmpty(t, result.Hashes)
 	require.Equal(t, "reached_target_mcycle", result.BreakReason)
+}
+
+func TestCollectMCycleBundlesMatchDenseSamples(t *testing.T) {
+	for _, height := range []int32{2, 6} {
+		plain := collectMCycleRootHashes(t, createLoopMachine(t), 256, 2, 0, 0, nil)
+		bundled := collectMCycleRootHashes(t, createLoopMachine(t), 256, 2, 0, height, nil)
+		width := 1 << height
+		require.Len(t, plain.Hashes, 64)
+		require.Len(t, bundled.Hashes, len(plain.Hashes)/width)
+		for entry, encoded := range bundled.Hashes {
+			level := make([]Hash, width)
+			for index := range level {
+				data, err := base64.StdEncoding.DecodeString(plain.Hashes[entry*width+index])
+				require.NoError(t, err)
+				require.Len(t, data, 32)
+				copy(level[index][:], data)
+			}
+			for len(level) > 1 {
+				next := make([]Hash, len(level)/2)
+				for index := range next {
+					next[index] = crypto.Keccak256Hash(level[2*index][:], level[2*index+1][:])
+				}
+				level = next
+			}
+			data, err := base64.StdEncoding.DecodeString(encoded)
+			require.NoError(t, err)
+			require.Equal(t, level[0][:], data)
+		}
+	}
 }

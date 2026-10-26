@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/emulator"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -120,6 +122,9 @@ func TestSaturatedEndpointPreservesEmulatorCompletion(t *testing.T) {
 			response, err := machine.Advance(t.Context(), []byte("input"), before, test.collect)
 			require.NoError(t, err)
 			require.Equal(t, test.want, response.Status)
+			if test.collect && test.reason == emulator.ManualYieldReasonRejected {
+				require.Equal(t, Hash(model.FinalStateEntry(common.Hash(before))), response.FinalStateEntry)
+			}
 		})
 	}
 }

@@ -37,11 +37,11 @@ func TestComputationHashDimensions(t *testing.T) {
 	require.Equal(t, uint64(0), Log2StateHashesPerEntry)
 }
 
-func TestComputationHashCollectionChunkMatchesEmulatorCLI(t *testing.T) {
+func TestComputationHashCollectionChunkBoundsSamplesPerCall(t *testing.T) {
 	require.Equal(
 		t,
 		MCycleComputationHashPeriod<<8,
 		mcycleComputationHashChunkSize,
-		"cartesi-machine 0.21 targets 2^8 returned hashes per collection call",
+		"a collection call spans at most 2^8 sampling periods, plus a possible fixed-point sample",
 	)
 }

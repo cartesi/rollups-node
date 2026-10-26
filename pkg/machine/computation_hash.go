@@ -3,11 +3,7 @@
 
 package machine
 
-import (
-	"fmt"
-
-	"github.com/cartesi/rollups-node/internal/model"
-)
+import "github.com/cartesi/rollups-node/internal/model"
 
 const (
 	// Log2MaxUarchCyclesPerMCycle is the emulator's
@@ -85,10 +81,9 @@ const (
 	// INPUT_SPAN_TO_EPOCH + 1.
 	MaxAdvanceStatesPerEpoch uint64 = model.MaxAdvanceStatesPerEpoch
 
-	// Emulator 0.21's CLI targets roughly 2^8 returned hashes per collection
-	// call. Applying the same bound prevents a large execution increment from
-	// producing a multi-million-entry JSON-RPC response without changing the
-	// sampling sequence.
+	// Each collection call spans at most 2^8 sampling periods. It can also
+	// collect a fixed-point sample at its endpoint. This bounds per-call
+	// hashing work but does not guarantee completion within its deadline.
 	log2ComputationHashEntriesPerChunk uint64 = 8
 	mcycleComputationHashChunkSize     uint64 = MCycleComputationHashPeriod << log2ComputationHashEntriesPerChunk
 )
@@ -99,18 +94,4 @@ const (
 // padding shape separately.
 func ValidateInputHashCollectionSpan(hashCount, paddingRepetitions uint64) error {
 	return model.ValidateInputHashCollectionSpan(hashCount, paddingRepetitions)
-}
-
-// inputHashCollectionPaddingRepetitions returns the final-state repetitions
-// needed after hashCount periodic samples to fill one input entry capacity. The
-// capacity check guards the subtraction below against uint64 underflow.
-func inputHashCollectionPaddingRepetitions(hashCount uint64) (uint64, error) {
-	if hashCount > InputEntryCapacity {
-		return 0, fmt.Errorf(
-			"collected state hash count %d exceeds input entry capacity %d",
-			hashCount,
-			InputEntryCapacity,
-		)
-	}
-	return InputEntryCapacity - hashCount, nil
 }
