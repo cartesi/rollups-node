@@ -20,6 +20,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/prtprotection"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
@@ -140,11 +141,17 @@ func getAllSubTournaments(
 }
 
 func (s *Service) setApplicationDiverged(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetDivergedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
+	reason := fmt.Sprintf(reasonFmt, args...)
+	err := appstatus.SetDiverged(ctx, s.Logger, s.repository, app, reason)
+	prtprotection.ReportStop(ctx, s.Logger, s.repository, app, 0, errors.New(reason))
+	return err
 }
 
 func (s *Service) setApplicationCorrupted(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetCorruptedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
+	reason := fmt.Sprintf(reasonFmt, args...)
+	err := appstatus.SetCorrupted(ctx, s.Logger, s.repository, app, reason)
+	prtprotection.ReportStop(ctx, s.Logger, s.repository, app, 0, errors.New(reason))
+	return err
 }
 
 func (s *Service) readTournament(

@@ -147,6 +147,7 @@ func rootValidationFixture() (*Mockrepo, *Service, *model.Application, *model.Ep
 func expectRootValidationReads(
 	repo *Mockrepo, app *model.Application, epoch *model.Epoch, input *model.Input, outputs []*model.Output,
 ) {
+	expectNoStoredProtectionRoots(repo, app)
 	appAddress := app.IApplicationAddress.String()
 	// A later epoch must remain unprocessed after the first finding.
 	epochs := []*model.Epoch{epoch, {ApplicationID: app.ID, Index: 1, VirtualIndex: 1}}

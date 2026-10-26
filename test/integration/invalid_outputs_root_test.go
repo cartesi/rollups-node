@@ -106,6 +106,16 @@ func (s *TerminalMachineStatesSuite) TestInvalidTemplateOutputsRootInFirstPrtEpo
 	s.Require().NoError(err)
 	s.Require().Zero(epoch.InputIndexLowerBound)
 	s.Require().Zero(epoch.InputIndexUpperBound, "the first sealed epoch must contain no inputs")
+	rpc := jsonrpcclient.NewClient(envOrDefault("CARTESI_JSONRPC_API_URL", "http://localhost:10011/rpc"))
+	app := s.getApplication(rpc)
+	s.Require().NotNil(app.Reason)
+	client := newIntegrationEthClient(ctx, s.T())
+	defer client.Close()
+	root, closeBlock := prtProtectionEnd(ctx, s.T(), client, app.IConsensusAddress, 0)
+	for _, source := range []string{prtStoredClockSource, prtPinnedClockSource} {
+		requirePrtProtectionLogs(ctx, s.T(), &s.LogChecker, prtProtectionStopLog(s.appName, app.IApplicationAddress,
+			0, root, closeBlock, *app.Reason, source))
+	}
 }
 
 func (s *TerminalMachineStatesSuite) requireInvalidOutputsRoot(ctx context.Context, epochIndex, processed uint64) {

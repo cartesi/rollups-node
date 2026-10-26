@@ -318,6 +318,7 @@ func TestObservedResultRequiresLocalMachineHash(t *testing.T) {
 		mock.MatchedBy(func(reason *string) bool {
 			return reason != nil && strings.Contains(*reason, "missing required fields")
 		})).Return(nil).Once()
+	expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
 	err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
 	require.ErrorContains(t, err, "missing required fields")
 	require.Equal(t, model.ApplicationStatus_Corrupted, f.app.Status)
@@ -336,6 +337,9 @@ func TestObservedResultChecksLocalMachineState(t *testing.T) {
 			} else {
 				f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, f.epoch.Index,
 					view.sealed.StagingBlockNumber).Return(nil).Once()
+			}
+			if mismatch {
+				expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
 			}
 			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
 			if mismatch {

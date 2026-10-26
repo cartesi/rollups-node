@@ -15,6 +15,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/prtprotection"
 	"github.com/cartesi/rollups-node/internal/replay"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/machine"
@@ -28,6 +29,7 @@ var (
 
 // MachineRepository defines the repository interface needed by the MachineManager
 type MachineRepository interface {
+	prtprotection.Repository
 	repository.ReplayRepository
 
 	// ListApplications retrieves applications based on filter criteria
@@ -373,6 +375,7 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 			appLogger.Error(logMessage, "error", err)
 			if shouldFence {
 				m.FenceApplicationFailure(app, reason)
+				m.ReportProtectionStop(ctx, app, errors.New(reason))
 				fenced[app.ID] = struct{}{}
 				appPersistenceErr = m.persistApplicationFailure(ctx, app.ID)
 			}
@@ -707,4 +710,10 @@ func foreclosedMachineDrainFilter() repository.ApplicationFilter {
 		Status:              new(model.ApplicationStatus_OK),
 		ForeclosureRecorded: new(true),
 	}
+}
+
+// ReportProtectionStop reports open PRT obligations after a local failure fence.
+// Callers must release the manager lock before reading repository metadata.
+func (m *MachineManager) ReportProtectionStop(ctx context.Context, app *model.Application, cause error) {
+	prtprotection.ReportStop(ctx, m.logger, m.repository, app, 0, cause)
 }

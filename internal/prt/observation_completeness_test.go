@@ -91,6 +91,7 @@ func TestIncompleteTournamentEventsRetryTheSameIntervalAndKeepPersistentAlarm(t 
 			for head := uint64(101); head <= 106; head++ {
 				client.On("HeaderByNumber", mock.Anything, big.NewInt(selected.tag.Int64())).
 					Return(&types.Header{Number: new(big.Int).SetUint64(head)}, nil).Once()
+				expectProtectionReads(t, f.factory, f.consensus, observerFacts(head), f.epoch)
 				reschedule, err := f.d.Tick(t.Context())
 				require.NoError(t, err, "a count/page disagreement must retry without a per-pass ERROR")
 				require.False(t, reschedule)

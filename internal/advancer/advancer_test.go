@@ -356,11 +356,14 @@ func (s *AdvancerSuite) TestStep() {
 			pkgmachine.ErrReachedLimitMcycle,
 		)
 		limited.AdvanceError = limitErr
+		limited.Application.ConsensusType = Consensus_PRT
+		root := common.HexToAddress("0x777")
 		mm.Map[limited.Application.ID] = newMockInstance(limited)
 		mm.Map[healthy.Application.ID] = newMockInstance(healthy)
 		repo := &MockRepository{
 			GetEpochsReturn: map[common.Address][]*Epoch{
-				limited.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
+				limited.Application.IApplicationAddress: {{ApplicationID: limited.Application.ID,
+					Index: 0, Status: EpochStatus_Closed, TournamentAddress: &root}},
 				healthy.Application.IApplicationAddress: {{Index: 0, Status: EpochStatus_Open}},
 			},
 			GetInputsReturn: map[common.Address][]*Input{
@@ -372,9 +375,12 @@ func (s *AdvancerSuite) TestStep() {
 				},
 			},
 			UpdateApplicationStatusError: errors.New("FAILED write unavailable"),
+			TournamentReadError:          errors.New("root metadata read unavailable"),
 		}
 		svc, err := newMockAdvancerService(mm, repo)
 		require.NoError(err)
+		logs := &advancerLogCapture{}
+		svc.Logger = slog.New(logs)
 
 		_, err = svc.Step(context.Background())
 
@@ -386,6 +392,8 @@ func (s *AdvancerSuite) TestStep() {
 		require.False(svc.Ready(), "an unconfirmed FAILED write must fail readiness immediately")
 		require.Len(repo.StoredResults, 1, "the healthy sibling must still advance")
 		require.Equal(healthy.Application.ID, repo.StoredAppIDs[0])
+		require.Equal([]common.Address{root}, repo.TournamentReads)
+		require.True(logs.contains(slog.LevelError, "PRT protection stopped"))
 	})
 }
 
@@ -2397,6 +2405,10 @@ func (m *MockMachineInstance) Close() error {
 // ------------------------------------------------------------------------------------------------
 
 type MockRepository struct {
+	EpochFilters                 []repository.EpochFilter
+	Tournaments                  map[common.Address]*Tournament
+	TournamentReadError          error
+	TournamentReads              []common.Address
 	GetEpochsReturn              map[common.Address][]*Epoch
 	GetEpochsError               error
 	GetEpochsBlock               bool
@@ -2434,10 +2446,13 @@ type MockRepository struct {
 func (mock *MockRepository) ListEpochs(
 	ctx context.Context,
 	nameOrAddress string,
-	_ repository.EpochFilter,
+	filter repository.EpochFilter,
 	_ repository.Pagination,
 	_ bool,
 ) ([]*Epoch, uint64, error) {
+	mock.mu.Lock()
+	mock.EpochFilters = append(mock.EpochFilters, filter)
+	mock.mu.Unlock()
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return nil, 0, ctx.Err()
@@ -2822,4 +2837,12 @@ func (s *AdvancerSuite) TestStoreAdvanceShutdownClassification() {
 			}
 		})
 	}
+}
+
+func (mock *MockRepository) GetTournament(_ context.Context, _ string, address string) (*Tournament, error) {
+	root := common.HexToAddress(address)
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	mock.TournamentReads = append(mock.TournamentReads, root)
+	return mock.Tournaments[root], mock.TournamentReadError
 }

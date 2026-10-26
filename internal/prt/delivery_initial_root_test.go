@@ -25,6 +25,8 @@ func TestDeliveryFirstRootDiscoveredAfterEmptyObserveDoesNotNeedAnotherBlock(t *
 	f.repo.publishedRoots = nil
 	f.d.repository = &initialRootRepository{f.repo}
 	f.checkpoint.epochs()
+	f.consensus.On("GetCurrentSealedEpoch", protectionOpts(f.facts)).Return(CurrentSealedEpoch{}, nil).Once()
+	expectProtectionReads(t, f.factory, f.consensus, f.facts)
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.facts))
 	require.Zero(t, f.app.LastTournamentCheckBlock, "an empty initial observation cannot suppress same-head root discovery")
 	require.Empty(t, f.repo.windows)
@@ -60,6 +62,7 @@ func TestDeliveryFirstRootDiscoveredAfterEmptyObserveDoesNotNeedAnotherBlock(t *
 	})).Return(&TournamentEvents{}, nil).Once()
 	adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 	f.checkpoint.emptyParticipants(f.epoch, address)
+	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.facts))
 	require.Len(t, f.repo.windows, 1)
 	window := f.repo.windows[0]

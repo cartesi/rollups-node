@@ -180,6 +180,7 @@ func TestCanonicalAcceptanceReceiptStillDetectsDivergence(t *testing.T) {
 				Return(nil).Once()
 			f.repo.On("UpdateEpochWithAcceptedClaim", mock.Anything, f.app.ID, f.epoch.Index, f.epoch.ClaimTransactionHash).
 				Return(nil).Maybe()
+			expectStoredProtection(t, f.repo, f.app, f.epoch)
 			deferActions, err := f.service.reconcileAcceptedEpochs(t.Context(), f.app, []*model.Epoch{f.epoch}, f.consensus, 100)
 			require.ErrorContains(t, err, "inconsistent")
 			require.True(t, deferActions)

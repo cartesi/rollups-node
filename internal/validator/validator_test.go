@@ -41,6 +41,7 @@ func expectCorrupted(app *Application, reasonSubstring string) {
 	// inheriting the previous subtest's now-idempotent terminal status.
 	app.Status = ApplicationStatus_OK
 	app.Reason = nil
+	expectNoStoredProtectionRoots(repo, app)
 	repo.On("UpdateApplicationStatus",
 		mock.Anything, app.ID, ApplicationStatus_Corrupted,
 		mock.MatchedBy(func(reason *string) bool {
@@ -1202,4 +1203,21 @@ func (m *Mockrepo) GetEpochCompletionState(ctx context.Context, name string, ind
 		}
 	}
 	return state, nil
+}
+
+func (m *Mockrepo) GetTournament(ctx context.Context, name, address string) (*Tournament, error) {
+	args := m.Called(ctx, name, address)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Tournament), args.Error(1)
+}
+
+func expectNoStoredProtectionRoots(repo *Mockrepo, app *Application) {
+	if !app.IsDaveConsensus() {
+		return
+	}
+	repo.On("ListEpochs", mock.Anything, app.IApplicationAddress.Hex(), repository.EpochFilter{
+		HasTournament: new(true), Status: NonTerminalEpochStatuses(),
+	}, repository.Pagination{}, false).Return([]*Epoch(nil), uint64(0), nil).Once()
 }

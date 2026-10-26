@@ -33,6 +33,7 @@ type CreateInfo struct {
 }
 
 type Service struct {
+	protectionNotices       map[int64]map[protectionNoticeKey]protectionNotice
 	observationHardWarnedAt time.Time
 	service.TickServiceTemplate
 	delivery            *delivery

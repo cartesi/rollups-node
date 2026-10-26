@@ -31,6 +31,7 @@ func TestRetiredRootDoesNotHideLaterStaging(t *testing.T) {
 	f.expectResultBoundarySnapshot(epoch, snapshot, 100)
 	f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, epoch.Index, uint64(100)).Return(nil).Once()
 
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
 	require.NoError(t, f.s.observeApplication(t.Context(), f.app, observerFacts(100)))
 	require.Equal(t, model.EpochStatus_ClaimStaged, epoch.Status)
 	require.Equal(t, uint64(90), root.Snapshot.AsOfBlock, "an immutable root needs no new tournament scan")

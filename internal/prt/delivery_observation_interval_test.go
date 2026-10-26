@@ -188,6 +188,7 @@ func TestDeliveryObservesEnabledTerminalApplicationButStopsDisabledApplication(t
 			f.checkpoint.epochs(f.epoch)
 			f.levels(1)
 			f.checkpoint.tournament(f.epoch, *f.epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
+			expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
 			require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.facts))
 			require.Len(t, f.repo.windows, 1)
 			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)

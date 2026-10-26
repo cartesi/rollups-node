@@ -129,6 +129,7 @@ func (s *WithdrawalLifecycleSuite) TestAuthorityNVRAMPostForeclosureWithdrawalLi
 }
 
 func (s *WithdrawalLifecycleSuite) TestQuorumPostForeclosureWithdrawalLifecycle() {
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 	s.runWithdrawalLifecycle(withdrawalConsensusQuorum, accountsDriveFlash)
 }
 
