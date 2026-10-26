@@ -40,7 +40,7 @@ func (s *TerminalMachineStatesSuite) terminalStateHashes(input *model.Input) []*
 	}
 	r.Equal(model.InputHashCollectionCapacity, span)
 	r.NotNil(input.MachineHash)
-	r.Equal(*input.MachineHash, rows[len(rows)-1].MachineHash)
+	r.Equal(model.FinalStateEntry(*input.MachineHash), rows[len(rows)-1].MachineHash)
 	return rows
 }
 

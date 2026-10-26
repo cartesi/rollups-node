@@ -162,11 +162,11 @@ func (s *BulkOperationsSuite) TestInvalidOutputsRootAdvance() {
 				s.Require().Len(hashes, expectedHashRows)
 				s.Equal(common.Hash(result.PeriodicStateHashes[0]), hashes[0].MachineHash)
 				s.Equal(uint64(1), hashes[0].Repetitions)
-				s.Equal(result.MachineHash, hashes[1].MachineHash)
+				s.Equal(model.FinalStateEntry(result.MachineHash), hashes[1].MachineHash)
 				s.Equal(result.PaddingRepetitions, hashes[1].Repetitions)
 				s.Equal([]model.ReplayStateHash{
 					{Index: 0, MachineHash: common.Hash(result.PeriodicStateHashes[0]), Repetitions: 1},
-					{Index: 1, MachineHash: result.MachineHash, Repetitions: result.PaddingRepetitions},
+					{Index: 1, MachineHash: model.FinalStateEntry(result.MachineHash), Repetitions: result.PaddingRepetitions},
 				}, records[0].StateHashes)
 			} else {
 				s.Empty(records[0].StateHashes)

@@ -246,7 +246,7 @@ func insertStateHashes(
 		inputIndex:         inputIndex,
 		nextIndex:          nextIndex,
 		hashes:             hashes,
-		machineHash:        machineHash,
+		finalEntry:         model.FinalStateEntry(machineHash),
 		paddingRepetitions: paddingRepetitions,
 		rowCount:           rowCount,
 	}
@@ -282,7 +282,7 @@ type stateHashCopySource struct {
 	inputIndex         uint64
 	nextIndex          uint64
 	hashes             [][32]byte
-	machineHash        common.Hash
+	finalEntry         common.Hash
 	paddingRepetitions uint64
 	rowCount           uint64
 	nextRow            uint64
@@ -309,7 +309,7 @@ func (source *stateHashCopySource) Values() ([]any, error) {
 		source.values[5] = int64(1)
 		return source.values[:], nil
 	}
-	source.values[4] = source.machineHash[:]
+	source.values[4] = source.finalEntry[:]
 	source.values[5] = source.paddingRepetitions
 	return source.values[:], nil
 }
@@ -321,13 +321,13 @@ func stateHashInsertShape(
 	paddingRepetitions uint64,
 ) (rowCount uint64, err error) {
 	if err := model.ValidateInputHashCollectionSpan(hashCount, paddingRepetitions); err != nil {
-		return 0, fmt.Errorf("invalid input hash collection span: %w", err)
+		return 0, fmt.Errorf("invalid input hash collection shape: %w", err)
 	}
 	if paddingRepetitions == 0 {
-		return 0, errors.New("canonical input hash collection requires a positive final repetition tail")
+		return hashCount, nil
 	}
 	// Span validation bounds hashCount by the collection capacity, so appending the
-	// required canonical tail row cannot overflow uint64.
+	// padding row cannot overflow uint64.
 	return hashCount + 1, nil
 }
 
