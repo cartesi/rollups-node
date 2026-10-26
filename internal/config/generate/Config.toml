@@ -119,7 +119,7 @@ description = """
 Maximum number of new input indices requested by the EVM reader in one service tick,
 shared across applications and sealed and open epochs. Failed input queries also consume
 their requested allowance. Inputs in the same block can be split across ticks.
-Zero disables the limit."""
+Applications take turns receiving priority across ticks. Zero disables the limit."""
 used-by = ["evmreader", "node"]
 
 [rollups.CARTESI_EVM_READER_POLLING_INTERVAL]
