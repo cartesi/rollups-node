@@ -1453,17 +1453,18 @@ type MockRollupsMachine struct {
 	HashError  error
 	HashCalls  atomic.Int64
 
-	CompletionStatusReturn   machine.CompletionStatus
-	ExceptionDataReturn      []byte
-	AdvanceOutputsReturn     []machine.Output
-	AdvanceReportsReturn     []machine.Report
-	AdvanceLeafsReturn       []machine.Hash
-	AdvanceRemainingReturn   uint64
-	StateProofReturn         *machine.StateProof
-	StateProofError          error
-	StateProofFunc           func(context.Context) (*machine.StateProof, error)
-	AdvanceError             error
-	LastAdvanceComputeHashes bool
+	CompletionStatusReturn       machine.CompletionStatus
+	ExceptionDataReturn          []byte
+	AdvanceOutputsReturn         []machine.Output
+	AdvanceReportsReturn         []machine.Report
+	AdvanceLeafsReturn           []machine.Hash
+	AdvanceRemainingReturn       uint64
+	AdvanceFinalStateEntryReturn *machine.Hash
+	StateProofReturn             *machine.StateProof
+	StateProofError              error
+	StateProofFunc               func(context.Context) (*machine.StateProof, error)
+	AdvanceError                 error
+	LastAdvanceComputeHashes     bool
 
 	InspectResponseReturn *machine.InspectResponse
 	InspectError          error
@@ -1493,12 +1494,26 @@ func (m *MockRollupsMachine) StateProof(ctx context.Context) (*machine.StateProo
 	return m.StateProofReturn, m.StateProofError
 }
 
-func (m *MockRollupsMachine) Advance(_ context.Context, _ []byte, _ machine.Hash, computeHashes bool) (*machine.AdvanceResponse, error) {
+func (m *MockRollupsMachine) Advance(
+	_ context.Context, _ []byte, checkpoint machine.Hash, computeHashes bool,
+) (*machine.AdvanceResponse, error) {
 	m.LastAdvanceComputeHashes = computeHashes
 	if m.AdvanceError != nil {
 		return nil, m.AdvanceError
 	}
+	var finalEntry machine.Hash
+	if computeHashes {
+		switch {
+		case m.AdvanceFinalStateEntryReturn != nil:
+			finalEntry = *m.AdvanceFinalStateEntryReturn
+		case m.CompletionStatusReturn == machine.CompletionStatusRejected:
+			finalEntry = model.FinalStateEntry(common.Hash(checkpoint))
+		case m.StateProofReturn != nil:
+			finalEntry = model.FinalStateEntry(common.Hash(m.StateProofReturn.MachineHash))
+		}
+	}
 	return &machine.AdvanceResponse{
+		FinalStateEntry:     finalEntry,
 		Status:              m.CompletionStatusReturn,
 		ExceptionData:       m.ExceptionDataReturn,
 		Outputs:             m.AdvanceOutputsReturn,

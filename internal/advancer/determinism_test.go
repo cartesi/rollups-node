@@ -787,7 +787,7 @@ func (m *determinismRuntime) Advance(
 	}
 
 	// The revert root rides with the advance request and must be the machine's
-	// pre-input root — the instance always passes fork.Hash(). A mismatch is a
+	// pre-input root, proved by the instance before execution. A mismatch is a
 	// harness (or caller) bug, not a determinism scenario.
 	if checkpointHash != m.state.machineHash {
 		m.mu.Unlock()
@@ -826,10 +826,16 @@ func (m *determinismRuntime) Advance(
 		PeriodicStateHashes: hashes,
 		PaddingRepetitions:  machine.InputEntryCapacity - uint64(len(hashes)),
 	}
-	if status == machine.CompletionStatusAccepted {
+	response.FinalStateEntry = model.FinalStateEntry(m.state.machineHash)
+	switch status {
+	case machine.CompletionStatusRejected:
+		response.FinalStateEntry = model.FinalStateEntry(checkpointHash)
+	case machine.CompletionStatusAccepted:
 		response.Outputs = []machine.Output{output}
-	} else if status == machine.CompletionStatusException {
+	case machine.CompletionStatusException:
 		response.ExceptionData = append([]byte{}, input...)
+	case machine.CompletionStatusUnknown, machine.CompletionStatusHalted,
+		machine.CompletionStatusOverflow, machine.CompletionStatusUnexpectedYield, machine.CompletionStatusInvalidOutputsRoot:
 	}
 	behavior := m.behavior
 	m.mu.Unlock()

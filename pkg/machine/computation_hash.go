@@ -87,11 +87,3 @@ const (
 	log2ComputationHashEntriesPerChunk uint64 = 8
 	mcycleComputationHashChunkSize     uint64 = MCycleComputationHashPeriod << log2ComputationHashEntriesPerChunk
 )
-
-// ValidateInputHashCollectionSpan verifies that the collected periodic hashes
-// and final-state padding repetitions cover exactly one input entry capacity. It
-// checks span cardinality only; callers enforce ordering, hashes, and canonical
-// padding shape separately.
-func ValidateInputHashCollectionSpan(hashCount, paddingRepetitions uint64) error {
-	return model.ValidateInputHashCollectionSpan(hashCount, paddingRepetitions)
-}

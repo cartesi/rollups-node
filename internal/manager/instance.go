@@ -341,9 +341,8 @@ func (m *MachineInstanceImpl) Advance(
 	}
 
 	if computeHashes {
-		err = validateCanonicalInputHashCollectionSpan(
-			uint64(len(result.PeriodicStateHashes)),
-			result.PaddingRepetitions,
+		err = validateCanonicalInputHashCollection(
+			common.Hash(advanceResp.FinalStateEntry), result.MachineHash,
 		)
 		if err != nil {
 			return nil, errors.Join(err, fork.Close())
@@ -397,17 +396,14 @@ func (m *MachineInstanceImpl) Advance(
 	return result, nil
 }
 
-func validateCanonicalInputHashCollectionSpan(
-	hashCount uint64,
-	paddingRepetitions uint64,
+func validateCanonicalInputHashCollection(
+	finalEntry, machineHash common.Hash,
 ) error {
-	if err := machine.ValidateInputHashCollectionSpan(
-		hashCount, paddingRepetitions,
-	); err != nil {
-		return fmt.Errorf("invalid canonical input hash collection span: %w", err)
-	}
-	if paddingRepetitions == 0 {
-		return errors.New("canonical input hash collection requires a positive final repetition tail")
+	expected := model.FinalStateEntry(machineHash)
+	if finalEntry != expected {
+		return fmt.Errorf("collector final-state entry %s differs from proof entry %s; "+
+			"mismatch is deterministic and points to the emulator; re-enabling repeats the input and failure",
+			finalEntry.Hex(), expected.Hex())
 	}
 	return nil
 }

@@ -41,6 +41,8 @@ func (s *MachineInstanceSuite) TestInvalidOutputsRootPreservesFinalEvidence() {
 				return postProof, nil
 			}
 			if collect {
+				finalEntry := machine.Hash(model.FinalStateEntry(postProof.MachineHash))
+				fork.AdvanceFinalStateEntryReturn = &finalEntry
 				fork.AdvanceLeafsReturn = []machine.Hash{newHash(0x31)}
 				fork.AdvanceRemainingReturn = machine.InputEntryCapacity - 1
 			}
