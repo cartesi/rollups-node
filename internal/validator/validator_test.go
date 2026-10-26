@@ -858,14 +858,12 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 		stateHashes := make([]*StateHash, 5)
 		for i := range 5 {
 			stateHashes[i] = &StateHash{
-				MachineHash: validator.pristineRootHash,
+				MachineHash: FinalStateEntry(validator.pristineRootHash),
 				Repetitions: entriesPerInput,
 			}
 		}
 
-		repo.On("ListStateHashes",
-			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
-		).Return(stateHashes, uint64(5), nil).Once()
+		expectStateHashRows(repo, app, epoch, stateHashes, uint64(5))
 
 		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
 		s.NoError(err)
@@ -890,7 +888,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
-		// No ListStateHashes call expected (inputCount==0 branch is skipped)
+		// No CountEpochStateHashes or ListEpochStateHashes call expected (inputCount==0 branch is skipped)
 
 		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
 		s.NoError(err)
@@ -964,9 +962,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
-		repo.On("ListStateHashes",
-			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
-		).Return([]*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: 1}}, uint64(1), nil).Once()
+		repo.On("CountEpochStateHashes", mock.Anything, app.ID, epoch.Index).Return(uint64(1), nil).Once()
 		expectCorrupted(app, "not enough state hashes")
 
 		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
@@ -990,9 +986,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
-		repo.On("ListStateHashes",
-			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
-		).Return([]*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: 1}}, uint64(2), nil).Once()
+		expectStateHashRows(repo, app, epoch, []*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: 1}}, uint64(2))
 		expectCorrupted(app, "inconsistent number of state hashes")
 
 		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
@@ -1016,13 +1010,11 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
 
-		repo.On("ListStateHashes",
-			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
-		).Return([]*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: 0}}, uint64(1), nil).Once()
-		expectCorrupted(app, "failed to append state hash")
+		expectStateHashRows(repo, app, epoch, []*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: 0}}, uint64(1))
+		expectCorrupted(app, "failed to build commitment")
 
 		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
-		s.ErrorContains(err, "failed to append state hash")
+		s.ErrorContains(err, "failed to build commitment")
 		s.Nil(commitment)
 		s.Nil(proof)
 		repo.AssertExpectations(s.T())
@@ -1046,9 +1038,7 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			{MachineHash: validator.pristineRootHash, Repetitions: 1},
 		}
 
-		repo.On("ListStateHashes",
-			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
-		).Return(stateHashes, uint64(len(stateHashes)), nil).Once()
+		expectStateHashRows(repo, app, epoch, stateHashes, uint64(len(stateHashes)))
 		expectCorrupted(app, "failed to build commitment")
 
 		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
@@ -1071,11 +1061,9 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 			MachineHash:          &validator.pristineRootHash,
 			TxBufferDataBlock:    &validator.pristineRootHash,
 		}
-		repetitions := (uint64(1) << Log2EpochComputationHashLeafCount) + InputHashCollectionCapacity
+		repetitions := (uint64(1) << (Log2MaxAdvanceStatesPerEpoch + Log2InputHashCollectionCapacity)) + InputHashCollectionCapacity
 
-		repo.On("ListStateHashes",
-			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
-		).Return([]*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: repetitions}}, uint64(1), nil).Once()
+		expectStateHashRows(repo, app, epoch, []*StateHash{{MachineHash: validator.pristineRootHash, Repetitions: repetitions}}, uint64(1))
 		expectCorrupted(app, "commitment tree height")
 
 		commitment, proof, err := validator.buildCommitment(ctx, app, epoch)
@@ -1161,10 +1149,16 @@ func (m *Mockrepo) StoreClaimAndProofs(ctx context.Context, epoch *Epoch, output
 	return args.Error(0)
 }
 
-func (m *Mockrepo) ListStateHashes(ctx context.Context, nameOrAddress string,
-	f repository.StateHashFilter, p repository.Pagination, descending bool) ([]*StateHash, uint64, error) {
-	args := m.Called(ctx, nameOrAddress, f, p, descending)
-	return args.Get(0).([]*StateHash), args.Get(1).(uint64), args.Error(2)
+func (m *Mockrepo) CountEpochStateHashes(ctx context.Context, appID int64, epochIndex uint64) (uint64, error) {
+	args := m.Called(ctx, appID, epochIndex)
+	return args.Get(0).(uint64), args.Error(1)
+}
+
+func (m *Mockrepo) ListEpochStateHashes(
+	ctx context.Context, appID int64, epochIndex uint64, afterIndex *uint64, limit uint64,
+) ([]EpochStateHash, error) {
+	args := m.Called(ctx, appID, epochIndex, afterIndex, limit)
+	return args.Get(0).([]EpochStateHash), args.Error(1)
 }
 
 func (m *Mockrepo) UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error {

@@ -56,7 +56,7 @@ func TestValidateInvalidOutputsRoot(t *testing.T) {
 					require.Equal(t, model.InputCompletionStatus_Accepted, input.Status)
 					require.Equal(t, model.EpochStatus_InputsProcessed, epoch.Status)
 					repo.AssertNotCalled(t, "StoreClaimAndProofs", mock.Anything, mock.Anything, mock.Anything)
-					repo.AssertNotCalled(t, "ListStateHashes", mock.Anything, mock.Anything, mock.Anything, mock.Anything, false)
+					repo.AssertNotCalled(t, "CountEpochStateHashes", mock.Anything, app.ID, epoch.Index)
 					repo.AssertExpectations(t)
 				})
 			}
