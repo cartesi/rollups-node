@@ -94,6 +94,7 @@ func (me *arrayChunk) get(index uint64) *common.Hash {
 }
 
 // ComputeSiblingsMatrix computes the siblings of all outputs hashes from the same epoch.
+// Its memory grows with the outputs; epoch-sized sets use OutputsTree's two passes.
 // The arguments are:
 // - `pre` context array. Can be created with CreatePreContextFromProof.
 // - `outputHashes` is a packed array with the hashes of outputs. First element index is outputsBegin.
