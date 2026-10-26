@@ -834,11 +834,9 @@ func (m *machineImpl) executionCycleBounds(
 
 	configured := executionCycleSpan != 0
 	if executionCycleSpan == 0 {
-		// Emulator 0.21 arms imcyclemax = mcycle + 2^48 - 1 (saturating) at
-		// input delivery and classifies reaching it as mcycle overflow with
-		// priority over yield and halt. Mirror that exact window - endpoint
-		// and saturation - so the node's target can never disagree with the
-		// machine's own enforcement.
+		// Emulator 0.22 arms imcyclemax = mcycle + 2^48 - 1 (saturating)
+		// at input delivery. A pending halt or manual yield takes precedence
+		// over overflow at that endpoint. Match its complete cycle window.
 		executionCycleSpan = model.MaxExecutionCycleSpan
 	}
 	limit := ^uint64(0)
@@ -941,7 +939,7 @@ func (m *machineImpl) runIncrementInterval(ctx context.Context,
 	// already been reached. MaxUint64 is different: saturating arithmetic can
 	// make both the node target and the emulator's imcyclemax equal the current
 	// cycle. Calling the emulator once at that fixed point preserves its
-	// authoritative McycleOverflow reason instead of mislabeling the stop as an
+	// authoritative fixed-point reason instead of mislabeling the stop as an
 	// operator-cap failure.
 	atSaturatedEndpoint := currentCycle == ^uint64(0) && limitCycle == ^uint64(0)
 	if currentCycle >= limitCycle && !atSaturatedEndpoint {
@@ -979,12 +977,11 @@ func (m *machineImpl) runIncrementInterval(ctx context.Context,
 		"leftover", limitCycle-currentCycle,
 		"breakReason", breakReason)
 
-	if atSaturatedEndpoint && breakReason != McycleOverflow {
-		// Emulator 0.21 gives mcycle overflow priority over target, yield, and
-		// halt when mcycle == imcyclemax. Accepting any other reason here could
-		// either hide that terminal origin or repeat zero-progress runs forever.
+	if atSaturatedEndpoint && !isFixedPointBreakReason(breakReason) {
+		// Emulator 0.22 reports a pending halt or manual yield before overflow
+		// at imcyclemax. Every permitted endpoint result is a fixed point.
 		return incrementResult{breakReason: breakReason, currentCycle: currentCycle}, fmt.Errorf(
-			"machine returned break reason %d instead of mcycle overflow at MaxUint64: %w",
+			"machine returned break reason %d instead of a fixed point at MaxUint64: %w",
 			breakReason, ErrMachineInternal,
 		)
 	}
