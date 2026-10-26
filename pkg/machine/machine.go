@@ -92,6 +92,9 @@ type AdvanceResponse struct {
 	ExceptionData       []byte
 	PeriodicStateHashes []Hash
 	PaddingRepetitions  uint64
+	// FinalStateEntry is the collector's entry of repeated final-state roots.
+	// It is zero when collection is disabled.
+	FinalStateEntry Hash
 }
 
 // InspectResponse contains the result of an inspect operation. On incomplete

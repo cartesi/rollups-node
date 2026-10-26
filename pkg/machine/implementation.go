@@ -4,12 +4,15 @@
 package machine
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math"
+	"math/bits"
 	"os"
 	"syscall"
 	"time"
@@ -31,6 +34,7 @@ type runResult struct {
 	reports             []Report
 	periodicStateHashes []Hash
 	paddingRepetitions  uint64
+	finalStateEntry     Hash
 }
 
 type processResult struct {
@@ -332,6 +336,7 @@ func (m *machineImpl) Advance(ctx context.Context, input []byte, checkpointHash 
 		Reports:             result.reports,
 		PeriodicStateHashes: result.periodicStateHashes,
 		PaddingRepetitions:  result.paddingRepetitions,
+		FinalStateEntry:     result.finalStateEntry,
 	}
 
 	if resp.Status == CompletionStatusException {
@@ -648,12 +653,12 @@ func (m *machineImpl) run(
 		hashCollectorState = &HashCollectorState{
 			MCycleSamplingPeriod:  MCycleComputationHashPeriod,
 			MCyclePhase:           0,
-			Log2BundleMCycleCount: 0,
+			Log2BundleMCycleCount: int32(Log2StateHashesPerEntry),
 			Hashes:                []Hash{},
 		}
 	}
-	finish := func(runErr error, terminalHashAppended bool) (runResult, error) {
-		return finalizeRunResult(result, hashCollectorState, terminalHashAppended, runErr)
+	finish := func(runErr error) (runResult, error) {
+		return finalizeRunResult(result, hashCollectorState, currentCycle-bounds.start, runErr)
 	}
 	// Incomplete executions may expose partial outputs and reports, but their PRT
 	// collections are discarded rather than normalized into persistable evidence.
@@ -671,6 +676,9 @@ func (m *machineImpl) run(
 
 		hashCountBeforeRun := 0
 		if hashCollectorState != nil {
+			if err := validateHashCollectorProgress(hashCollectorState, currentCycle-bounds.start, false); err != nil {
+				return fail(invalidInputHashCollectionSpanError(nil, err))
+			}
 			hashCountBeforeRun = len(hashCollectorState.Hashes)
 		}
 		incrementResult, err := m.runIncrementInterval(
@@ -698,13 +706,19 @@ func (m *machineImpl) run(
 			))
 		}
 
+		if hashCollectorState != nil && incrementResult.breakReason != Failed {
+			if err := validateHashCollectorProgress(hashCollectorState, currentCycle-bounds.start, terminalHashAppended); err != nil {
+				return fail(invalidInputHashCollectionSpanError(nil, err))
+			}
+		}
+
 		switch incrementResult.breakReason {
 		case YieldedManually:
-			return finish(nil, terminalHashAppended)
+			return finish(nil)
 		case Halted:
-			return finish(ErrHalted, terminalHashAppended)
+			return finish(ErrHalted)
 		case McycleOverflow:
-			return finish(ErrMcycleOverflow, terminalHashAppended)
+			return finish(ErrMcycleOverflow)
 		case ReachedTargetMcycle, YieldedSoftly:
 			continue
 		case Failed:
@@ -759,29 +773,24 @@ func (m *machineImpl) run(
 func finalizeRunResult(
 	result runResult,
 	collector *HashCollectorState,
-	terminalHashAppended bool,
+	deltaMCycles uint64,
 	runErr error,
 ) (runResult, error) {
 	if collector == nil {
 		return result, runErr
 	}
 
-	collected := collector.Hashes
-	canonicalCount, paddingRepetitions, spanErr := canonicalInputHashCollectionShape(
-		uint64(len(collected)),
-		terminalHashAppended,
-	)
+	kept, padding, final, spanErr := model.CanonicalInputHashCollection(collector.Hashes, deltaMCycles)
 	if spanErr != nil {
 		return result, invalidInputHashCollectionSpanError(runErr, spanErr)
 	}
 
-	// Emulator 0.21 includes a fixed-point entry and pads the input's remaining
-	// entry capacity with it. The node stores that same sequence in compressed
-	// form: periodic entries are kept here, while the manager supplies the
-	// completed status's canonical final root for persistence to append with
-	// paddingRepetitions in place of the removed collector entry.
-	result.periodicStateHashes = collected[:canonicalCount]
-	result.paddingRepetitions = paddingRepetitions
+	// The emulator returns an entry of the fixed-point root for padding.
+	// Keep entries containing periodic samples and fold final-only entries
+	// into that padding, preserving the same computation-hash leaf sequence.
+	result.periodicStateHashes = kept
+	result.paddingRepetitions = padding
+	result.finalStateEntry = final
 	return result, runErr
 }
 
@@ -792,7 +801,8 @@ func finalizeRunResult(
 func invalidInputHashCollectionSpanError(runErr, spanErr error) error {
 	err := errors.Join(
 		ErrMachineInternal,
-		fmt.Errorf("invalid collected state hash span: %w", spanErr),
+		fmt.Errorf("invalid collected state hash span; mismatch is deterministic for the execution increment "+
+			"and points to the emulator; re-enabling repeats the input and this failure: %w", spanErr),
 	)
 	if runErr != nil {
 		err = fmt.Errorf("execution ended with %v and invalid hash span: %w", runErr, err)
@@ -813,28 +823,46 @@ func executionResponseLimitError(
 	)
 }
 
-// canonicalInputHashCollectionShape validates the collector's raw count before
-// optionally excluding a terminal fixed-point sample. Validating first prevents
-// an overcollection of InputEntryCapacity+1 from being normalized into an
-// apparently valid collection.
-func canonicalInputHashCollectionShape(
-	hashCount uint64,
-	terminalHashAppended bool,
-) (canonicalHashCount uint64, paddingRepetitions uint64, err error) {
-	if _, err := inputHashCollectionPaddingRepetitions(hashCount); err != nil {
-		return 0, 0, err
-	}
-	if terminalHashAppended {
-		if hashCount == 0 {
-			return 0, 0, errors.New("terminal fixed point was reported without a collected state hash")
+// validateHashCollectorProgress checks the retained collector before delivery
+// and each successful return against the cycles elapsed since the input began.
+func validateHashCollectorProgress(state *HashCollectorState, deltaMCycles uint64, fixedPoint bool) error {
+	partial := bytes.TrimSpace(state.PartialBundle)
+	present := len(partial) != 0 && !bytes.Equal(partial, []byte("null"))
+	if fixedPoint {
+		if present {
+			return errors.New("partial bundle remains at a fixed point")
 		}
-		hashCount--
+		return nil
 	}
-	paddingRepetitions, err = inputHashCollectionPaddingRepetitions(hashCount)
-	if err != nil {
-		return 0, 0, err
+	log2Period := uint64(bits.TrailingZeros64(state.MCycleSamplingPeriod)) //nolint:gosec
+	log2PerEntry := state.Log2BundleMCycleCount
+	if log2PerEntry < 0 || log2Period > model.Log2MCyclesPerStateHashEntry ||
+		uint64(log2PerEntry) != model.Log2MCyclesPerStateHashEntry-log2Period {
+		return fmt.Errorf("invalid collector period %d and entry height %d", log2Period, log2PerEntry)
 	}
-	return hashCount, paddingRepetitions, nil
+	samples := deltaMCycles >> log2Period
+	entries, partialSamples := samples>>log2PerEntry, samples&((uint64(1)<<log2PerEntry)-1)
+	if uint64(len(state.Hashes)) != entries {
+		return fmt.Errorf("collector returned %d entries, expected %d", len(state.Hashes), entries)
+	}
+	if present != (partialSamples != 0) {
+		return fmt.Errorf("collector partial bundle present=%t, expected %d partial samples", present, partialSamples)
+	}
+	if present {
+		var bundle struct {
+			LeafCount *uint64 `json:"leaf_count"`
+		}
+		if err := json.Unmarshal(partial, &bundle); err != nil {
+			return fmt.Errorf("invalid partial bundle: %w", err)
+		}
+		if bundle.LeafCount == nil {
+			return errors.New("partial bundle has no leaf_count")
+		}
+		if *bundle.LeafCount != partialSamples {
+			return fmt.Errorf("partial bundle has %d samples, expected %d", *bundle.LeafCount, partialSamples)
+		}
+	}
+	return nil
 }
 
 // executionCycleBounds applies the request-specific configured cycle span.
