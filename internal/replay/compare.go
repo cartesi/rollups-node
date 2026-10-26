@@ -182,20 +182,17 @@ func compareHashCollection(
 	actual *model.AdvanceResult,
 	contradiction contradiction,
 ) error {
-	if err := model.ValidateInputHashCollectionSpan(
-		uint64(len(actual.PeriodicStateHashes)),
-		actual.PaddingRepetitions,
-	); err != nil {
+	if err := model.ValidateInputHashCollectionSpan(uint64(len(actual.PeriodicStateHashes)), actual.PaddingRepetitions); err != nil {
 		return contradiction(
 			"state_hashes.span",
 			model.InputHashCollectionCapacity,
 			fmt.Sprintf("hashes=%d padding=%d", len(actual.PeriodicStateHashes), actual.PaddingRepetitions),
 		)
 	}
-	if actual.PaddingRepetitions == 0 {
-		return contradiction("state_hashes.final.repetitions", ">0", 0)
+	actualCount := len(actual.PeriodicStateHashes)
+	if actual.PaddingRepetitions > 0 {
+		actualCount++
 	}
-	actualCount := len(actual.PeriodicStateHashes) + 1
 	if len(record.StateHashes) != actualCount {
 		return contradiction("state_hashes.count", len(record.StateHashes), actualCount)
 	}
@@ -221,12 +218,17 @@ func compareHashCollection(
 			)
 		}
 	}
-	final := record.StateHashes[len(record.StateHashes)-1]
-	if final.MachineHash != *record.Input.MachineHash {
-		return contradiction("state_hashes.final.machine_hash", record.Input.MachineHash.Hex(), final.MachineHash.Hex())
+	if actual.PaddingRepetitions == 0 {
+		return nil
 	}
-	if final.MachineHash != actual.MachineHash {
-		return contradiction("state_hashes.final.replay_hash", final.MachineHash.Hex(), actual.MachineHash.Hex())
+	final := record.StateHashes[len(record.StateHashes)-1]
+	persistedFinal := model.FinalStateEntry(*record.Input.MachineHash)
+	if final.MachineHash != persistedFinal {
+		return contradiction("state_hashes.final.machine_hash", persistedFinal.Hex(), final.MachineHash.Hex())
+	}
+	replayedFinal := model.FinalStateEntry(actual.MachineHash)
+	if final.MachineHash != replayedFinal {
+		return contradiction("state_hashes.final.replay_hash", final.MachineHash.Hex(), replayedFinal.Hex())
 	}
 	if final.Repetitions != actual.PaddingRepetitions {
 		return contradiction("state_hashes.final.repetitions", final.Repetitions, actual.PaddingRepetitions)

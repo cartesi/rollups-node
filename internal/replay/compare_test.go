@@ -166,7 +166,8 @@ func TestCompareReplayRecordCompletionMatrix(t *testing.T) {
 					actual.PaddingRepetitions = model.InputHashCollectionCapacity - 1
 					record.StateHashes = []model.ReplayStateHash{
 						{Index: 20, MachineHash: checkpoint, Repetitions: 1},
-						{Index: 21, MachineHash: actual.MachineHash, Repetitions: model.InputHashCollectionCapacity - 1},
+						{Index: 21, MachineHash: model.FinalStateEntry(actual.MachineHash),
+							Repetitions: model.InputHashCollectionCapacity - 1},
 					}
 				} else {
 					require.False(t, actual.IsDaveConsensus)
@@ -308,7 +309,7 @@ func TestCompareReplayRecordPRTMutationTable(t *testing.T) {
 		record.StateHashes = []model.ReplayStateHash{
 			{Index: 40, MachineHash: hash0, Repetitions: 1},
 			{Index: 41, MachineHash: hash1, Repetitions: 1},
-			{Index: 42, MachineHash: actual.MachineHash, Repetitions: model.InputHashCollectionCapacity - 2},
+			{Index: 42, MachineHash: model.FinalStateEntry(actual.MachineHash), Repetitions: model.InputHashCollectionCapacity - 2},
 		}
 		return app, record, actual
 	}
@@ -371,4 +372,19 @@ func TestContradictionErrorIdentity(t *testing.T) {
 		require.Contains(t, err.Error(), "epoch=17")
 		require.NotContains(t, err.Error(), "epoch=<unknown>")
 	})
+}
+
+func TestCompareReplayCollectionRejectsConsistentWrongSpan(t *testing.T) {
+	app, record, actual := replayFixture(model.InputCompletionStatus_Accepted, model.Consensus_PRT)
+	sample := common.HexToHash("0x55")
+	actual.PeriodicStateHashes = [][32]byte{sample}
+	actual.PaddingRepetitions = model.InputHashCollectionCapacity
+	record.StateHashes = []model.ReplayStateHash{
+		{Index: 1, MachineHash: sample, Repetitions: 1},
+		{Index: 2, MachineHash: model.FinalStateEntry(actual.MachineHash), Repetitions: actual.PaddingRepetitions},
+	}
+	err := compareRecord(app.Name, app.ID, true, repository.ReplayVerificationFull, record, actual)
+	var detail *ContradictionError
+	require.ErrorAs(t, err, &detail)
+	require.Equal(t, "state_hashes.span", detail.Field)
 }
