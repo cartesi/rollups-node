@@ -362,6 +362,11 @@ func (s *Service) foreclosePendingClaimEpochs(ctx context.Context, app *Applicat
 			continue
 		}
 		if err := s.repository.UpdateEpochWithForeclosedClaim(ctx, app.ID, epoch.Index); err != nil {
+			// The guarded transition can lose eligibility after selection. Defer
+			// the no-write result; dependency errors stay visible.
+			if errors.Is(err, repository.ErrNoUpdate) {
+				continue
+			}
 			return fmt.Errorf("foreclosing epoch %d of app %s: %w",
 				epoch.Index, app.IApplicationAddress, err)
 		}
