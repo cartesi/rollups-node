@@ -332,8 +332,17 @@ type WithdrawalRepository interface {
 	ListWithdrawals(ctx context.Context, nameOrAddress string, f WithdrawalFilter, p Pagination, descending bool) ([]*Withdrawal, uint64, error)
 }
 
+const MaxStateHashPageSize uint64 = 100_000
+
 type StateHashRepository interface {
 	ListStateHashes(ctx context.Context, nameOrAddress string, f StateHashFilter, p Pagination, descending bool) ([]*StateHash, uint64, error)
+	// CountEpochStateHashes returns the number of stored rows in one epoch.
+	CountEpochStateHashes(ctx context.Context, appID int64, epochIndex uint64) (uint64, error)
+	// ListEpochStateHashes returns rows in ascending index order, exclusive of
+	// afterIndex. A nil cursor starts at the first row. The limit controls the
+	// caller's memory and must be between 1 and MaxStateHashPageSize.
+	// Processed epochs have immutable rows and can be read in separate pages.
+	ListEpochStateHashes(ctx context.Context, appID int64, epochIndex uint64, afterIndex *uint64, limit uint64) ([]EpochStateHash, error)
 }
 
 type TournamentRepository interface {

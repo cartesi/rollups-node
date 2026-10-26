@@ -1079,7 +1079,15 @@ CREATE TABLE "state_hashes"
 
 CREATE INDEX "state_hashes_input_index_idx" ON "state_hashes" ("input_epoch_application_id", "input_index", "index");
 
-CREATE TRIGGER "state_hashes_set_updated_at" BEFORE UPDATE ON "state_hashes"
-FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- A later data migration that must update rows disables this trigger in its own transaction.
+CREATE FUNCTION enforce_state_hash_immutability()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'state_hashes row is immutable' USING ERRCODE = 'restrict_violation';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "state_hashes_immutability_check" BEFORE UPDATE ON "state_hashes"
+FOR EACH ROW EXECUTE FUNCTION enforce_state_hash_immutability();
 
 COMMIT;
