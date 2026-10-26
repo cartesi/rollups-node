@@ -187,7 +187,6 @@ func TestTournamentResultLatestMismatchIsPure(t *testing.T) {
 	}{
 		{"lower input bound", func(v *daveConsensusSnapshot) { v.sealed.InputIndexLowerBound++ }},
 		{"upper input bound", func(v *daveConsensusSnapshot) { v.sealed.InputIndexUpperBound++ }},
-		{"winner commitment", func(v *daveConsensusSnapshot) { v.stage.WinnerCommitment[0] ^= 1 }},
 		{"staged winner state", func(v *daveConsensusSnapshot) { v.stage.WinnerPostEpochMachineStateHash[0] ^= 1 }},
 		{"staged output root", func(v *daveConsensusSnapshot) {
 			v.sealed.StagedPostEpochOutputsMerkleRoot[0] ^= 1

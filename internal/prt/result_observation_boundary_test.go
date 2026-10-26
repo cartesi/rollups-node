@@ -19,7 +19,7 @@ import (
 
 func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 	for _, staged := range []bool{false, true} {
-		name := "opponent wins"
+		name := "false final state"
 		if staged {
 			name = "matching result is staged"
 		}
@@ -34,6 +34,9 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 			tournament := resultBoundaryTournament(f, epoch, winner)
 			snapshot := resultTestSnapshot(epoch, staged)
 			snapshot.stage.WinnerCommitment = winner
+			if !staged {
+				snapshot.stage.WinnerPostEpochMachineStateHash = common.HexToHash("0xdead")
+			}
 			observed := resultTestSnapshot(epoch, false)
 			observed.stage.IsFinished = false
 			observed.stage.WinnerCommitment = common.Hash{}
@@ -71,7 +74,7 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 			require.Empty(t, writeCoverage)
 
 			f.app.LastEpochCheckBlock = 100
-			f.expectResultBoundaryWindow(epoch, tournament, 100)
+			f.expectResultBoundaryWindowForState(epoch, tournament, 100, snapshot.stage.WinnerPostEpochMachineStateHash)
 			if staged {
 				f.expectResultBoundarySnapshot(epoch, snapshot, 100)
 			} else {
@@ -87,7 +90,7 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 				require.Equal(t, model.EpochStatus_ClaimStaged, epoch.Status)
 				require.Equal(t, new(uint64(100)), epoch.StagedAtBlock)
 			} else {
-				require.ErrorContains(t, err, "Epoch 0 has inconsistent commitment")
+				require.ErrorContains(t, err, "Epoch 0 has inconsistent machine hash")
 				require.Equal(t, model.ApplicationStatus_Diverged, f.app.Status)
 			}
 			require.Equal(t, []uint64{100}, writeCoverage, "the complete result window must precede the local write")
@@ -120,6 +123,13 @@ func (f *observerCheckpointFixture) expectResultBoundarySnapshot(epoch *model.Ep
 
 func (f *observerCheckpointFixture) expectResultBoundaryWindow(epoch *model.Epoch, tournament *model.Tournament, head uint64) {
 	f.t.Helper()
+	f.expectResultBoundaryWindowForState(epoch, tournament, head, *epoch.MachineHash)
+}
+
+func (f *observerCheckpointFixture) expectResultBoundaryWindowForState(
+	epoch *model.Epoch, tournament *model.Tournament, head uint64, finalState common.Hash,
+) {
+	f.t.Helper()
 	f.epochs(epoch)
 	opts := mock.MatchedBy(resultCallOptsAtBlock(head))
 	f.consensus.On("TournamentLevelCount", opts).Return(uint64(1), nil).Once()
@@ -133,7 +143,7 @@ func (f *observerCheckpointFixture) expectResultBoundaryWindow(epoch *model.Epoc
 		HasCandidate: true, Candidate: *tournament.Snapshot.Candidate}
 	if head >= 100 {
 		standing.State, standing.AcceptsJoins = model.TournamentStandingRootWinner, false
-		standing.FinalState, standing.FinishedAt = *epoch.MachineHash, 100
+		standing.FinalState, standing.FinishedAt = finalState, 100
 	}
 	adapter.On("Standing", opts).Return(standing, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, standing.State)
@@ -149,7 +159,7 @@ func (f *observerCheckpointFixture) expectResultBoundaryWindow(epoch *model.Epoc
 	adapter.On("StructuralEventCounts", opts).Return(counts, nil).Once()
 	address := tournament.Address.Hex()
 	commitment := &model.Commitment{ApplicationID: f.app.ID, EpochIndex: epoch.Index, TournamentAddress: tournament.Address,
-		Commitment: standing.Candidate, FinalStateHash: *epoch.MachineHash, BlockNumber: 20}
+		Commitment: standing.Candidate, FinalStateHash: finalState, BlockNumber: 20}
 	f.repo.On("ListCommitments", mock.Anything, f.app.Name,
 		repository.CommitmentFilter{EpochIndex: &epoch.Index, TournamentAddress: &address}, repository.Pagination{}, false).
 		Return([]*model.Commitment{commitment}, uint64(1), nil).Once()

@@ -184,11 +184,6 @@ func matchConsensusSnapshotToEpoch(epoch *model.Epoch, snapshot daveConsensusSna
 	if !snapshot.stage.IsFinished {
 		return nil
 	}
-	if *epoch.Commitment != snapshot.stage.WinnerCommitment {
-		return fmt.Errorf(
-			"epoch %d has inconsistent commitment between off-chain (%s) and on-chain (%s)",
-			epoch.Index, epoch.Commitment, snapshot.stage.WinnerCommitment)
-	}
 	if *epoch.MachineHash != snapshot.stage.WinnerPostEpochMachineStateHash {
 		return fmt.Errorf(
 			"epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",

@@ -171,10 +171,11 @@ func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
 	f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
-func TestLosingRootPublishesBeforeLocalDivergence(t *testing.T) {
+func TestFalseFinalStatePublishesBeforeLocalDivergence(t *testing.T) {
 	f := newObserverCheckpointFixture(t)
 	epoch := checkpointEpoch(0, "0x100")
 	foreign := common.HexToHash("0xbad")
+	falseState := common.HexToHash("0xdead")
 	address := *epoch.TournamentAddress
 	f.epochs(epoch)
 	opts := mock.MatchedBy(resultCallOptsAtBlock(100))
@@ -186,7 +187,7 @@ func TestLosingRootPublishesBeforeLocalDivergence(t *testing.T) {
 		BaseCycle: big.NewInt(0), Kind: model.TournamentKindLeaf, StartInstant: 10,
 	}, nil).Once()
 	adapter.On("Standing", opts).Return(TournamentStanding{
-		State: model.TournamentStandingRootWinner, HasCandidate: true, Candidate: foreign, FinishedAt: 90,
+		State: model.TournamentStandingRootWinner, HasCandidate: true, Candidate: foreign, FinalState: falseState, FinishedAt: 90,
 	}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, model.TournamentStandingRootWinner)
 	adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
@@ -205,14 +206,16 @@ func TestLosingRootPublishesBeforeLocalDivergence(t *testing.T) {
 			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
 		}).Return(nil).Once()
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), address.Hex()).
-		Return(&model.Tournament{Snapshot: model.TournamentSnapshot{FinishedAtBlock: 90, WinnerCommitment: &foreign}}, nil).Once()
+		Return(&model.Tournament{Snapshot: model.TournamentSnapshot{
+			FinishedAtBlock: 90, WinnerCommitment: &foreign, FinalStateHash: &falseState,
+		}}, nil).Once()
 	f.repo.On("UpdateApplicationStatus", mock.Anything, f.app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 		Run(func(mock.Arguments) {
 			require.NotNil(t, published)
 			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 		}).Return(nil).Once()
 	deferActions, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
-	require.ErrorContains(t, err, "inconsistent commitment")
+	require.ErrorContains(t, err, "inconsistent machine hash")
 	require.True(t, deferActions)
 	require.Equal(t, model.ApplicationStatus_Diverged, f.app.Status)
 	require.Empty(t, f.s.delivery.sender)
