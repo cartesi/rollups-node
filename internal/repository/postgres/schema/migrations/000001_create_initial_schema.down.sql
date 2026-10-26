@@ -3,9 +3,10 @@
 
 BEGIN;
 
-DROP TRIGGER IF EXISTS "state_hashes_set_updated_at" ON "state_hashes";
+DROP TRIGGER IF EXISTS "state_hashes_immutability_check" ON "state_hashes";
 DROP INDEX IF EXISTS "state_hashes_input_index_idx";
 DROP TABLE IF EXISTS "state_hashes";
+DROP FUNCTION IF EXISTS "enforce_state_hash_immutability";
 
 DROP TABLE IF EXISTS "bond_events";
 

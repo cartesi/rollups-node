@@ -1810,6 +1810,16 @@ type StateHash struct {
 	UpdatedAt               time.Time   `json:"updated_at"`
 }
 
+// EpochStateHash is the narrow, by-value projection used for epoch pages.
+// MachineHash holds an entry root. Repetitions counts entries, and Index is
+// the row ordinal within the epoch.
+type EpochStateHash struct {
+	Index       uint64
+	InputIndex  uint64
+	MachineHash common.Hash
+	Repetitions uint64
+}
+
 func (s *StateHash) MarshalJSON() ([]byte, error) {
 	// Create an alias to avoid infinite recursion in MarshalJSON.
 	type Alias StateHash
