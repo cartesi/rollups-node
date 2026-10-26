@@ -1,5 +1,5 @@
 ARG FOUNDRY_VERSION=1.5.1
-ARG PRT_CONTRACTS_VERSION=3.0.0-alpha.5
+ARG PRT_CONTRACTS_VERSION=3.0.0-alpha.6
 ARG DEVNET_BUILD_PATH=/opt/cartesi/rollups-contracts
 
 FROM debian:trixie-20250811 AS rollups-node-devnet
@@ -40,7 +40,7 @@ RUN <<EOF
     VERSION=v${PRT_CONTRACTS_VERSION}
     ARTIFACT=cartesi-rollups-prt-${PRT_CONTRACTS_VERSION}-anvil-${FOUNDRY_VERSION}.tar.gz
     curl -sSL ${URL}/${VERSION}/${ARTIFACT} -o /tmp/contracts.tar.gz
-    echo "7e6b6a402b5e384fd6aa56387726cf4cc08783b6350b1c16a71a2e6ff454e583  /tmp/contracts.tar.gz" | sha256sum --check
+    echo "62500dc3558fbb1f289d99584cd8989d7b42d0c0e7e7a13b8f2d309746e9163e  /tmp/contracts.tar.gz" | sha256sum --check
     tar -zxf /tmp/contracts.tar.gz -C ${DEVNET_BUILD_PATH}/
     mkdir -p /usr/share/devnet
 
