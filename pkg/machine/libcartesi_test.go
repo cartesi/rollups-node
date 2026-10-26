@@ -736,11 +736,18 @@ func (s *LibCartesiSuite) TestNewMachineRuntimeConfig() {
 
 	config, err := s.backend.NewMachineRuntimeConfig()
 	require.NoError(err)
-	require.Contains(config, "concurrency")
-	require.Contains(config, "update_merkle_tree")
-
-	// Verify it's valid JSON
-	require.True(config[0] == '{' && config[len(config)-1] == '}')
+	machine, err := emulator.CreateMachine(`{"ram":{"length":4096}}`, config, "")
+	require.NoError(err)
+	s.T().Cleanup(func() {
+		require.NoError(machine.Destroy())
+		machine.Delete()
+	})
+	applied, err := machine.GetRuntimeConfig()
+	require.NoError(err)
+	var sent, kept map[string]any
+	require.NoError(json.Unmarshal([]byte(config), &sent))
+	require.NoError(json.Unmarshal([]byte(applied), &kept))
+	require.Subset(kept, sent)
 }
 
 func (s *LibCartesiSuite) TestCmioRxBufferSize() {

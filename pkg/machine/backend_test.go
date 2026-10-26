@@ -194,7 +194,7 @@ func (m *MockBackend) SetupManualYield(reason manualYieldReason, length uint32) 
 // SetupForLoad configures the mock for successful machine loading
 func (m *MockBackend) SetupForLoad() {
 	hash := randomFakeHash()
-	m.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_merkle_tree":1}}`, nil).Once()
+	m.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_hash_tree":1}}`, nil).Once()
 	m.On("Load", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("time.Duration")).Return(nil).Once()
 	m.On("IsAtManualYield", mock.AnythingOfType("time.Duration")).Return(true, nil).Once()
 	m.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
