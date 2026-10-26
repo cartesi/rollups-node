@@ -1225,7 +1225,7 @@ func (s *ImplementationSuite) TestAdvanceStartingAtMachineMaximumCompletesWithOv
 	}
 }
 
-func (s *ImplementationSuite) TestRunRejectsNonOverflowReasonAtMachineMaximum() {
+func (s *ImplementationSuite) TestRunRejectsNonFixedPointReasonAtMachineMaximum() {
 	for _, breakReason := range []BreakReason{ReachedTargetMcycle, YieldedSoftly} {
 		s.Run(fmt.Sprintf("break reason %d", breakReason), func() {
 			backend := NewMockBackend()
@@ -1244,7 +1244,23 @@ func (s *ImplementationSuite) TestRunRejectsNonOverflowReasonAtMachineMaximum() 
 			s.Equal(breakReason, result.breakReason)
 			s.Equal(^uint64(0), result.currentCycle)
 			s.Require().ErrorIs(err, ErrMachineInternal)
-			s.Contains(err.Error(), "instead of mcycle overflow at MaxUint64")
+			s.Contains(err.Error(), "instead of a fixed point at MaxUint64")
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestRunAcceptsFixedPointReasonAtMachineMaximum() {
+	for _, reason := range []BreakReason{Halted, YieldedManually, McycleOverflow} {
+		s.Run(fmt.Sprintf("break reason %d", reason), func() {
+			backend := NewMockBackend()
+			backend.On("Run", ^uint64(0), mock.AnythingOfType("time.Duration")).Return(reason, nil).Once()
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(^uint64(0), nil).Once()
+			machine := &machineImpl{backend: backend, logger: s.logger}
+			result, err := machine.runIncrementInterval(context.Background(), ^uint64(0), ^uint64(0), 1, nil, time.Second)
+			s.Require().NoError(err)
+			s.Equal(reason, result.breakReason)
+			s.Equal(^uint64(0), result.currentCycle)
 			backend.AssertExpectations(s.T())
 		})
 	}
