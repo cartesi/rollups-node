@@ -14,6 +14,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/merkle"
+	"github.com/cartesi/rollups-node/internal/merkle/merkletest"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
@@ -533,4 +534,75 @@ func (s *ValidatorRepositoryIntegrationSuite) storeAdvanceAndPublishEpoch(
 		result.EpochIndex,
 		&result.StateProof,
 	)
+}
+
+func (s *ValidatorRepositoryIntegrationSuite) TestPagedDaveCommitments() {
+	s.Run("two epochs with a page boundary", func() {
+		pristine, _, err := merkletest.CreateProofs(nil, merkle.TREE_DEPTH)
+		s.Require().NoError(err)
+		app := &model.Application{
+			Name: "paged-dave", IApplicationAddress: common.HexToAddress("0x1234"),
+			IConsensusAddress: common.HexToAddress("0x5678"), TemplateHash: common.HexToHash("0xabcd"),
+			TemplateURI: "/template/path", EpochLength: 10, Enabled: true,
+			Status: model.ApplicationStatus_OK, ConsensusType: model.Consensus_PRT,
+		}
+		_, err = s.repository.CreateApplication(s.ctx, app, false)
+		s.Require().NoError(err)
+		app, err = s.repository.GetApplication(s.ctx, app.Name)
+		s.Require().NoError(err)
+		s.Require().NotNil(app)
+		epochs := make([]*model.Epoch, 0, 2)
+		inputs := make(map[*model.Epoch][]*model.Input)
+		for index := range uint64(2) {
+			epoch := &model.Epoch{ApplicationID: app.ID, Index: index, VirtualIndex: index,
+				Status: model.EpochStatus_Closed, FirstBlock: index * 10, LastBlock: index*10 + 9,
+				InputIndexLowerBound: index, InputIndexUpperBound: index + 1}
+			input := &model.Input{Index: index, EpochIndex: index, BlockNumber: index*10 + 1,
+				RawData: []byte{byte(index)}, Status: model.InputCompletionStatus_None,
+				TransactionHash: common.BigToHash(new(big.Int).SetUint64(index + 1))}
+			epochs = append(epochs, epoch)
+			inputs[epoch] = []*model.Input{input}
+		}
+		s.Require().NoError(s.repository.CreateEpochsAndInputs(s.ctx, app.Name, inputs, 20))
+		expected := make([]common.Hash, len(epochs))
+		expectedProofs := make([][]common.Hash, len(epochs))
+		for index, epoch := range epochs {
+			count := 3
+			if index == 0 {
+				count = 10007
+			}
+			hashes := make([][32]byte, count)
+			for i := range hashes {
+				hashes[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("epoch-%d-entry-%d", index, i)))
+			}
+			final := crypto.Keccak256Hash([]byte(fmt.Sprintf("epoch-%d-final", index)))
+			proof := completeStateProof(final, pristine)
+			result := &model.AdvanceResult{EpochIndex: epoch.Index, InputIndex: epoch.InputIndexLowerBound,
+				Status: model.InputCompletionStatus_Accepted, IsDaveConsensus: true,
+				StateProof: proof, PeriodicStateHashes: hashes,
+				PaddingRepetitions: model.InputHashCollectionCapacity - uint64(len(hashes))}
+			s.Require().NoError(s.repository.StoreAdvanceResult(s.ctx, app.ID, result))
+			s.Require().NoError(s.repository.UpdateEpochInputsProcessed(s.ctx, app.Name, epoch.Index, &proof))
+			runs := make([]merkletest.Run, 0, len(hashes)+1)
+			for _, hash := range hashes {
+				runs = append(runs, merkletest.Run{Hash: hash, Count: 1})
+			}
+			runs = append(runs, merkletest.Run{
+				Hash:  model.FinalStateEntry(final),
+				Count: result.PaddingRepetitions + ((model.MaxAdvanceStatesPerEpoch - 1) << model.Log2InputHashCollectionCapacity),
+			})
+			expected[index] = merkletest.Root(runs, 48)
+			_, upper := merkletest.LastProof(runs, 48)
+			expectedProofs[index] = append(expectedProofs[index], upper...)
+		}
+		_, err = s.validator.Tick(s.ctx)
+		s.Require().NoError(err)
+		for index, epoch := range epochs {
+			stored, err := s.repository.GetEpoch(s.ctx, app.Name, epoch.Index)
+			s.Require().NoError(err)
+			s.Require().Equal(model.EpochStatus_ClaimComputed, stored.Status)
+			s.Require().Equal(expected[index], *stored.Commitment)
+			s.Equal(expectedProofs[index], stored.CommitmentProof)
+		}
+	})
 }

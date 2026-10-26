@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -122,9 +123,8 @@ type ValidatorRepository interface {
 	GetEpochCompletionState(ctx context.Context, nameOrAddress string, index uint64) (*repository.EpochCompletionState, error)
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
 	StoreInvalidOutputsRoot(ctx context.Context, appID int64, epochIndex uint64, reason string) error
-	ListStateHashes(
-		ctx context.Context, nameOrAddress string, f repository.StateHashFilter, p repository.Pagination, descending bool,
-	) ([]*StateHash, uint64, error)
+	CountEpochStateHashes(ctx context.Context, appID int64, epochIndex uint64) (uint64, error)
+	ListEpochStateHashes(ctx context.Context, appID int64, epochIndex uint64, afterIndex *uint64, limit uint64) ([]EpochStateHash, error)
 }
 
 func getAllRunningApplications(ctx context.Context, er ValidatorRepository) ([]*Application, uint64, error) {
@@ -375,6 +375,7 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 	if !app.IsDaveConsensus() {
 		return nil, nil, nil
 	}
+	started := time.Now()
 	s.Logger.Debug("DaveConsensus: Building commitment for epoch",
 		"application", app.Name,
 		"epoch", epoch.Index)
@@ -388,7 +389,6 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"epoch %v (%v) machine hash is not defined", epoch.Index, epoch.VirtualIndex)
 	}
-	builder := merkle.Builder{}
 	inputCount := epoch.InputIndexUpperBound - epoch.InputIndexLowerBound
 	if inputCount > MaxAdvanceStatesPerEpoch {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
@@ -396,47 +396,112 @@ func (s *Service) buildCommitment(ctx context.Context, app *Application, epoch *
 			epoch.Index, app.Name, MaxAdvanceStatesPerEpoch, inputCount)
 	}
 
+	builder := newEntryBuilder(*epoch.MachineHash, uint32(Log2StateHashesPerEntry))
+	var rowsRead uint64
 	if inputCount > 0 {
-		statesHashes, total, err := s.repository.ListStateHashes(ctx, app.IApplicationAddress.String(),
-			repository.StateHashFilter{EpochIndex: &epoch.Index}, repository.Pagination{}, false)
+		total, err := s.repository.CountEpochStateHashes(ctx, app.ID, epoch.Index)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list state hashes for epoch %d of application %s: %w",
-				epoch.Index, app.Name, err)
+			return nil, nil, fmt.Errorf("failed to count state hashes for epoch %d of application %s: %w", epoch.Index, app.Name, err)
 		}
 		if total < inputCount {
 			return nil, nil, s.setApplicationCorrupted(ctx, app,
 				"not enough state hashes for epoch %d of application %s: expected at least %d, got %d",
 				epoch.Index, app.Name, inputCount, total)
 		}
-		if uint64(len(statesHashes)) != total {
+		rowsRead, err = s.appendEpochStateHashes(ctx, app, epoch, builder, total)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to list state hashes for epoch %d of application %s: %w", epoch.Index, app.Name, err)
+		}
+		if rowsRead != total {
+			if err := s.recheckStateHashRead(ctx, app, epoch, total); err != nil {
+				return nil, nil, err
+			}
 			return nil, nil, s.setApplicationCorrupted(ctx, app,
 				"inconsistent number of state hashes for epoch %d of application %s: expected %d, got %d",
-				epoch.Index, app.Name, total, len(statesHashes))
-		}
-		for _, stateHash := range statesHashes {
-			if err := builder.AppendRepeatedUint64(merkle.TreeLeaf(stateHash.MachineHash), stateHash.Repetitions); err != nil {
-				return nil, nil, s.setApplicationCorrupted(ctx, app,
-					"failed to append state hash to builder for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
-			}
+				epoch.Index, app.Name, total, rowsRead)
 		}
 	}
 
-	remainingInputs := MaxAdvanceStatesPerEpoch - inputCount
-	// Safe: inputCount is bounded above, so the remaining-input shift cannot overflow.
-	remainingEntries := remainingInputs << Log2InputHashCollectionCapacity
-	if remainingEntries > 0 {
-		if err := builder.AppendRepeatedUint64(merkle.TreeLeaf(*epoch.MachineHash), remainingEntries); err != nil {
-			return nil, nil, s.setApplicationCorrupted(ctx, app,
-				"failed to append state hash to builder for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
-		}
-	}
-
-	epochCommitmentTree, err := builder.Build()
+	epochCommitmentTree, err := builder.finish(inputCount)
 	if err != nil {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
 			"failed to build commitment for epoch %d of application %s with error: %v", epoch.Index, app.Name, err)
 	}
-	return s.proveCommitment(ctx, app, epoch, epochCommitmentTree)
+	commitment, proof, err := s.proveCommitment(ctx, app, epoch, epochCommitmentTree)
+	if err != nil {
+		return nil, nil, err
+	}
+	s.Logger.Info("DaveConsensus epoch commitment built",
+		"application", app.Name, "epoch", epoch.Index, "commitment", commitment.String(),
+		"state_hash_rows", rowsRead, "elapsed", time.Since(started))
+	return commitment, proof, nil
+}
+
+const stateHashPageSize uint64 = 10000
+
+func (s *Service) appendEpochStateHashes(
+	ctx context.Context, app *Application, epoch *Epoch, builder *entryBuilder, total uint64,
+) (uint64, error) {
+	var read uint64
+	var after *uint64
+	for {
+		if err := ctx.Err(); err != nil {
+			return read, err
+		}
+		page, err := s.repository.ListEpochStateHashes(ctx, app.ID, epoch.Index, after, stateHashPageSize)
+		if err != nil {
+			return read, err
+		}
+		if uint64(len(page)) > stateHashPageSize {
+			return read, fmt.Errorf("state hash page has %d rows, above limit %d", len(page), stateHashPageSize)
+		}
+		read += uint64(len(page))
+		if read > total {
+			return read, nil
+		}
+		var last uint64
+		hasPrevious := after != nil
+		if hasPrevious {
+			last = *after
+		}
+		for _, row := range page {
+			if hasPrevious && row.Index <= last {
+				return read, fmt.Errorf("state hash page is not strictly increasing: index %d follows %d", row.Index, last)
+			}
+			last = row.Index
+			hasPrevious = true
+			builder.appendRow(row)
+		}
+		if uint64(len(page)) < stateHashPageSize {
+			return read, nil
+		}
+		// Copy the cursor value, so no row keeps its page alive.
+		cursor := last
+		after = &cursor
+	}
+}
+
+func (s *Service) recheckStateHashRead(ctx context.Context, app *Application, epoch *Epoch, expected uint64) error {
+	count, err := s.repository.CountEpochStateHashes(ctx, app.ID, epoch.Index)
+	if err != nil {
+		return fmt.Errorf("failed to recheck state hash count for epoch %d of application %s: %w", epoch.Index, app.Name, err)
+	}
+	state, err := s.repository.GetEpochCompletionState(ctx, app.IApplicationAddress.Hex(), epoch.Index)
+	if err != nil {
+		return fmt.Errorf("failed to recheck epoch %d of application %s after state hash read: %w", epoch.Index, app.Name, err)
+	}
+	if count != expected {
+		return fmt.Errorf("state hash count changed for epoch %d of application %s during read: expected %d, got %d",
+			epoch.Index, app.Name, expected, count)
+	}
+	if state == nil || state.Application == nil || state.Application.ID != app.ID {
+		return fmt.Errorf("application %s disappeared or changed identity during state hash read for epoch %d", app.Name, epoch.Index)
+	}
+	if state.Epoch == nil || state.Epoch.ApplicationID != app.ID || state.Epoch.Index != epoch.Index ||
+		state.Epoch.Status != EpochStatus_InputsProcessed {
+		return fmt.Errorf("epoch %d of application %s disappeared or changed during state hash read", epoch.Index, app.Name)
+	}
+	return nil
 }
 
 // proveCommitment checks the completed tree and proves its final machine state.
@@ -448,7 +513,7 @@ func (s *Service) proveCommitment(
 	epoch *Epoch,
 	epochCommitmentTree *merkle.Tree,
 ) (*common.Hash, *merkle.Proof, error) {
-	// The commitment geometry is fixed: 2²⁴ inputs × 2²⁴ entries ⇒ height 48.
+	// The protocol leaf height combines Log2MaxAdvanceStatesPerEpoch and Log2InputComputationHashLeafCount.
 	const expectedHeight = Log2EpochComputationHashLeafCount
 	if uint64(epochCommitmentTree.Height) != expectedHeight {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,
@@ -462,6 +527,11 @@ func (s *Service) proveCommitment(
 		// ProveLast derives its own valid index. Any traversal failure in this
 		// newly built tree is an internal error, even an out-of-range child index.
 		failure := fmt.Errorf("failed to retrieve commitment proof for epoch %d of application %s: %w", epoch.Index, app.Name, err)
+		if errors.Is(err, merkle.ErrOpaqueTree) {
+			failure = fmt.Errorf("%w: the epoch's last leaf lies inside a stored bundle: the last input fills its span, "+
+				"which needs a bundle opening that this node does not support, "+
+				"or its stored padding row is not the epoch's final entry", failure)
+		}
 		statusErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, failure.Error())
 		prtprotection.ReportStop(ctx, s.Logger, s.repository, app, 0, failure)
 		return nil, nil, errors.Join(failure, statusErr)
@@ -473,10 +543,6 @@ func (s *Service) proveCommitment(
 			"epoch %v commitment last leaf %v does not match machine hash %v",
 			epoch.Index, proof.Node, *epoch.MachineHash)
 	}
-	s.Logger.Info("DaveConsensus epoch commitment built",
-		"application", app.Name,
-		"epoch", epoch.Index,
-		"commitment", commitment.String())
 	return &commitment, proof, nil
 }
 
