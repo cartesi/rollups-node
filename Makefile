@@ -374,17 +374,17 @@ exception-dapp: applications/exception-dapp ## Exception dapp
 applications/echo-dapp: ## Create echo-dapp test application
 	@echo "Creating echo-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/echo-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --delegate-call-vouchers=1 --notices=1 --reports=1 --verbose=1
+	@cartesi-machine --ram-length=128Mi --store=applications/echo-dapp --final-hash --assert-rolling-template -- ioctl-echo-loop --vouchers=1 --delegate-call-vouchers=1 --notices=1 --reports=1 --verbose=1 || { rm -rf "$@"; exit 1; }
 
 applications/reject-dapp: ## Create reject-dapp test application
 	@echo "Creating reject-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/reject-dapp --final-hash -- "rollup accept && echo '{\"payload\": \"0x726561736f6e20666f722072656a656374696e67\" }' | rollup report && rollup reject"
+	@cartesi-machine --ram-length=128Mi --store=applications/reject-dapp --final-hash --assert-rolling-template -- "rollup accept && echo '{\"payload\": \"0x726561736f6e20666f722072656a656374696e67\" }' | rollup report && rollup reject" || { rm -rf "$@"; exit 1; }
 
 applications/exception-dapp: ## Create exception-dapp test application
 	@echo "Creating exception-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/exception-dapp --final-hash -- "rollup accept && echo '{\"payload\": \"0x7468697320697320612064756d6d7920657863657074696f6e2074657874\"}' | rollup exception"
+	@cartesi-machine --ram-length=128Mi --store=applications/exception-dapp --final-hash --assert-rolling-template -- "rollup accept && echo '{\"payload\": \"0x7468697320697320612064756d6d7920657863657074696f6e2074657874\"}' | rollup exception" || { rm -rf "$@"; exit 1; }
 
 reject-loop-dapp: applications/reject-loop-dapp ## Reject loop dapp
 
@@ -405,17 +405,17 @@ erc20-withdrawal-nvram-dapp: applications/erc20-withdrawal-nvram-dapp ## ERC-20 
 applications/reject-loop-dapp: ## Create reject-loop-dapp test application
 	@echo "Creating reject-loop-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/reject-loop-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1 --verbose=1
+	@cartesi-machine --ram-length=128Mi --store=applications/reject-loop-dapp --final-hash --assert-rolling-template -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1 --verbose=1 || { rm -rf "$@"; exit 1; }
 
 applications/exception-loop-dapp: ## Create exception-loop-dapp test application
 	@echo "Creating exception-loop-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/exception-loop-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --exception=1 --verbose=1
+	@cartesi-machine --ram-length=128Mi --store=applications/exception-loop-dapp --final-hash --assert-rolling-template -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --exception=1 --verbose=1 || { rm -rf "$@"; exit 1; }
 
 applications/halt-loop-dapp: ## Create halt-loop-dapp test application
 	@echo "Creating halt-loop-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/halt-loop-dapp --final-hash -- "rollup accept && rollup accept"
+	@cartesi-machine --ram-length=128Mi --store=applications/halt-loop-dapp --final-hash --assert-rolling-template -- "rollup accept && rollup accept" || { rm -rf "$@"; exit 1; }
 
 applications/mcycle-overflow-dapp: applications/echo-dapp ## Create MCYCLE overflow test application
 	@echo "Creating mcycle-overflow-dapp test application"
@@ -444,7 +444,7 @@ applications/erc20-withdrawal-dapp: test/dapps/erc20-withdrawal/install.sh ## Cr
 		--env=TRUSTED_ERC20_PORTAL=$$PORTAL \
 		--env=TRUSTED_ERC20_TOKEN=$$TOKEN \
 		--append-init-file=test/dapps/erc20-withdrawal/install.sh \
-		--store=applications/erc20-withdrawal-dapp --final-hash -- /usr/local/bin/erc20-withdrawal-dapp
+		--store=applications/erc20-withdrawal-dapp --final-hash --assert-rolling-template -- /usr/local/bin/erc20-withdrawal-dapp || { rm -rf "$@"; exit 1; }
 
 applications/erc20-withdrawal-nvram-dapp: test/dapps/erc20-withdrawal/install.sh ## Create ERC-20 withdrawal NVRAM test application
 	@echo "Creating ERC-20 withdrawal NVRAM test application"
@@ -457,7 +457,7 @@ applications/erc20-withdrawal-nvram-dapp: test/dapps/erc20-withdrawal/install.sh
 		--env=TRUSTED_ERC20_PORTAL=$$PORTAL \
 		--env=TRUSTED_ERC20_TOKEN=$$TOKEN \
 		--append-init-file=test/dapps/erc20-withdrawal/install.sh \
-		--store=applications/erc20-withdrawal-nvram-dapp --final-hash -- /usr/local/bin/erc20-withdrawal-dapp
+		--store=applications/erc20-withdrawal-nvram-dapp --final-hash --assert-rolling-template -- /usr/local/bin/erc20-withdrawal-dapp || { rm -rf "$@"; exit 1; }
 
 deploy-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
