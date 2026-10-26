@@ -188,7 +188,6 @@ func TestPRTLatestResultMismatchDoesNotChangeApplicationStatus(t *testing.T) {
 		name   string
 		mutate func(*daveConsensusSnapshot)
 	}{
-		{"winner commitment", func(s *daveConsensusSnapshot) { s.stage.WinnerCommitment = common.HexToHash("0xbad") }},
 		{"winner machine", func(s *daveConsensusSnapshot) {
 			s.stage.WinnerPostEpochMachineStateHash = common.HexToHash("0xbad")
 			s.sealed.StagedPostEpochMachineStateHash = s.stage.WinnerPostEpochMachineStateHash

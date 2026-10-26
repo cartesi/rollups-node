@@ -126,6 +126,10 @@ func (f *observerCheckpointFixture) tournament(
 	tournament.Kind = kind
 	adapter.On("Descriptor", mock.MatchedBy(resultCallOptsAtBlock(scanEnd))).
 		Return(TournamentDescriptor{BaseCycle: big.NewInt(0), Level: level, Kind: kind, StartInstant: epoch.LastBlock}, nil).Once()
+	finalState := common.Hash{}
+	if epoch.MachineHash != nil {
+		finalState = *epoch.MachineHash
+	}
 	candidate := common.HexToHash("0x777")
 	if epoch.Commitment != nil {
 		candidate = *epoch.Commitment
@@ -139,7 +143,7 @@ func (f *observerCheckpointFixture) tournament(
 		finishedAt = scanEnd
 	}
 	adapter.On("Standing", mock.MatchedBy(resultCallOptsAtBlock(scanEnd))).Return(TournamentStanding{
-		State: state, HasCandidate: true, Candidate: candidate, FinishedAt: finishedAt,
+		State: state, HasCandidate: true, Candidate: candidate, FinalState: finalState, FinishedAt: finishedAt,
 	}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, mock.MatchedBy(resultCallOptsAtBlock(scanEnd)), TournamentLevel(level), state)
 	end := scanEnd

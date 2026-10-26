@@ -419,10 +419,10 @@ func (s *Service) reconcileAcceptedEpochs(
 			tournament.Snapshot.AsOfBlock > mostRecentBlock {
 			return false, nil
 		}
-		if tournament.Snapshot.WinnerCommitment != nil && *tournament.Snapshot.WinnerCommitment != *epoch.Commitment {
+		if tournament.Snapshot.FinalStateHash != nil && *tournament.Snapshot.FinalStateHash != *epoch.MachineHash {
 			return true, s.setApplicationDiverged(ctx, app,
-				"Epoch %d has inconsistent commitment between off-chain (%s) and on-chain (%s)",
-				epoch.Index, epoch.Commitment, tournament.Snapshot.WinnerCommitment)
+				"Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
+				epoch.Index, epoch.MachineHash, tournament.Snapshot.FinalStateHash)
 		}
 		if epoch.ClaimTransactionHash == nil { // no accepting EpochSealed event observed yet
 			break
