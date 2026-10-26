@@ -220,11 +220,7 @@ func (r *Service) runBlockScanners(
 
 	plan := buildBlockScanPlan(apps)
 
-	success = r.scanDaveConsensusEpochsAndInputs(ctx, plan.daveEpochTargets, blockNumber) && success
-	if ctx.Err() != nil {
-		return false
-	}
-	success = r.scanIConsensusInputs(ctx, plan.iConsensusInputTargets, blockNumber) && success
+	success = r.scanApplicationInputs(ctx, plan, blockNumber) && success
 	if ctx.Err() != nil {
 		return false
 	}

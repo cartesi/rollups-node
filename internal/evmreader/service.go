@@ -45,6 +45,8 @@ type Service struct {
 	maxInputsPerStep        uint64
 	// inputBudget is scoped to runBlockScanners; nil means no shared budget.
 	inputBudget *uint64
+	// The database ID survives changes in application order and membership.
+	lastInputApplicationID int64
 }
 
 const EvmReaderConfigKey = "evm-reader"
