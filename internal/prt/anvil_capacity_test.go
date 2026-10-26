@@ -237,7 +237,7 @@ func seedPRTCapacityApplications(
 	t.Helper()
 	factoryAddress := os.Getenv("CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS")
 	if factoryAddress == "" {
-		factoryAddress = "0xd34BEC37Fa5816ABA2f87BdaD2E13dd1B161370f"
+		factoryAddress = "0xF8f6dFA3A3e40C10926839FFd8a221C87C8b2ccD"
 	}
 	factory, err := idaveappfactory.NewIDaveAppFactory(common.HexToAddress(factoryAddress), client)
 	require.NoError(t, err)
