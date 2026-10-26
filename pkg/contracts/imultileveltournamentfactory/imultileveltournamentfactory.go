@@ -33,18 +33,31 @@ var (
 	_ = context.Background
 )
 
+// ITournamentTournamentDescriptor is an auto generated low-level Go binding around an user-defined struct.
+type ITournamentTournamentDescriptor struct {
+	InitialHash  [32]byte
+	BaseCycle    *big.Int
+	Log2Stride   uint64
+	Height       uint64
+	Level        uint64
+	Kind         uint8
+	StartInstant uint64
+	Allowance    uint64
+}
+
 // TournamentParameters is an auto generated low-level Go binding around an user-defined struct.
 type TournamentParameters struct {
-	Levels         uint64
-	Log2step       uint64
-	Height         uint64
-	ResponseBudget uint64
-	MaxAllowance   uint64
+	Levels           uint64
+	Log2step         uint64
+	Height           uint64
+	ResponseBudget   uint64
+	CommitmentBudget uint64
+	MaxAllowance     uint64
 }
 
 // IMultiLevelTournamentFactoryMetaData contains all meta data concerning the IMultiLevelTournamentFactory contract.
 var IMultiLevelTournamentFactoryMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"function\",\"name\":\"instantiate\",\"inputs\":[{\"name\":\"initialState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"provider\",\"type\":\"address\",\"internalType\":\"contractIDataProvider\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractITournament\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"instantiateInner\",\"inputs\":[{\"name\":\"_initialHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"_contestedCommitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"_contestedFinalStateOne\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"_contestedCommitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"_contestedFinalStateTwo\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"_allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"},{\"name\":\"_startCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_level\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"_provider\",\"type\":\"address\",\"internalType\":\"contractIDataProvider\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractITournament\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"stateTransition\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIStateTransition\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentLevelCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentParameters\",\"inputs\":[{\"name\":\"level\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structTournamentParameters\",\"components\":[{\"name\":\"levels\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"log2step\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"height\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"responseBudget\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"},{\"name\":\"maxAllowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"TournamentCreated\",\"inputs\":[{\"name\":\"tournament\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractITournament\"}],\"anonymous\":false}]",
+	ABI: "[{\"type\":\"function\",\"name\":\"instantiate\",\"inputs\":[{\"name\":\"initialState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"provider\",\"type\":\"address\",\"internalType\":\"contractIDataProvider\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractITournament\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"instantiateInner\",\"inputs\":[{\"name\":\"_initialHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"_contestedCommitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"_contestedFinalStateOne\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"_contestedCommitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"_contestedFinalStateTwo\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"_allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"},{\"name\":\"_startCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"_level\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"_provider\",\"type\":\"address\",\"internalType\":\"contractIDataProvider\"}],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractITournament\"},{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.TournamentDescriptor\",\"components\":[{\"name\":\"initialHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"baseCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"log2Stride\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"height\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"level\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"kind\",\"type\":\"uint8\",\"internalType\":\"enumITournament.TournamentKind\"},{\"name\":\"startInstant\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"stateTransition\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"address\",\"internalType\":\"contractIStateTransition\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentLevelCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentParameters\",\"inputs\":[{\"name\":\"level\",\"type\":\"uint64\",\"internalType\":\"uint64\"}],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structTournamentParameters\",\"components\":[{\"name\":\"levels\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"log2step\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"height\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"responseBudget\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"},{\"name\":\"commitmentBudget\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"},{\"name\":\"maxAllowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"event\",\"name\":\"TournamentCreated\",\"inputs\":[{\"name\":\"tournament\",\"type\":\"address\",\"indexed\":false,\"internalType\":\"contractITournament\"},{\"name\":\"descriptor\",\"type\":\"tuple\",\"indexed\":false,\"internalType\":\"structITournament.TournamentDescriptor\",\"components\":[{\"name\":\"initialHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"baseCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"log2Stride\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"height\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"level\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"kind\",\"type\":\"uint8\",\"internalType\":\"enumITournament.TournamentKind\"},{\"name\":\"startInstant\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]},{\"name\":\"bondValue\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false}]",
 }
 
 // IMultiLevelTournamentFactoryABI is the input ABI used to generate the binding from.
@@ -257,7 +270,7 @@ func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryCallerSession) 
 
 // TournamentParameters is a free data retrieval call binding the contract method 0xe05cc93f.
 //
-// Solidity: function tournamentParameters(uint64 level) view returns((uint64,uint64,uint64,uint64,uint64))
+// Solidity: function tournamentParameters(uint64 level) view returns((uint64,uint64,uint64,uint64,uint64,uint64))
 func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryCaller) TournamentParameters(opts *bind.CallOpts, level uint64) (TournamentParameters, error) {
 	var out []interface{}
 	err := _IMultiLevelTournamentFactory.contract.Call(opts, &out, "tournamentParameters", level)
@@ -274,14 +287,14 @@ func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryCaller) Tournam
 
 // TournamentParameters is a free data retrieval call binding the contract method 0xe05cc93f.
 //
-// Solidity: function tournamentParameters(uint64 level) view returns((uint64,uint64,uint64,uint64,uint64))
+// Solidity: function tournamentParameters(uint64 level) view returns((uint64,uint64,uint64,uint64,uint64,uint64))
 func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactorySession) TournamentParameters(level uint64) (TournamentParameters, error) {
 	return _IMultiLevelTournamentFactory.Contract.TournamentParameters(&_IMultiLevelTournamentFactory.CallOpts, level)
 }
 
 // TournamentParameters is a free data retrieval call binding the contract method 0xe05cc93f.
 //
-// Solidity: function tournamentParameters(uint64 level) view returns((uint64,uint64,uint64,uint64,uint64))
+// Solidity: function tournamentParameters(uint64 level) view returns((uint64,uint64,uint64,uint64,uint64,uint64))
 func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryCallerSession) TournamentParameters(level uint64) (TournamentParameters, error) {
 	return _IMultiLevelTournamentFactory.Contract.TournamentParameters(&_IMultiLevelTournamentFactory.CallOpts, level)
 }
@@ -309,21 +322,21 @@ func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryTransactorSessi
 
 // InstantiateInner is a paid mutator transaction binding the contract method 0xf65e16e8.
 //
-// Solidity: function instantiateInner(bytes32 _initialHash, bytes32 _contestedCommitmentOne, bytes32 _contestedFinalStateOne, bytes32 _contestedCommitmentTwo, bytes32 _contestedFinalStateTwo, uint64 _allowance, uint256 _startCycle, uint64 _level, address _provider) returns(address)
+// Solidity: function instantiateInner(bytes32 _initialHash, bytes32 _contestedCommitmentOne, bytes32 _contestedFinalStateOne, bytes32 _contestedCommitmentTwo, bytes32 _contestedFinalStateTwo, uint64 _allowance, uint256 _startCycle, uint64 _level, address _provider) returns(address, (bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64))
 func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryTransactor) InstantiateInner(opts *bind.TransactOpts, _initialHash [32]byte, _contestedCommitmentOne [32]byte, _contestedFinalStateOne [32]byte, _contestedCommitmentTwo [32]byte, _contestedFinalStateTwo [32]byte, _allowance uint64, _startCycle *big.Int, _level uint64, _provider common.Address) (*types.Transaction, error) {
 	return _IMultiLevelTournamentFactory.contract.Transact(opts, "instantiateInner", _initialHash, _contestedCommitmentOne, _contestedFinalStateOne, _contestedCommitmentTwo, _contestedFinalStateTwo, _allowance, _startCycle, _level, _provider)
 }
 
 // InstantiateInner is a paid mutator transaction binding the contract method 0xf65e16e8.
 //
-// Solidity: function instantiateInner(bytes32 _initialHash, bytes32 _contestedCommitmentOne, bytes32 _contestedFinalStateOne, bytes32 _contestedCommitmentTwo, bytes32 _contestedFinalStateTwo, uint64 _allowance, uint256 _startCycle, uint64 _level, address _provider) returns(address)
+// Solidity: function instantiateInner(bytes32 _initialHash, bytes32 _contestedCommitmentOne, bytes32 _contestedFinalStateOne, bytes32 _contestedCommitmentTwo, bytes32 _contestedFinalStateTwo, uint64 _allowance, uint256 _startCycle, uint64 _level, address _provider) returns(address, (bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64))
 func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactorySession) InstantiateInner(_initialHash [32]byte, _contestedCommitmentOne [32]byte, _contestedFinalStateOne [32]byte, _contestedCommitmentTwo [32]byte, _contestedFinalStateTwo [32]byte, _allowance uint64, _startCycle *big.Int, _level uint64, _provider common.Address) (*types.Transaction, error) {
 	return _IMultiLevelTournamentFactory.Contract.InstantiateInner(&_IMultiLevelTournamentFactory.TransactOpts, _initialHash, _contestedCommitmentOne, _contestedFinalStateOne, _contestedCommitmentTwo, _contestedFinalStateTwo, _allowance, _startCycle, _level, _provider)
 }
 
 // InstantiateInner is a paid mutator transaction binding the contract method 0xf65e16e8.
 //
-// Solidity: function instantiateInner(bytes32 _initialHash, bytes32 _contestedCommitmentOne, bytes32 _contestedFinalStateOne, bytes32 _contestedCommitmentTwo, bytes32 _contestedFinalStateTwo, uint64 _allowance, uint256 _startCycle, uint64 _level, address _provider) returns(address)
+// Solidity: function instantiateInner(bytes32 _initialHash, bytes32 _contestedCommitmentOne, bytes32 _contestedFinalStateOne, bytes32 _contestedCommitmentTwo, bytes32 _contestedFinalStateTwo, uint64 _allowance, uint256 _startCycle, uint64 _level, address _provider) returns(address, (bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64))
 func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryTransactorSession) InstantiateInner(_initialHash [32]byte, _contestedCommitmentOne [32]byte, _contestedFinalStateOne [32]byte, _contestedCommitmentTwo [32]byte, _contestedFinalStateTwo [32]byte, _allowance uint64, _startCycle *big.Int, _level uint64, _provider common.Address) (*types.Transaction, error) {
 	return _IMultiLevelTournamentFactory.Contract.InstantiateInner(&_IMultiLevelTournamentFactory.TransactOpts, _initialHash, _contestedCommitmentOne, _contestedFinalStateOne, _contestedCommitmentTwo, _contestedFinalStateTwo, _allowance, _startCycle, _level, _provider)
 }
@@ -398,12 +411,14 @@ func (it *IMultiLevelTournamentFactoryTournamentCreatedIterator) Close() error {
 // IMultiLevelTournamentFactoryTournamentCreated represents a TournamentCreated event raised by the IMultiLevelTournamentFactory contract.
 type IMultiLevelTournamentFactoryTournamentCreated struct {
 	Tournament common.Address
+	Descriptor ITournamentTournamentDescriptor
+	BondValue  *big.Int
 	Raw        types.Log // Blockchain specific contextual infos
 }
 
-// FilterTournamentCreated is a free log retrieval operation binding the contract event 0x66b8e5c50b708b71a6f155375a4613dd12971db692c5931e7cb0701ee7add6ac.
+// FilterTournamentCreated is a free log retrieval operation binding the contract event 0xb47d95f2cb8257143b2b67c1fc53e82db57c652e730c1fd41b2681642c29ecef.
 //
-// Solidity: event TournamentCreated(address tournament)
+// Solidity: event TournamentCreated(address tournament, (bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64) descriptor, uint256 bondValue)
 func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryFilterer) FilterTournamentCreated(opts *bind.FilterOpts) (*IMultiLevelTournamentFactoryTournamentCreatedIterator, error) {
 
 	logs, sub, err := _IMultiLevelTournamentFactory.contract.FilterLogs(opts, "TournamentCreated")
@@ -413,9 +428,9 @@ func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryFilterer) Filte
 	return &IMultiLevelTournamentFactoryTournamentCreatedIterator{contract: _IMultiLevelTournamentFactory.contract, event: "TournamentCreated", logs: logs, sub: sub}, nil
 }
 
-// WatchTournamentCreated is a free log subscription operation binding the contract event 0x66b8e5c50b708b71a6f155375a4613dd12971db692c5931e7cb0701ee7add6ac.
+// WatchTournamentCreated is a free log subscription operation binding the contract event 0xb47d95f2cb8257143b2b67c1fc53e82db57c652e730c1fd41b2681642c29ecef.
 //
-// Solidity: event TournamentCreated(address tournament)
+// Solidity: event TournamentCreated(address tournament, (bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64) descriptor, uint256 bondValue)
 func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryFilterer) WatchTournamentCreated(opts *bind.WatchOpts, sink chan<- *IMultiLevelTournamentFactoryTournamentCreated) (event.Subscription, error) {
 
 	logs, sub, err := _IMultiLevelTournamentFactory.contract.WatchLogs(opts, "TournamentCreated")
@@ -454,9 +469,9 @@ func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryFilterer) Watch
 	}), nil
 }
 
-// ParseTournamentCreated is a log parse operation binding the contract event 0x66b8e5c50b708b71a6f155375a4613dd12971db692c5931e7cb0701ee7add6ac.
+// ParseTournamentCreated is a log parse operation binding the contract event 0xb47d95f2cb8257143b2b67c1fc53e82db57c652e730c1fd41b2681642c29ecef.
 //
-// Solidity: event TournamentCreated(address tournament)
+// Solidity: event TournamentCreated(address tournament, (bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64) descriptor, uint256 bondValue)
 func (_IMultiLevelTournamentFactory *IMultiLevelTournamentFactoryFilterer) ParseTournamentCreated(log types.Log) (*IMultiLevelTournamentFactoryTournamentCreated, error) {
 	event := new(IMultiLevelTournamentFactoryTournamentCreated)
 	if err := _IMultiLevelTournamentFactory.contract.UnpackLog(event, "TournamentCreated", log); err != nil {

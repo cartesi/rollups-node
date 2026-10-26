@@ -98,6 +98,10 @@ var bindings = []contractBinding{
 		typeName: "IMultiLevelTournamentFactory",
 	},
 	{
+		jsonPath: rollupsPrtContractsPath + "prt/contracts/out/CartesiStateTransition.sol/CartesiStateTransition.json",
+		typeName: "CartesiStateTransition",
+	},
+	{
 		jsonPath: rollupsPrtContractsPath + "cartesi-rollups/contracts/out/IDaveConsensus.sol/IDaveConsensus.json",
 		typeName: "IDaveConsensus",
 	},
