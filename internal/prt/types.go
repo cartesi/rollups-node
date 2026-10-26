@@ -189,6 +189,7 @@ type TournamentEvents struct {
 	LeafMatchSealed    []*itournament.ITournamentLeafMatchSealed
 	PartialBondRefund  []*itournament.ITournamentPartialBondRefund
 	BondRecovered      []*itournament.ITournamentBondRecovered
+	StandingChanged    []*itournament.ITournamentStandingChanged
 }
 
 type TournamentLevel uint64

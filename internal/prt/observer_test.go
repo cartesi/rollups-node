@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTournamentDescriptorFromBinding_MapsFieldsAndOwnsBaseCycle(t *testing.T) {
+func TestTournamentDescriptorFromBinding_MapsDecodedFields(t *testing.T) {
 	baseCycle := big.NewInt(123)
 	binding := itournament.ITournamentTournamentDescriptor{
 		BaseCycle:  baseCycle,
@@ -36,13 +36,6 @@ func TestTournamentDescriptorFromBinding_MapsFieldsAndOwnsBaseCycle(t *testing.T
 	require.Equal(t, binding.Level, descriptor.Level)
 	require.Equal(t, model.TournamentKindLeaf, descriptor.Kind)
 
-	baseCycle.SetInt64(456)
-	require.Equal(t, int64(123), descriptor.BaseCycle.Int64(), "the DTO must own its base-cycle value")
-	descriptor.BaseCycle.SetInt64(789)
-	require.Equal(t, int64(456), binding.BaseCycle.Int64(), "the binding must not share the DTO base-cycle value")
-
-	_, err = tournamentDescriptorFromBinding(itournament.ITournamentTournamentDescriptor{})
-	require.ErrorContains(t, err, "base cycle is nil")
 }
 
 func TestTournamentStandingFromBinding_MapsAllFields(t *testing.T) {

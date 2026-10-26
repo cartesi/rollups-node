@@ -30,6 +30,7 @@ const (
 	tournamentEventLeafMatchSealed    = "LeafMatchSealed"
 	tournamentEventMatchDeleted       = "MatchDeleted"
 	tournamentEventNewInnerTournament = "NewInnerTournament"
+	tournamentEventStandingChanged    = "StandingChanged"
 )
 
 func zeroStructuralEventCounts() StructuralEventCounts {
@@ -97,6 +98,11 @@ func validateTournamentEventCounts(before, after StructuralEventCounts, events *
 			return fmt.Errorf("%w: %s event count mismatch: expected %s, fetched %d",
 				txsender.ErrInconclusive, stream.name, expected, stream.fetched)
 		}
+	}
+	standingCount := len(events.CommitmentJoined) + len(events.MatchDeleted)
+	if len(events.StandingChanged) != standingCount {
+		return fmt.Errorf("%w: StandingChanged event count mismatch: expected %d, fetched %d",
+			txsender.ErrInconclusive, standingCount, len(events.StandingChanged))
 	}
 	return nil
 }
