@@ -297,6 +297,8 @@ type Node struct {
 	AccumulatedCount *big.Int
 }
 
+// Builder retains every append, so its memory grows with the number of appends.
+// Use StreamingBuilder for epoch-sized trees.
 type Builder struct {
 	Trees []Node
 }
