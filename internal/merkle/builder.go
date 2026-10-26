@@ -21,8 +21,9 @@ var (
 )
 
 var (
-	ErrBadInput  = errors.New("merkle: invalid input")
-	ErrInvariant = errors.New("merkle: internal invariant violated")
+	ErrBadInput   = errors.New("merkle: invalid input")
+	ErrInvariant  = errors.New("merkle: internal invariant violated")
+	ErrOpaqueTree = errors.New("merkle: proof enters an opaque subtree")
 )
 
 // MerkleProof: dave/common-rs/merkle/src/tree.rs
@@ -106,6 +107,7 @@ func RootChildrenFromProof(leaf common.Hash, siblings []common.Hash, index uint6
 type Tree struct {
 	RootHash common.Hash
 	Height   uint32
+	opaque   bool
 	Subtrees *InnerNode
 }
 
@@ -143,6 +145,15 @@ func TreeLeaf(hash common.Hash) *Tree {
 		RootHash: hash,
 		Subtrees: nil,
 	}
+}
+
+// OpaqueTree represents a subtree known only by its root and height.
+// Height zero is an ordinary leaf and remains provable.
+func OpaqueTree(root common.Hash, height uint32) *Tree {
+	if height == 0 {
+		return TreeLeaf(root)
+	}
+	return &Tree{RootHash: root, Height: height, opaque: true}
 }
 
 func (tree *Tree) GetRootHash() common.Hash {
@@ -230,6 +241,9 @@ func (tree *Tree) ProveLeafRec(index *big.Int) (*Proof, error) {
 
 	subtree := tree.Subtrees
 	if subtree == nil {
+		if tree.opaque {
+			return nil, fmt.Errorf("proof enters subtree of height %d, root %v: %w", tree.Height, tree.RootHash, ErrOpaqueTree)
+		}
 		if index.Cmp(zero) != 0 {
 			return nil, fmt.Errorf("invalid Tree state: %v: %w", tree, ErrInvariant)
 		}
