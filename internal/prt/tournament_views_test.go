@@ -206,7 +206,9 @@ func TestTournamentAdapterDecodesInactiveViews(t *testing.T) {
 		f.expect("bondRecovery", nil, test.raw, common.Address{}, big.NewInt(0))
 		bond, err := f.adapter.BondRecovery(f.opts)
 		require.NoError(t, err)
-		require.Equal(t, BondRecovery{Disposition: test.want, Payment: big.NewInt(0)}, bond)
+		require.Equal(t, test.want, bond.Disposition)
+		require.Zero(t, bond.Claimer)
+		require.Zero(t, bond.Payment.Sign())
 	}
 }
 

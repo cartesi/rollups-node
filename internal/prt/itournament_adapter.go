@@ -67,13 +67,9 @@ func tournamentDescriptorFromBinding(descriptor itournament.ITournamentTournamen
 	if err != nil {
 		return TournamentDescriptor{}, err
 	}
-	baseCycle, err := tournamentUint256("base cycle", descriptor.BaseCycle)
-	if err != nil {
-		return TournamentDescriptor{}, err
-	}
 	return TournamentDescriptor{
 		InitialHash:  descriptor.InitialHash,
-		BaseCycle:    baseCycle,
+		BaseCycle:    descriptor.BaseCycle,
 		Log2Stride:   descriptor.Log2Stride,
 		Height:       descriptor.Height,
 		Level:        descriptor.Level,
@@ -116,7 +112,7 @@ func (a *ITournamentAdapterImpl) BondValue(opts *bind.CallOpts) (*big.Int, error
 	if err != nil {
 		return nil, err
 	}
-	return tournamentUint256("bond value", value)
+	return value, nil
 }
 
 func (a *ITournamentAdapterImpl) BondRecovery(opts *bind.CallOpts) (BondRecovery, error) {
@@ -134,10 +130,6 @@ func bondRecoveryFromBinding(
 ) (BondRecovery, error) {
 	d, err := tournamentEnum("bond disposition", disposition, model.BondDispositionTournamentRunning,
 		model.BondDispositionNoWinner, model.BondDispositionRecoverable, model.BondDispositionRecovered)
-	if err != nil {
-		return BondRecovery{}, fmt.Errorf("%w: %w", errInvalidBondRecovery, err)
-	}
-	amount, err := tournamentUint256("payment", payment)
 	if err != nil {
 		return BondRecovery{}, fmt.Errorf("%w: %w", errInvalidBondRecovery, err)
 	}
@@ -159,7 +151,7 @@ func bondRecoveryFromBinding(
 	return BondRecovery{
 		Disposition: d,
 		Claimer:     claimer,
-		Payment:     amount,
+		Payment:     payment,
 	}, nil
 }
 
@@ -294,34 +286,18 @@ func (a *ITournamentAdapterImpl) MatchSnapshot(opts *bind.CallOpts, one, two [32
 			return ObservedMatchSnapshot{}, errTournamentMatchPhaseChanged
 		}
 		value := view.Value
-		position, err := tournamentUint256("divergence position", value.DivergencePosition)
-		if err != nil {
-			return ObservedMatchSnapshot{}, err
-		}
-		cycle, err := tournamentUint256("divergence cycle", value.DivergenceCycle)
-		if err != nil {
-			return ObservedMatchSnapshot{}, err
-		}
 		if timeout.DeferredCharge != 0 {
 			return ObservedMatchSnapshot{}, errors.New("sealed tournament match has a deferred charge")
 		}
-		snapshot.Sealed = &SealedMatch{AgreeState: value.AgreeState, DivergencePosition: position,
-			DivergenceCycle: cycle, FinalStateOne: value.FinalStateOne, FinalStateTwo: value.FinalStateTwo}
+		snapshot.Sealed = &SealedMatch{AgreeState: value.AgreeState, DivergencePosition: value.DivergencePosition,
+			DivergenceCycle: value.DivergenceCycle, FinalStateOne: value.FinalStateOne, FinalStateTwo: value.FinalStateTwo}
 	}
 	return snapshot, nil
 }
 
 func bisectionFields(position, cycle *big.Int, rawSide uint8) (*big.Int, *big.Int, model.CommitmentSide, error) {
-	positionCopy, err := tournamentUint256("segment start position", position)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	cycleCopy, err := tournamentUint256("segment start cycle", cycle)
-	if err != nil {
-		return nil, nil, "", err
-	}
 	side, err := tournamentEnum("responder", rawSide, model.CommitmentSideOne, model.CommitmentSideTwo)
-	return positionCopy, cycleCopy, side, err
+	return position, cycle, side, err
 }
 
 func (a *ITournamentAdapterImpl) InnerResult(opts *bind.CallOpts) (InnerResult, error) {
@@ -361,17 +337,14 @@ func (a *ITournamentAdapterImpl) StructuralEventCounts(opts *bind.CallOpts) (Str
 		if err != nil {
 			return StructuralEventCounts{}, fmt.Errorf("reading %s count: %w", counter.name, err)
 		}
-		*counter.value, err = tournamentUint256(counter.name+" count", value)
-		if err != nil {
-			return StructuralEventCounts{}, err
-		}
+		*counter.value = value
 	}
 	return counts, nil
 }
 
 var tournamentEventNames = [...]string{
 	"CommitmentJoined", "MatchAdvanced", "MatchCreated", "MatchDeleted",
-	"NewInnerTournament", "LeafMatchSealed", "PartialBondRefund", "BondRecovered",
+	"NewInnerTournament", "LeafMatchSealed", "PartialBondRefund", "BondRecovered", tournamentEventStandingChanged,
 }
 
 func buildAllEventsFilterQuery(
@@ -413,10 +386,7 @@ func (a *ITournamentAdapterImpl) RetrieveAllEvents(opts *bind.FilterOpts) (*Tour
 	if err != nil {
 		return nil, err
 	}
-	// The filter owns its chunk sizing. A local copy prevents concurrent reads
-	// through one adapter from changing each other's filter state.
-	filter := a.filter
-	iterator, err := filter.ChunkedFilterLogs(opts.Context, a.client, query)
+	iterator, err := a.filter.ChunkedFilterLogs(opts.Context, a.client, query)
 	if err != nil {
 		return nil, err
 	}
@@ -484,11 +454,14 @@ func (a *ITournamentAdapterImpl) appendTournamentEvent(contractABI *abi.ABI, ent
 	if err != nil {
 		return fmt.Errorf("tournament event has unexpected topic %s: %w", entry.Topics[0], err)
 	}
-	// Every current tournament event field occupies one static ABI word.
 	// UnpackLog skips decoding empty data, so validate its exact size first.
 	const abiWordBytes = 32
-	nonIndexed := len(definition.Inputs.NonIndexed())
-	if len(entry.Data) != nonIndexed*abiWordBytes || len(entry.Topics) != len(definition.Inputs)-nonIndexed+1 {
+	dataArguments := definition.Inputs.NonIndexed()
+	words, err := staticABIWordCount(dataArguments)
+	if err != nil {
+		return fmt.Errorf("tournament %s ABI: %w", definition.Name, err)
+	}
+	if len(entry.Data) != words*abiWordBytes || len(entry.Topics) != len(definition.Inputs)-len(dataArguments)+1 {
 		return fmt.Errorf("tournament %s event has invalid ABI field lengths", definition.Name)
 	}
 	switch entry.Topics[0] {
@@ -503,10 +476,16 @@ func (a *ITournamentAdapterImpl) appendTournamentEvent(contractABI *abi.ABI, ent
 		if err != nil {
 			return err
 		}
+		if err := validateTournamentEventPair(event.MatchIdHash, event.One, event.Two); err != nil {
+			return err
+		}
 		events.MatchAdvanced = append(events.MatchAdvanced, event)
 	case contractABI.Events["MatchCreated"].ID:
 		event, err := a.tournament.ParseMatchCreated(entry)
 		if err != nil {
+			return err
+		}
+		if err := validateTournamentEventPair(event.MatchIdHash, event.One, event.Two); err != nil {
 			return err
 		}
 		events.MatchCreated = append(events.MatchCreated, event)
@@ -527,10 +506,19 @@ func (a *ITournamentAdapterImpl) appendTournamentEvent(contractABI *abi.ABI, ent
 		if err != nil {
 			return err
 		}
+		if err := validateTournamentEventPair(event.MatchIdHash, event.One, event.Two); err != nil {
+			return err
+		}
+		if _, err := tournamentDescriptorFromBinding(event.Descriptor); err != nil {
+			return err
+		}
 		events.NewInnerTournament = append(events.NewInnerTournament, event)
 	case contractABI.Events["LeafMatchSealed"].ID:
 		event, err := a.tournament.ParseLeafMatchSealed(entry)
 		if err != nil {
+			return err
+		}
+		if err := validateTournamentEventPair(event.MatchIdHash, event.One, event.Two); err != nil {
 			return err
 		}
 		events.LeafMatchSealed = append(events.LeafMatchSealed, event)
@@ -546,8 +534,21 @@ func (a *ITournamentAdapterImpl) appendTournamentEvent(contractABI *abi.ABI, ent
 			return err
 		}
 		events.BondRecovered = append(events.BondRecovered, event)
+	case contractABI.Events[tournamentEventStandingChanged].ID:
+		event, err := a.tournament.ParseStandingChanged(entry)
+		if err != nil {
+			return err
+		}
+		events.StandingChanged = append(events.StandingChanged, event)
 	default:
 		return fmt.Errorf("tournament event has unexpected topic %s", entry.Topics[0])
+	}
+	return nil
+}
+
+func validateTournamentEventPair(id, one, two [32]byte) error {
+	if crypto.Keccak256Hash(one[:], two[:]) != id {
+		return errors.New("tournament event pair does not match its identity")
 	}
 	return nil
 }

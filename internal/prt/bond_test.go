@@ -18,7 +18,7 @@ import (
 
 const noWinnerCase = "no winner"
 
-func TestBondRecoveryFromBindingMapsAndOwnsPayment(t *testing.T) {
+func TestBondRecoveryFromBindingMapsDecodedPayment(t *testing.T) {
 	claimer := common.HexToAddress("0x100")
 	payment := big.NewInt(42)
 	recovery, err := bondRecoveryFromBinding(2, claimer, payment)
@@ -26,8 +26,6 @@ func TestBondRecoveryFromBindingMapsAndOwnsPayment(t *testing.T) {
 	require.Equal(t, model.BondDispositionRecoverable, recovery.Disposition)
 	require.Equal(t, claimer, recovery.Claimer)
 	require.Equal(t, int64(42), recovery.Payment.Int64())
-	recovery.Payment.SetInt64(7)
-	require.Equal(t, int64(42), payment.Int64())
 }
 
 func TestBondRecoveryFromBindingValidatesCanonicalState(t *testing.T) {
@@ -39,8 +37,6 @@ func TestBondRecoveryFromBindingValidatesCanonicalState(t *testing.T) {
 		payment     *big.Int
 	}{
 		{"unknown disposition", 4, common.Address{}, big.NewInt(0)},
-		{"nil payment", 3, common.Address{}, nil},
-		{"negative payment", 2, claimer, big.NewInt(-1)},
 		{"running claimer", 0, claimer, big.NewInt(0)},
 		{"no winner payment", 1, common.Address{}, big.NewInt(1)},
 		{"recovered claimer", 3, claimer, big.NewInt(0)},

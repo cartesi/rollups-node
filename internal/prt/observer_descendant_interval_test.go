@@ -108,6 +108,10 @@ func descendantParticipantEvents(start uint64, leaf bool) *TournamentEvents {
 			MatchIdHash: matchID, One: one, Two: two, Raw: types.Log{BlockNumber: start + 4},
 		}},
 	}
+	events.StandingChanged = []*itournament.ITournamentStandingChanged{
+		{MatchCount: new(big.Int), Dangling: one, ResultAt: 100, Raw: types.Log{BlockNumber: start, Index: 1}},
+		{MatchCount: big.NewInt(1), Raw: types.Log{BlockNumber: start + 1, Index: 1}},
+	}
 	if leaf {
 		events.LeafMatchSealed = []*itournament.ITournamentLeafMatchSealed{{
 			MatchIdHash: matchID, Raw: types.Log{BlockNumber: 80},

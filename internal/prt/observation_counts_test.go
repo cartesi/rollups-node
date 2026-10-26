@@ -211,11 +211,13 @@ func TestTournamentEventCountsCheckEveryStructuralStream(t *testing.T) {
 		name   string
 		events TournamentEvents
 	}{
-		{tournamentEventCommitmentJoined, TournamentEvents{CommitmentJoined: []*itournament.ITournamentCommitmentJoined{{}}}},
+		{tournamentEventCommitmentJoined, TournamentEvents{CommitmentJoined: []*itournament.ITournamentCommitmentJoined{{}},
+			StandingChanged: []*itournament.ITournamentStandingChanged{{MatchCount: big.NewInt(0), ResultAt: 100}}}},
 		{tournamentEventMatchCreated, TournamentEvents{MatchCreated: []*itournament.ITournamentMatchCreated{{}}}},
 		{tournamentEventMatchAdvanced, TournamentEvents{MatchAdvanced: []*itournament.ITournamentMatchAdvanced{{}}}},
 		{tournamentEventLeafMatchSealed, TournamentEvents{LeafMatchSealed: []*itournament.ITournamentLeafMatchSealed{{}}}},
-		{tournamentEventMatchDeleted, TournamentEvents{MatchDeleted: []*itournament.ITournamentMatchDeleted{{}}}},
+		{tournamentEventMatchDeleted, TournamentEvents{MatchDeleted: []*itournament.ITournamentMatchDeleted{{}},
+			StandingChanged: []*itournament.ITournamentStandingChanged{{MatchCount: big.NewInt(0), ResultAt: 100}}}},
 		{tournamentEventNewInnerTournament, TournamentEvents{NewInnerTournament: []*itournament.ITournamentNewInnerTournament{{}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

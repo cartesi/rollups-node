@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/require"
@@ -24,8 +25,13 @@ import (
 
 // Keep expected event names independent of the production filter list.
 const (
-	testCommitmentJoinedEvent = "CommitmentJoined"
-	testLeafMatchSealedEvent  = "LeafMatchSealed"
+	testCommitmentJoinedEvent   = "CommitmentJoined"
+	testMatchCreatedEvent       = "MatchCreated"
+	testMatchAdvancedEvent      = "MatchAdvanced"
+	testNewInnerTournamentEvent = "NewInnerTournament"
+	testStandingChangedEvent    = "StandingChanged"
+	testMissingTopicMutation    = "missing topic"
+	testLeafMatchSealedEvent    = "LeafMatchSealed"
 )
 
 func TestAllTournamentEventsFilter(t *testing.T) {
@@ -39,8 +45,8 @@ func TestAllTournamentEventsFilter(t *testing.T) {
 	require.Equal(t, uint64(10), query.FromBlock.Uint64())
 	require.Equal(t, end, query.ToBlock.Uint64())
 	require.Len(t, query.Topics, 1)
-	names := []string{testCommitmentJoinedEvent, "MatchAdvanced", "MatchCreated", "MatchDeleted",
-		"NewInnerTournament", testLeafMatchSealedEvent, "PartialBondRefund", "BondRecovered"}
+	names := []string{testCommitmentJoinedEvent, testMatchAdvancedEvent, testMatchCreatedEvent, "MatchDeleted",
+		testNewInnerTournamentEvent, testLeafMatchSealedEvent, "PartialBondRefund", "BondRecovered", testStandingChangedEvent}
 	expected := make([]common.Hash, 0, len(names))
 	for _, name := range names {
 		expected = append(expected, contractABI.Events[name].ID)
@@ -63,13 +69,15 @@ func (s *tournamentLogsSource) GetLogs(context.Context, map[string]any) ([]types
 	return s.logs, nil
 }
 
-func TestRetrieveAllTournamentEventsParsesCurrentABI(t *testing.T) {
+func currentTournamentLogs(t *testing.T) []types.Log {
+	t.Helper()
 	contractABI, err := itournament.ITournamentMetaData.GetAbi()
 	require.NoError(t, err)
 	address := common.HexToAddress("0x1234")
 	one := common.HexToHash("0x11")
 	two := common.HexToHash("0x22")
 	three := common.HexToHash("0x33")
+	pair := crypto.Keccak256Hash(two[:], three[:])
 	source := &tournamentLogsSource{}
 	large := new(big.Int).Lsh(big.NewInt(1), 200)
 	for index, event := range []struct {
@@ -78,13 +86,18 @@ func TestRetrieveAllTournamentEventsParsesCurrentABI(t *testing.T) {
 		data    []any
 	}{
 		{name: testCommitmentJoinedEvent, indexed: []common.Hash{one, two}, data: []any{three}},
-		{name: "MatchCreated", indexed: []common.Hash{one, two, three}, data: []any{one, uint64(20)}},
-		{name: "MatchAdvanced", indexed: []common.Hash{one}, data: []any{two, three, large, uint64(21)}},
-		{name: "MatchDeleted", indexed: []common.Hash{one, two, three}, data: []any{uint8(1), uint8(2)}},
-		{name: "NewInnerTournament", indexed: []common.Hash{one, two}},
-		{name: testLeafMatchSealedEvent, indexed: []common.Hash{one}, data: []any{uint64(22)}},
+		{name: testMatchCreatedEvent, indexed: []common.Hash{pair, two, three}, data: []any{one, uint64(19), uint64(20)}},
+		{name: testMatchAdvancedEvent, indexed: []common.Hash{pair},
+			data: []any{two, three, two, three, large, uint64(5), uint64(20), uint64(21)}},
+		{name: "MatchDeleted", indexed: []common.Hash{pair, two, three}, data: []any{uint8(1), uint8(2)}},
+		{name: testNewInnerTournamentEvent, indexed: []common.Hash{pair, two}, data: []any{two, three, one, two,
+			itournament.ITournamentTournamentDescriptor{InitialHash: one, BaseCycle: new(big.Int), Height: 38,
+				Level: 1, StartInstant: 10, Allowance: 20}, big.NewInt(9)}},
+		{name: testLeafMatchSealedEvent, indexed: []common.Hash{pair},
+			data: []any{two, three, one, large, one, two, uint64(21), uint64(22), uint64(22)}},
 		{name: "PartialBondRefund", indexed: []common.Hash{two, common.HexToHash("0x01")}, data: []any{large}},
 		{name: "BondRecovered", indexed: []common.Hash{one, two}, data: []any{large, big.NewInt(7)}},
+		{name: testStandingChangedEvent, data: []any{big.NewInt(1), common.Hash{}, common.Hash{}, uint64(0), uint64(0)}},
 	} {
 		definition := contractABI.Events[event.name]
 		data, err := definition.Inputs.NonIndexed().Pack(event.data...)
@@ -94,6 +107,15 @@ func TestRetrieveAllTournamentEventsParsesCurrentABI(t *testing.T) {
 			BlockHash: three, TxHash: two, Index: uint(index),
 		})
 	}
+	return source.logs
+}
+
+func TestRetrieveAllTournamentEventsParsesCurrentABI(t *testing.T) {
+	address := common.HexToAddress("0x1234")
+	one, two, three := common.HexToHash("0x11"), common.HexToHash("0x22"), common.HexToHash("0x33")
+	pair := crypto.Keccak256Hash(two[:], three[:])
+	large := new(big.Int).Lsh(big.NewInt(1), 200)
+	source := &tournamentLogsSource{logs: currentTournamentLogs(t)}
 	server := rpc.NewServer()
 	require.NoError(t, server.RegisterName("eth", source))
 	t.Cleanup(server.Stop)
@@ -128,7 +150,7 @@ func TestRetrieveAllTournamentEventsParsesCurrentABI(t *testing.T) {
 	require.Equal(t, uint8(2), events.MatchDeleted[0].WinnerCommitment)
 	require.Equal(t, common.BytesToAddress(two[:]), events.NewInnerTournament[0].ChildTournament)
 	require.Equal(t, uint64(22), events.LeafMatchSealed[0].EliminableAt)
-	require.Equal(t, [32]byte(one), events.LeafMatchSealed[0].MatchIdHash)
+	require.Equal(t, [32]byte(pair), events.LeafMatchSealed[0].MatchIdHash)
 	require.Equal(t, common.BytesToAddress(two[:]), events.PartialBondRefund[0].Recipient)
 	require.True(t, events.PartialBondRefund[0].Success)
 	require.Equal(t, large, events.PartialBondRefund[0].Value)
@@ -137,6 +159,33 @@ func TestRetrieveAllTournamentEventsParsesCurrentABI(t *testing.T) {
 	require.Equal(t, large, events.BondRecovered[0].Payment)
 	require.Equal(t, big.NewInt(7), events.BondRecovered[0].Burned)
 	require.Equal(t, source.logs[7], events.BondRecovered[0].Raw)
+	require.Equal(t, uint64(19), events.MatchCreated[0].ResponderDeadline)
+	require.Equal(t, [32]byte(two), events.MatchAdvanced[0].One)
+	require.Equal(t, [32]byte(three), events.MatchAdvanced[0].Two)
+	require.Equal(t, uint64(5), events.MatchAdvanced[0].CurrentHeight)
+	require.Equal(t, uint64(20), events.MatchAdvanced[0].ResponderDeadline)
+	require.Equal(t, [32]byte(two), events.LeafMatchSealed[0].One)
+	require.Equal(t, [32]byte(three), events.LeafMatchSealed[0].Two)
+	require.Equal(t, [32]byte(one), events.LeafMatchSealed[0].AgreeState)
+	require.Equal(t, large, events.LeafMatchSealed[0].DivergencePosition)
+	require.Equal(t, [32]byte(one), events.LeafMatchSealed[0].FinalStateOne)
+	require.Equal(t, [32]byte(two), events.LeafMatchSealed[0].FinalStateTwo)
+	require.Equal(t, uint64(21), events.LeafMatchSealed[0].DeadlineOne)
+	require.Equal(t, uint64(22), events.LeafMatchSealed[0].DeadlineTwo)
+	require.Equal(t, [32]byte(two), events.NewInnerTournament[0].One)
+	require.Equal(t, [32]byte(three), events.NewInnerTournament[0].Two)
+	require.Equal(t, [32]byte(one), events.NewInnerTournament[0].ContestedFinalStateOne)
+	require.Equal(t, [32]byte(two), events.NewInnerTournament[0].ContestedFinalStateTwo)
+	descriptor := events.NewInnerTournament[0].Descriptor
+	require.NotNil(t, descriptor.BaseCycle)
+	require.Zero(t, descriptor.BaseCycle.Sign())
+	descriptor.BaseCycle = nil
+	require.Equal(t, itournament.ITournamentTournamentDescriptor{InitialHash: one,
+		Height: 38, Level: 1, StartInstant: 10, Allowance: 20}, descriptor)
+	require.Equal(t, big.NewInt(9), events.NewInnerTournament[0].BondValue)
+	require.Len(t, events.StandingChanged, 1)
+	require.Equal(t, big.NewInt(1), events.StandingChanged[0].MatchCount)
+	require.Equal(t, source.logs[8], events.StandingChanged[0].Raw)
 }
 
 func TestRetrieveTournamentEventsRejectsInvalidLogs(t *testing.T) {
@@ -162,7 +211,7 @@ func TestRetrieveTournamentEventsRejectsInvalidLogs(t *testing.T) {
 		{name: "after range", mutate: func(log *types.Log) { log.BlockNumber = 11 }},
 		{name: "missing transaction", mutate: func(log *types.Log) { log.TxHash = common.Hash{} }},
 		{name: "missing block hash", mutate: func(log *types.Log) { log.BlockHash = common.Hash{} }},
-		{name: "missing topic", mutate: func(log *types.Log) { log.Topics = nil }},
+		{name: testMissingTopicMutation, mutate: func(log *types.Log) { log.Topics = nil }},
 		{name: "unexpected topic", mutate: func(log *types.Log) { log.Topics[0] = common.Hash{} }},
 		{name: "bad payload", mutate: func(log *types.Log) { log.Data = nil }},
 		{name: "unknown reason", mutate: func(log *types.Log) { log.Data[31] = 3 }},

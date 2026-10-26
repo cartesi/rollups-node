@@ -24,10 +24,20 @@ import (
 
 func TestIncompleteTournamentEventsRetryTheSameIntervalAndKeepPersistentAlarm(t *testing.T) {
 	for _, selected := range []struct {
-		policy model.DefaultBlock
-		tag    rpc.BlockNumber
-	}{{model.DefaultBlock_Latest, rpc.LatestBlockNumber}, {model.DefaultBlock_Finalized, rpc.FinalizedBlockNumber}} {
-		t.Run(selected.policy.String(), func(t *testing.T) {
+		policy          model.DefaultBlock
+		tag             rpc.BlockNumber
+		missingStanding bool
+	}{
+		{model.DefaultBlock_Latest, rpc.LatestBlockNumber, false},
+		{model.DefaultBlock_Finalized, rpc.FinalizedBlockNumber, false},
+		{model.DefaultBlock_Latest, rpc.LatestBlockNumber, true},
+		{model.DefaultBlock_Finalized, rpc.FinalizedBlockNumber, true},
+	} {
+		missing := "CommitmentJoined"
+		if selected.missingStanding {
+			missing = testStandingChangedEvent
+		}
+		t.Run(selected.policy.String()+"/"+missing, func(t *testing.T) {
 			f, client := tickFixture(t)
 			f.d.defaultBlock = selected.policy
 			var output bytes.Buffer
@@ -59,11 +69,18 @@ func TestIncompleteTournamentEventsRetryTheSameIntervalAndKeepPersistentAlarm(t 
 			adapter.On("StructuralEventCounts", mock.Anything).Return(counts, nil).Times(6)
 			var starts []uint64
 			recordInterval := func(args mock.Arguments) { starts = append(starts, args.Get(0).(*bind.FilterOpts).Start) }
-			adapter.On("RetrieveAllEvents", mock.Anything).Run(recordInterval).Return(&TournamentEvents{}, nil).Times(5)
 			events := &TournamentEvents{CommitmentJoined: []*itournament.ITournamentCommitmentJoined{{
 				Commitment: *f.epoch.Commitment, FinalStateHash: *f.epoch.MachineHash,
 				Raw: types.Log{BlockNumber: 101, TxHash: common.HexToHash("0x123")},
 			}}}
+			events.StandingChanged = []*itournament.ITournamentStandingChanged{{MatchCount: new(big.Int),
+				Dangling: *f.epoch.Commitment, ResultAt: 120,
+				Raw: types.Log{BlockNumber: 101, TxHash: common.HexToHash("0x123"), Index: 1}}}
+			partial := &TournamentEvents{}
+			if selected.missingStanding {
+				partial.CommitmentJoined = events.CommitmentJoined
+			}
+			adapter.On("RetrieveAllEvents", mock.Anything).Run(recordInterval).Return(partial, nil).Times(5)
 			adapter.On("RetrieveAllEvents", mock.Anything).Run(recordInterval).Return(events, nil).Once()
 			adapter.On("CommitmentStanding", mock.Anything, [32]byte(*f.epoch.Commitment)).
 				Return(CommitmentStanding{Joined: true, FinalState: *f.epoch.MachineHash}, nil).Once()
@@ -95,7 +112,7 @@ func TestIncompleteTournamentEventsRetryTheSameIntervalAndKeepPersistentAlarm(t 
 			require.Equal(t, uint64(106), f.app.LastTournamentCheckBlock)
 			require.Empty(t, f.d.observationFailures, "only a complete committed retry clears the alarm")
 			require.Equal(t, 1, strings.Count(output.String(), "PRT tournament observation is stalled"))
-			require.Contains(t, output.String(), "CommitmentJoined event count mismatch: expected 1, fetched 0")
+			require.Contains(t, output.String(), missing+" event count mismatch: expected 1, fetched 0")
 			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
 			f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			adapter.AssertExpectations(t)
