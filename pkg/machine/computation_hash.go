@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	// Log2MaxUarchCyclesPerMCycle is emulator 0.21's
+	// Log2MaxUarchCyclesPerMCycle is the emulator's
 	// CM_ROLLUP_LOG2_MAX_UARCH_CYCLES_PER_MCYCLE; the Go name omits the C
 	// ROLLUP_ prefix. The DAVE 3.0-alpha node calls the same dimension
 	// LOG2_UARCH_SPAN_TO_BARCH.
-	Log2MaxUarchCyclesPerMCycle uint64 = 20
+	Log2MaxUarchCyclesPerMCycle uint64 = model.Log2MaxUarchCyclesPerMCycle
 
 	// Log2MaxMCyclesPerAdvanceState is emulator 0.21's
 	// CM_ROLLUP_LOG2_MAX_MCYCLES_PER_ADVANCE_STATE; the Go name omits the C
@@ -31,8 +31,8 @@ const (
 
 	// Log2UarchCycleComputationHashPeriod is the computation-hash sampling
 	// period expressed in uarch cycles. The DAVE 3.0-alpha node calls it
-	// LOG2_STRIDE, and ArbitrationConstants.log2step(0) fixes it at 44.
-	Log2UarchCycleComputationHashPeriod uint64 = 44
+	// LOG2_STRIDE; ArbitrationConstants.log2step(0) selects it.
+	Log2UarchCycleComputationHashPeriod uint64 = model.Log2RootTournamentStride
 
 	// Log2UarchCyclesPerAdvanceState is the full advance-state window expressed
 	// in uarch cycles. The DAVE 3.0-alpha node calls it
@@ -52,26 +52,27 @@ const (
 	// The DAVE 3.0-alpha node calls it INPUT_SPAN_TO_EPOCH.
 	MaxAdvanceStateIndexPerEpoch uint64 = model.MaxAdvanceStatesPerEpoch - 1
 
-	// Log2MCycleComputationHashPeriod is the selected value passed to emulator
-	// 0.21's log2_mcycle_computation_hash_period CLI parameter. DAVE expresses
-	// the same period as LOG2_STRIDE in uarch cycles, hence 44-20.
-	Log2MCycleComputationHashPeriod uint64 = Log2UarchCycleComputationHashPeriod - Log2MaxUarchCyclesPerMCycle // 24
+	// Log2MCycleComputationHashPeriod is the value passed to the emulator's
+	// log2_mcycle_period CLI parameter, expressed in mcycles.
+	Log2MCycleComputationHashPeriod uint64 = model.Log2MCycleComputationHashPeriod
 
 	// MCycleComputationHashPeriod is the number of mcycles between state-root
 	// samples. The DAVE 3.0-alpha node calls it BIG_STEPS_IN_STRIDE.
-	MCycleComputationHashPeriod uint64 = 1 << Log2MCycleComputationHashPeriod // 16_777_216
+	MCycleComputationHashPeriod uint64 = 1 << Log2MCycleComputationHashPeriod
 
-	// Log2InputEntryCapacity is emulator 0.21's log2_entries_per_input when
-	// log2_bundle_mcycle_count is zero. DAVE derives the same value from its
-	// input span and LOG2_STRIDE.
+	// Log2StateHashesPerEntry is the sample-subtree height of each stored entry.
+	Log2StateHashesPerEntry uint64 = model.Log2StateHashesPerEntry
+
+	// Log2InputEntryCapacity is the emulator's log2_entries_per_input, counting
+	// entry roots rather than individual state-hash samples.
 	Log2InputEntryCapacity uint64 = model.Log2InputHashCollectionCapacity
 
-	// InputEntryCapacity is the number of computation-hash leaves reserved
-	// for one input. The DAVE 3.0-alpha node calls it STRIDE_COUNT_IN_INPUT.
+	// InputEntryCapacity is the number of computation-hash entries reserved
+	// for one input.
 	InputEntryCapacity uint64 = model.InputHashCollectionCapacity
 
-	// Log2EpochComputationHashLeafCount is emulator 0.21's
-	// log2_epoch_computation_hash_leaf_count with bundling disabled.
+	// Log2EpochComputationHashLeafCount is the emulator's
+	// log2_epoch_computation_hash_leaf_count, counting individual samples.
 	Log2EpochComputationHashLeafCount uint64 = model.Log2EpochComputationHashLeafCount
 
 	// EpochComputationHashLeafCount is the number of leaves in the root epoch

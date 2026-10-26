@@ -1050,6 +1050,19 @@ CREATE INDEX "bond_events_tournament_order_idx"
 CREATE TRIGGER "bond_events_set_updated_at" BEFORE UPDATE ON "bond_events"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- One row of an input's PRT computation-hash collection, in entries. An
+-- entry is the Merkle root of 2^k consecutive state-hash samples
+-- (k = model.Log2StateHashesPerEntry), so machine_hash holds an entry root,
+-- not a machine state hash; the two coincide only when k = 0.
+-- "repetitions" counts entries: the rows of one input sum to
+-- model.InputHashCollectionCapacity. "index" is the row ordinal within the
+-- epoch, not an entry or leaf position; the rows of one input are
+-- consecutive and in input order.
+-- An input's rows are its sampled entries, each with repetitions 1 (the
+-- last one may end with copies of the final state), then a padding row:
+-- model.FinalStateEntry(input.machine_hash), the root of 2^k copies of the
+-- input's final machine hash, repeated over the rest of the input. An input
+-- whose sampled entries fill its span has no padding row.
 CREATE TABLE "state_hashes"
 (
     "input_epoch_application_id" int4 NOT NULL,
