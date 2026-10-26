@@ -157,7 +157,6 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 		s.Logger.Warn("PRT stores provisional observations; reorg rollback is unsupported", "block_policy", s.defaultBlock)
 	}
 	s.filter = ethutil.Filter{
-		MinChunkSize: ethutil.DefaultMinChunkSize,
 		MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
 		Logger:       s.Logger,
 	}

@@ -284,7 +284,7 @@ func (cb *claimerBlockchain) readClaimLogs(ctx context.Context, app *model.Appli
 	if err != nil {
 		return nil, err
 	}
-	filter := ethutil.Filter{MinChunkSize: big.NewInt(1), MaxChunkSize: new(big.Int).SetUint64(claimScanBlockLimit), Logger: cb.logger}
+	filter := ethutil.Filter{MaxChunkSize: new(big.Int).SetUint64(claimScanBlockLimit), Logger: cb.logger}
 	logs, err := filter.ChunkedFilterLogs(ctx, cb.client, ethereum.FilterQuery{
 		Addresses: []common.Address{app.IConsensusAddress},
 		Topics:    [][]common.Hash{{stagedTopic, acceptedTopic}, {common.BytesToHash(app.IApplicationAddress.Bytes())}},
