@@ -445,6 +445,37 @@ func (m *machineImpl) isAtManualYield(ctx context.Context) (bool, error) {
 	return isAtManualYield, nil
 }
 
+// checkRequestYield requires the accepted manual yield used as a request boundary.
+func (m *machineImpl) checkRequestYield(ctx context.Context) error {
+	atYield, err := m.isAtManualYield(ctx)
+	if err != nil {
+		return err
+	}
+	if !atYield {
+		return errors.Join(ErrNotAtManualYield, ErrMachineInternal)
+	}
+	tohost, err := m.readTohost()
+	if err != nil {
+		return err
+	}
+	if !isAcceptedManualYield(tohost) {
+		return errors.Join(ErrNotAtManualYield, ErrMachineInternal)
+	}
+	return nil
+}
+
+func (m *machineImpl) readTohost() (uint64, error) {
+	const wordSize uint64 = 8
+	data, err := m.backend.ReadMemory(htifTohostAddress, wordSize, m.params.FastDeadline)
+	if err != nil {
+		return 0, errors.Join(ErrMachineInternal, fmt.Errorf("could not read HTIF tohost: %w", err))
+	}
+	if len(data) != int(wordSize) {
+		return 0, fmt.Errorf("HTIF tohost read returned %d bytes, expected %d: %w", len(data), wordSize, ErrMachineInternal)
+	}
+	return binary.LittleEndian.Uint64(data), nil
+}
+
 // readManualYieldResult returns the typed completion status and data reported by
 // the current manual yield. The machine MUST be at a manual yield when called.
 func (m *machineImpl) readManualYieldResult(ctx context.Context) (completionResult, error) {
@@ -477,17 +508,10 @@ func (m *machineImpl) readAdvanceYieldResult(ctx context.Context) (completionRes
 	if err := checkContext(ctx); err != nil {
 		return completionResult{}, err
 	}
-	const wordSize uint64 = 8
-	data, err := m.backend.ReadMemory(htifTohostAddress, wordSize, m.params.FastDeadline)
+	tohost, err := m.readTohost()
 	if err != nil {
-		return completionResult{}, errors.Join(ErrMachineInternal, fmt.Errorf("could not read HTIF tohost: %w", err))
+		return completionResult{}, err
 	}
-	if len(data) != int(wordSize) {
-		return completionResult{}, fmt.Errorf(
-			"HTIF tohost read returned %d bytes, expected %d: %w", len(data), wordSize, ErrMachineInternal,
-		)
-	}
-	tohost := binary.LittleEndian.Uint64(data)
 	if isAcceptedManualYield(tohost) {
 		// The accepted root is retained by StateProof, not by this response.
 		// HTIF's low 32 bits declare its byte length.
@@ -513,11 +537,9 @@ func (m *machineImpl) readMCycle(ctx context.Context) (uint64, error) {
 	return mcycle, nil
 }
 
-// process processes a request, be it an advance-state or an inspect-state request.
-// It returns the accepted state and any collected responses.
-//
-// It expects the machine to be ready to receive requests before execution,
-// and leaves the machine in a state ready to receive requests after an execution with no errors.
+// process delivers an advance-state or inspect-state request only at an
+// RX-accepted manual yield, and returns its completion and collected responses.
+// A completed execution does not imply readiness for another request.
 // checkpointHash is nil for inspects.
 func (m *machineImpl) process(
 	ctx context.Context,
@@ -552,6 +574,10 @@ func (m *machineImpl) process(
 	// matching the emulator's imcyclemax calculation.
 	bounds, err := m.executionCycleBounds(ctx, reqType)
 	if err != nil {
+		return processResult{}, err
+	}
+
+	if err := m.checkRequestYield(ctx); err != nil {
 		return processResult{}, err
 	}
 

@@ -132,6 +132,7 @@ func randomFakeHash() Hash {
 
 // SetupAccepted configures the mock for a successful advance/inspect operation
 func (m *MockBackend) SetupAccepted(reqType requestType) {
+	m.SetupRequestYield()
 	hash := randomFakeHash()
 	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
 	m.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
@@ -147,6 +148,7 @@ func (m *MockBackend) SetupAccepted(reqType requestType) {
 
 // SetupRejected configures the mock for a rejected advance/inspect operation
 func (m *MockBackend) SetupRejected(reqType requestType) {
+	m.SetupRequestYield()
 	hash := randomFakeHash()
 	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
 	m.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
@@ -161,6 +163,7 @@ func (m *MockBackend) SetupRejected(reqType requestType) {
 
 // SetupException configures the mock for an exception during advance/inspect
 func (m *MockBackend) SetupException(reqType requestType) {
+	m.SetupRequestYield()
 	m.On("SendCmioResponse", uint16(reqType), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration")).Return(nil)
 	m.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil)
 	m.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
@@ -170,6 +173,15 @@ func (m *MockBackend) SetupException(reqType requestType) {
 	if reqType == AdvanceStateRequest {
 		m.SetupManualYield(ManualYieldReasonException, uint32(len("exception data")))
 	}
+}
+
+// SetupRequestYield registers the accepted boundary before any completion yield.
+func (m *MockBackend) SetupRequestYield() *mock.Call {
+	m.On("IsAtManualYield", mock.AnythingOfType("time.Duration")).Return(true, nil).Once()
+	tohost := htifDeviceYield<<htifDeviceShift | htifCommandManual<<htifCommandShift |
+		htifReasonInputAccepted<<htifReasonShift | HashSize
+	data := binary.LittleEndian.AppendUint64(nil, tohost)
+	return m.On("ReadMemory", htifTohostAddress, uint64(8), mock.AnythingOfType("time.Duration")).Return(data, nil).Once()
 }
 
 func (m *MockBackend) SetupManualYield(reason manualYieldReason, length uint32) {

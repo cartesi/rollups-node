@@ -470,9 +470,9 @@ func (s *LibCartesiSuite) TestReadMemory() {
 func (s *LibCartesiSuite) TestIsAtManualYield() {
 	require := s.Require()
 
-	// Test manual yield true
+	// Any nonzero flag denotes a manual yield; its value is not a CMIO reason.
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
-	s.mockRemoteMachine.On("ReadReg", emulator.REG_IFLAGS_Y).Return(uint64(emulator.ManualYieldReasonAccepted), nil)
+	s.mockRemoteMachine.On("ReadReg", emulator.REG_IFLAGS_Y).Return(uint64(2), nil)
 
 	isAtYield, err := s.backend.IsAtManualYield(5 * time.Second)
 	require.NoError(err)
