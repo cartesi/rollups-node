@@ -175,7 +175,7 @@ func (s *TerminalMachineStatesSuite) runTerminalMachineState(tc terminalMachineS
 		"terminal epoch must expose all three machine-state proof leaves")
 	require.Equal(terminal.MachineHash, epochResponse.Data.MachineHash)
 	require.Equal(terminal.TxBufferDataBlock, epochResponse.Data.TxBufferDataBlock)
-	var stateHashes []*model.StateHash
+	var stateHashes []model.EpochStateHash
 	if app.IsDaveConsensus() {
 		stateHashes = s.terminalStateHashes(terminal)
 	}

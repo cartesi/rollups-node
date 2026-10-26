@@ -114,10 +114,6 @@ type ReportFilter struct {
 	IndexRange *Range
 }
 
-type StateHashFilter struct {
-	EpochIndex *uint64
-}
-
 type TournamentFilter struct {
 	EpochIndex              *uint64
 	Level                   *uint64
@@ -335,7 +331,6 @@ type WithdrawalRepository interface {
 const MaxStateHashPageSize uint64 = 100_000
 
 type StateHashRepository interface {
-	ListStateHashes(ctx context.Context, nameOrAddress string, f StateHashFilter, p Pagination, descending bool) ([]*StateHash, uint64, error)
 	// CountEpochStateHashes returns the number of stored rows in one epoch.
 	CountEpochStateHashes(ctx context.Context, appID int64, epochIndex uint64) (uint64, error)
 	// ListEpochStateHashes returns rows in ascending index order, exclusive of

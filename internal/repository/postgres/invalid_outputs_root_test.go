@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
 	"github.com/cartesi/rollups-node/test/tooling/db"
@@ -66,10 +65,9 @@ func TestPostgresInvalidOutputsRootRollback(t *testing.T) {
 	require.Zero(t, app.ProcessedInputs)
 	require.Equal(t, model.ApplicationStatus_OK, app.Status)
 	require.Nil(t, app.Reason)
-	hashes, total, err := repo.ListStateHashes(ctx, seed.App.Name,
-		repository.StateHashFilter{}, repository.Pagination{}, false)
+	var total uint64
+	err = conn.QueryRow(ctx, `SELECT count(*) FROM state_hashes WHERE input_epoch_application_id = $1`, seed.App.ID).Scan(&total)
 	require.NoError(t, err)
-	require.Empty(t, hashes)
 	require.Zero(t, total)
 }
 
