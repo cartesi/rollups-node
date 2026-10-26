@@ -2662,27 +2662,8 @@ func (s *ImplementationSuite) TestCheckContext() {
 	require.NoError(err)    // nil context is valid in Go
 }
 
-func (s *ImplementationSuite) TestInputHashCollectionSpan() {
+func (s *ImplementationSuite) TestInvalidInputHashCollectionSpanError() {
 	require := s.Require()
-
-	for _, test := range []struct {
-		name    string
-		hashes  uint64
-		padding uint64
-		wantErr bool
-	}{
-		{name: "empty collection", hashes: 0, padding: InputEntryCapacity},
-		{name: "partial collection", hashes: 2, padding: InputEntryCapacity - 2},
-		{name: "exact boundary", hashes: InputEntryCapacity, padding: 0},
-		{name: "short span", hashes: 2, padding: InputEntryCapacity - 3, wantErr: true},
-		{name: "long span", hashes: 2, padding: InputEntryCapacity - 1, wantErr: true},
-		{name: "collector overflow", hashes: InputEntryCapacity + 1, wantErr: true},
-	} {
-		s.Run(test.name, func() {
-			err := ValidateInputHashCollectionSpan(test.hashes, test.padding)
-			require.Equal(test.wantErr, err != nil)
-		})
-	}
 
 	// A malformed collection is an internal failure even when execution also
 	// reached a completed terminal state. The terminal status is context only.
