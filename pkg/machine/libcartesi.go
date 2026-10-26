@@ -226,7 +226,7 @@ func (e *LibCartesiBackend) IsAtManualYield(timeout time.Duration) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	return iflagsY == uint64(emulator.ManualYieldReasonAccepted), nil
+	return iflagsY != 0, nil
 }
 
 func (e *LibCartesiBackend) ReadMCycle(timeout time.Duration) (uint64, error) {

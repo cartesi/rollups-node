@@ -421,6 +421,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	mockBackendHalted.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
 	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(100), nil).Once()
+	mockBackendHalted.SetupRequestYield()
 	mockBackendHalted.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -460,6 +461,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	mockBackendHaltedOff.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendHaltedOff.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
 	mockBackendHaltedOff.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(101), nil).Once()
+	mockBackendHaltedOff.SetupRequestYield()
 	mockBackendHaltedOff.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -518,6 +520,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	mockBackendOverflow.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 		Return(^uint64(0)-uint64(999), nil).Once()
+	mockBackendOverflow.SetupRequestYield()
 	mockBackendOverflow.On("SendCmioResponse", uint16(AdvanceStateRequest), input, expectedHash,
 		mock.AnythingOfType("time.Duration")).Return(nil).Once()
 	mockBackendOverflow.On("Run", ^uint64(0), mock.AnythingOfType("time.Duration")).
@@ -544,6 +547,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	// Test advance with invalid hash length
 	mockBackend5 := NewMockBackend()
 	mockBackend5.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackend5.SetupRequestYield()
 	mockBackend5.On(
 		"SendCmioResponse", uint16(AdvanceStateRequest), mock.Anything,
 		expectedHash, mock.AnythingOfType("time.Duration"),
@@ -670,6 +674,7 @@ func (s *ImplementationSuite) TestPRTHashCollectionIsIndependentOfConfiguredCycl
 // same guest events. This makes the scheduling-invariance test exercise the
 // real run loop rather than preprogramming one yield per call.
 type statefulAdvanceBackend struct {
+	delivered   bool
 	cycle       uint64
 	runTargets  []uint64
 	outputsHash Hash
@@ -729,13 +734,14 @@ func (b *statefulAdvanceBackend) RunAndCollectRootHashes(
 	return reason, err
 }
 func (b *statefulAdvanceBackend) IsAtManualYield(time.Duration) (bool, error) {
-	return b.cycle == 9, nil
+	return !b.delivered || b.cycle == 9, nil
 }
 func (b *statefulAdvanceBackend) ReadMCycle(time.Duration) (uint64, error) { return b.cycle, nil }
 func (b *statefulAdvanceBackend) SendCmioResponse(reason uint16, data []byte, _ *Hash, _ time.Duration) error {
 	if reason != uint16(AdvanceStateRequest) || string(data) != "stable-input" {
 		return fmt.Errorf("unexpected CMIO response reason=%d data_len=%d", reason, len(data))
 	}
+	b.delivered = true
 	return nil
 }
 func (b *statefulAdvanceBackend) ReceiveCmioRequest(time.Duration) (uint8, uint16, []byte, error) {
@@ -752,7 +758,7 @@ func (b *statefulAdvanceBackend) ReceiveCmioRequest(time.Duration) (uint8, uint1
 }
 func (b *statefulAdvanceBackend) WriteMemory(uint64, []byte, time.Duration) error { return nil }
 func (b *statefulAdvanceBackend) ReadMemory(address, length uint64, _ time.Duration) ([]byte, error) {
-	if address != htifTohostAddress || length != 8 || b.cycle != 9 {
+	if address != htifTohostAddress || length != 8 || (b.delivered && b.cycle != 9) {
 		return nil, errors.New("unexpected scripted memory read")
 	}
 	return binary.LittleEndian.AppendUint64(nil, acceptedTohostTestValue()|HashSize), nil
@@ -775,6 +781,7 @@ func (s *ImplementationSuite) TestInterruptedAdvanceReturnsNilAndCanBeRetried() 
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest),
@@ -1037,6 +1044,7 @@ func (s *ImplementationSuite) TestConfiguredCycleEndpointCompletionSucceeds() {
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1061,6 +1069,7 @@ func (s *ImplementationSuite) TestConfiguredCycleEndpointHaltSucceeds() {
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1084,6 +1093,7 @@ func (s *ImplementationSuite) TestConfiguredCycleExhaustionFails() {
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(InspectStateRequest), []byte("query"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1111,6 +1121,7 @@ func (s *ImplementationSuite) TestAdvanceConfiguredCycleExhaustionReturnsNoResul
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1136,6 +1147,7 @@ func (s *ImplementationSuite) TestAdvanceMachineOverflowCompletesRun() {
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1166,6 +1178,7 @@ func (s *ImplementationSuite) TestAdvanceConfiguredLimitTieCompletesWithMachineO
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1200,6 +1213,7 @@ func (s *ImplementationSuite) TestAdvanceStartingAtMachineMaximumCompletesWithOv
 			backend.On("CmioRxBufferSize").Return(uint64(1024))
 			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 				Return(^uint64(0), nil).Once()
+			backend.SetupRequestYield()
 			backend.On(
 				"SendCmioResponse",
 				uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1297,6 +1311,7 @@ func (s *ImplementationSuite) TestInspectInheritedMcycleOverflowCompletesRun() {
 			backend := NewMockBackend()
 			backend.On("CmioRxBufferSize").Return(uint64(1024))
 			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+			backend.SetupRequestYield()
 			backend.On(
 				"SendCmioResponse",
 				uint16(InspectStateRequest), []byte("query"), nil, mock.AnythingOfType("time.Duration"),
@@ -1406,6 +1421,7 @@ func (s *ImplementationSuite) TestInspectUsesConfiguredCycleIncrement() {
 	mockBackend := NewMockBackend()
 	mockBackend.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(startCycle, nil).Once()
+	mockBackend.SetupRequestYield()
 	mockBackend.On(
 		"SendCmioResponse",
 		uint16(InspectStateRequest), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1503,6 +1519,7 @@ func (s *ImplementationSuite) TestInspect() {
 	mockBackendHalted := NewMockBackend()
 	mockBackendHalted.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
+	mockBackendHalted.SetupRequestYield()
 	mockBackendHalted.On("SendCmioResponse", uint16(InspectStateRequest), query, nil,
 		mock.AnythingOfType("time.Duration")).Return(nil).Once()
 	mockBackendHalted.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).
@@ -1534,6 +1551,7 @@ func (s *ImplementationSuite) TestInspect() {
 	mockBackendFailed := NewMockBackend()
 	mockBackendFailed.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendFailed.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
+	mockBackendFailed.SetupRequestYield()
 	mockBackendFailed.On("SendCmioResponse", uint16(InspectStateRequest), query, nil,
 		mock.AnythingOfType("time.Duration")).Return(nil).Once()
 	mockBackendFailed.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).
@@ -1586,6 +1604,7 @@ func (s *ImplementationSuite) TestInspect() {
 	mockBackendOverflow.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 		Return(^uint64(0)-uint64(999), nil).Once()
+	mockBackendOverflow.SetupRequestYield()
 	mockBackendOverflow.On("SendCmioResponse", uint16(InspectStateRequest), query, nil,
 		mock.AnythingOfType("time.Duration")).Return(nil).Once()
 	mockBackendOverflow.On("Run", ^uint64(0), mock.AnythingOfType("time.Duration")).
@@ -1672,6 +1691,7 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 			backend.On("CmioRxBufferSize").Return(uint64(1024))
 			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 				Return(uint64(0), nil).Once()
+			backend.SetupRequestYield()
 			backend.On(
 				"SendCmioResponse",
 				uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -2415,6 +2435,7 @@ func (s *ImplementationSuite) TestProcess() {
 	// Test successful process
 	mockBackend := NewMockBackend()
 	mockBackend.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackend.SetupRequestYield()
 	mockBackend.On(
 		"SendCmioResponse", mock.AnythingOfType("uint16"), mock.Anything,
 		expectedHash, mock.AnythingOfType("time.Duration"),
@@ -2448,6 +2469,7 @@ func (s *ImplementationSuite) TestProcess() {
 	haltedBackend.On("CmioRxBufferSize").Return(uint64(1024))
 	haltedBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 		Return(uint64(0), nil).Once()
+	haltedBackend.SetupRequestYield()
 	haltedBackend.On(
 		"SendCmioResponse",
 		mock.AnythingOfType("uint16"), mock.Anything, expectedHash,
@@ -2500,6 +2522,7 @@ func (s *ImplementationSuite) TestProcess() {
 	mockBackend3 := NewMockBackend()
 	mockBackend3.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackend3.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
+	mockBackend3.SetupRequestYield()
 	mockBackend3.On("SendCmioResponse",
 		mock.AnythingOfType("uint16"),
 		mock.Anything,
