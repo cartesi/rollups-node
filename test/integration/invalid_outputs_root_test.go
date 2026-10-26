@@ -13,7 +13,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	jsonrpcclient "github.com/cartesi/rollups-node/pkg/jsonrpc/client"
 	"github.com/ethereum/go-ethereum/common"
@@ -21,7 +20,7 @@ import (
 
 // The public API does not expose the execution hash collection. Check its
 // persisted rows directly while the proof and completion are checked via API.
-func (s *TerminalMachineStatesSuite) terminalStateHashes(input *model.Input) []*model.StateHash {
+func (s *TerminalMachineStatesSuite) terminalStateHashes(input *model.Input) []model.EpochStateHash {
 	s.T().Helper()
 	r := s.Require()
 	dsn, err := config.GetDatabaseConnection()
@@ -29,9 +28,21 @@ func (s *TerminalMachineStatesSuite) terminalStateHashes(input *model.Input) []*
 	repo, err := factory.NewRepositoryFromConnectionString(s.ctx, dsn.Raw())
 	r.NoError(err)
 	defer repo.Close()
-	rows, _, err := repo.ListStateHashes(s.ctx, s.appName,
-		repository.StateHashFilter{EpochIndex: &input.EpochIndex}, repository.Pagination{}, false)
+	app, err := repo.GetApplication(s.ctx, s.appName)
 	r.NoError(err)
+	var rows []model.EpochStateHash
+	var cursor *uint64
+	const pageSize = 10_000
+	for {
+		page, err := repo.ListEpochStateHashes(s.ctx, app.ID, input.EpochIndex, cursor, pageSize)
+		r.NoError(err)
+		rows = append(rows, page...)
+		if len(page) < pageSize {
+			break
+		}
+		last := page[len(page)-1].Index
+		cursor = &last
+	}
 	r.NotEmpty(rows)
 	var span uint64
 	for _, row := range rows {

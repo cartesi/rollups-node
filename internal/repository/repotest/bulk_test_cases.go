@@ -423,10 +423,9 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 
 		// Verify one row per collected entry plus the padding row.
 		epochIdx := uint64(0)
-		stateHashes, total, err := s.Repo.ListStateHashes(
-			s.Ctx, seed.App.IApplicationAddress.String(),
-			repository.StateHashFilter{EpochIndex: &epochIdx},
-			repository.Pagination{Limit: 10}, false)
+		total, err := s.Repo.CountEpochStateHashes(s.Ctx, seed.App.ID, epochIdx)
+		s.Require().NoError(err)
+		stateHashes, err := s.Repo.ListEpochStateHashes(s.Ctx, seed.App.ID, epochIdx, nil, 10)
 		s.Require().NoError(err)
 		expectedStateHashRows := len(hashes) + 1
 		s.Len(stateHashes, expectedStateHashRows)
@@ -480,14 +479,25 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Require().NoError(s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result))
 		epochIndex := uint64(0)
 		expectedRows := len(hashes) + 1
-		stateHashes, total, err := s.Repo.ListStateHashes(
-			s.Ctx,
-			seed.App.IApplicationAddress.String(),
-			repository.StateHashFilter{EpochIndex: &epochIndex},
-			repository.Pagination{Limit: uint64(expectedRows)},
-			false,
-		)
+		total, err := s.Repo.CountEpochStateHashes(s.Ctx, seed.App.ID, epochIndex)
 		s.Require().NoError(err)
+		const pageSize = 10_000
+		var stateHashes []EpochStateHash
+		var cursor *uint64
+		for {
+			page, err := s.Repo.ListEpochStateHashes(s.Ctx, seed.App.ID, epochIndex, cursor, pageSize)
+			s.Require().NoError(err)
+			stateHashes = append(stateHashes, page...)
+			s.Require().LessOrEqual(len(stateHashes), expectedRows)
+			if len(page) < pageSize {
+				break
+			}
+			last := page[len(page)-1].Index
+			cursor = &last
+		}
+		for index, row := range stateHashes {
+			s.Equal(uint64(index), row.Index)
+		}
 		s.Equal(uint64(expectedRows), total)
 		s.Require().Len(stateHashes, expectedRows)
 		for _, index := range []int{0, len(hashes) / 2, len(hashes) - 1} {
@@ -528,8 +538,9 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 				IsDaveConsensus:     true,
 			}))
 		}
-		stored, total, err := s.Repo.ListStateHashes(s.Ctx, app.Name,
-			repository.StateHashFilter{EpochIndex: &epoch.Index}, repository.Pagination{}, false)
+		total, err := s.Repo.CountEpochStateHashes(s.Ctx, app.ID, epoch.Index)
+		s.Require().NoError(err)
+		stored, err := s.Repo.ListEpochStateHashes(s.Ctx, app.ID, epoch.Index, nil, 10)
 		s.Require().NoError(err)
 		s.Require().Len(stored, 5)
 		s.Equal(uint64(len(stored)), total)
@@ -598,13 +609,9 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Empty(reports)
 		s.Zero(reportCount)
 		epochIndex := uint64(0)
-		stateHashes, stateHashCount, err := s.Repo.ListStateHashes(
-			s.Ctx,
-			seed.App.IApplicationAddress.String(),
-			repository.StateHashFilter{EpochIndex: &epochIndex},
-			repository.Pagination{Limit: resultPageLimit},
-			false,
-		)
+		stateHashCount, err := s.Repo.CountEpochStateHashes(s.Ctx, seed.App.ID, epochIndex)
+		s.Require().NoError(err)
+		stateHashes, err := s.Repo.ListEpochStateHashes(s.Ctx, seed.App.ID, epochIndex, nil, resultPageLimit)
 		s.Require().NoError(err)
 		s.Empty(stateHashes)
 		s.Zero(stateHashCount)

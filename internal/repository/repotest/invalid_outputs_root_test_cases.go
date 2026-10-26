@@ -99,8 +99,9 @@ func (s *ApplicationSuite) TestInvalidOutputsRootStatus() {
 
 func (s *BulkOperationsSuite) TestInvalidOutputsRootAdvance() {
 	const (
-		epochLength = 10
-		inputBlock  = 5
+		stateHashPageSize = 10
+		epochLength       = 10
+		inputBlock        = 5
 	)
 	for _, consensus := range model.ConsensusAllValues {
 		s.Run(consensus.String(), func() {
@@ -154,8 +155,9 @@ func (s *BulkOperationsSuite) TestInvalidOutputsRootAdvance() {
 			s.Equal(&result.MachineHash, records[0].Input.MachineHash)
 			s.Equal(&result.TxBufferDataBlock, records[0].Input.TxBufferDataBlock)
 			if result.IsDaveConsensus {
-				hashes, total, err := s.Repo.ListStateHashes(s.Ctx, app.Name,
-					repository.StateHashFilter{EpochIndex: &epoch.Index}, repository.Pagination{}, false)
+				total, err := s.Repo.CountEpochStateHashes(s.Ctx, app.ID, epoch.Index)
+				s.Require().NoError(err)
+				hashes, err := s.Repo.ListEpochStateHashes(s.Ctx, app.ID, epoch.Index, nil, stateHashPageSize)
 				s.Require().NoError(err)
 				expectedHashRows := len(result.PeriodicStateHashes) + 1
 				s.Equal(uint64(expectedHashRows), total)
