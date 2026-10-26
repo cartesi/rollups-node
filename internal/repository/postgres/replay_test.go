@@ -14,6 +14,7 @@ import (
 	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,9 +35,10 @@ func TestStateHashInsertShape(t *testing.T) {
 		require.Equal(t, uint64(1), rows)
 	})
 
-	t.Run("exact boundary requires normalization before persistence", func(t *testing.T) {
-		_, err := stateHashInsertShape(model.InputHashCollectionCapacity, 0)
-		require.ErrorContains(t, err, "positive final repetition tail")
+	t.Run("full span has no padding row", func(t *testing.T) {
+		rows, err := stateHashInsertShape(model.InputHashCollectionCapacity, 0)
+		require.NoError(t, err)
+		require.Equal(t, model.InputHashCollectionCapacity, rows)
 	})
 
 	t.Run("rejects incomplete span", func(t *testing.T) {
@@ -50,35 +52,59 @@ func TestStateHashCopySource(t *testing.T) {
 	t.Parallel()
 
 	hashes := [][32]byte{common.HexToHash("0x11"), common.HexToHash("0x12")}
-	finalHash := common.HexToHash("0x13")
-	source := &stateHashCopySource{
-		appID:              7,
-		epochIndex:         8,
-		inputIndex:         9,
-		nextIndex:          10,
-		hashes:             hashes,
-		machineHash:        finalHash,
-		paddingRepetitions: model.InputHashCollectionCapacity - uint64(len(hashes)),
-		rowCount:           uint64(len(hashes)) + 1,
-	}
-
-	for index, expectedHash := range append(hashes, finalHash) {
-		require.True(t, source.Next())
-		values, err := source.Values()
-		require.NoError(t, err)
-		require.Equal(t, int64(7), values[0])
-		require.Equal(t, uint64(8), values[1])
-		require.Equal(t, uint64(9), values[2])
-		require.Equal(t, uint64(10+index), values[3])
-		require.Equal(t, expectedHash[:], values[4])
-		if index < len(hashes) {
-			require.Equal(t, int64(1), values[5])
-		} else {
-			require.Equal(t, model.InputHashCollectionCapacity-uint64(len(hashes)), values[5])
+	finalEntry := common.HexToHash("0x13")
+	for _, withPadding := range []bool{false, true} {
+		name := "without padding"
+		padding := uint64(0)
+		expected := hashes
+		if withPadding {
+			name = "with padding"
+			padding = model.InputHashCollectionCapacity - uint64(len(hashes))
+			expected = append(expected, finalEntry)
 		}
+		t.Run(name, func(t *testing.T) {
+			source := &stateHashCopySource{
+				appID:              7,
+				epochIndex:         8,
+				inputIndex:         9,
+				nextIndex:          10,
+				hashes:             hashes,
+				finalEntry:         finalEntry,
+				paddingRepetitions: padding,
+				rowCount:           uint64(len(expected)),
+			}
+			for index, expectedHash := range expected {
+				require.True(t, source.Next())
+				values, err := source.Values()
+				require.NoError(t, err)
+				require.Equal(t, int64(7), values[0])
+				require.Equal(t, uint64(8), values[1])
+				require.Equal(t, uint64(9), values[2])
+				require.Equal(t, uint64(10+index), values[3])
+				require.Equal(t, expectedHash[:], values[4])
+				if index < len(hashes) {
+					require.Equal(t, int64(1), values[5])
+				} else {
+					require.Equal(t, padding, values[5])
+				}
+			}
+			require.False(t, source.Next())
+			require.NoError(t, source.Err())
+		})
 	}
-	require.False(t, source.Next())
-	require.NoError(t, source.Err())
+}
+
+func TestPostgresStateHashesRequirePositiveRepetitions(t *testing.T) {
+	repo := newEpochPublicationRepository(t).(*PostgresRepository)
+	app, epoch := seedEpochPublication(t, repo)
+	_, err := repo.db.Exec(t.Context(), `
+		INSERT INTO state_hashes
+			(input_epoch_application_id, epoch_index, input_index, index, machine_hash, repetitions)
+		VALUES ($1, $2, 0, 0, $3, 0)`, app.ID, epoch.Index, repotest.UniqueHash().Bytes())
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr)
+	require.Equal(t, "23514", pgErr.Code)
+	require.Equal(t, "state_hashes_repetitions_check", pgErr.ConstraintName)
 }
 
 func TestInsertStateHashesQualifiesPublicSchema(t *testing.T) {
