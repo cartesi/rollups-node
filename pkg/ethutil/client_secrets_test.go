@@ -285,7 +285,6 @@ func TestValidLargeRPCDataRetainsDependencyClassification(t *testing.T) {
 		var logs bytes.Buffer
 		client := secretTestClient(t, server.URL+"/SECRET", retry, &logs)
 		_, err := client.ChainID(t.Context())
-		require.True(t, queryBlockRangeTooLarge(err))
 		var rpcError rpc.Error
 		var data rpc.DataError
 		require.ErrorAs(t, err, &rpcError)
@@ -296,7 +295,7 @@ func TestValidLargeRPCDataRetainsDependencyClassification(t *testing.T) {
 	}
 }
 
-func TestEthClientNonSuccessKeepsBlockRangeClassification(t *testing.T) {
+func TestEthClientNonSuccessKeepsRPCErrorCode(t *testing.T) {
 	for _, code := range []int{-32047, -32600, -32005, 400} {
 		for _, retry := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%d/retry=%v", code, retry), func(t *testing.T) {
@@ -310,10 +309,15 @@ func TestEthClientNonSuccessKeepsBlockRangeClassification(t *testing.T) {
 				client := secretTestClient(t, server.URL+"/SECRET?password=3", retry, &logs)
 				_, err := client.ChainID(t.Context())
 				require.Error(t, err)
-				// This is deliberately the real direct-type classifier used by Filter.
-				require.True(t, queryBlockRangeTooLarge(err))
 				var httpError rpc.HTTPError
 				require.ErrorAs(t, err, &httpError)
+				var body struct {
+					Error struct {
+						Code int `json:"code"`
+					} `json:"error"`
+				}
+				require.NoError(t, json.Unmarshal(httpError.Body, &body))
+				require.Equal(t, code, body.Error.Code)
 				require.NotContains(t, err.Error(), "SECRET")
 				require.NotContains(t, string(httpError.Body), "password=3")
 			})
@@ -353,7 +357,7 @@ func TestConfinedClientActuallyChunksHTTPErrorRanges(t *testing.T) {
 			var logs bytes.Buffer
 			client := secretTestClient(t, server.URL+"/SECRET?password=3", retry, &logs)
 			filter := Filter{
-				MinChunkSize: big.NewInt(1), MaxChunkSize: big.NewInt(4), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+				MaxChunkSize: big.NewInt(4), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 			}
 			query := ethereum.FilterQuery{FromBlock: big.NewInt(0), ToBlock: big.NewInt(3)}
 			results, err := filter.ChunkedFilterLogs(t.Context(), client, query)
@@ -361,7 +365,7 @@ func TestConfinedClientActuallyChunksHTTPErrorRanges(t *testing.T) {
 			for _, err := range results {
 				require.NoError(t, err)
 			}
-			require.Equal(t, []string{"0-3", "0-2", "0-1", "2-3"}, ranges)
+			require.Equal(t, []string{"0-3", "0-1", "2-3"}, ranges)
 		})
 	}
 }

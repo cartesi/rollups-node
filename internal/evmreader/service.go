@@ -129,7 +129,6 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 		s.adapterFactory = &DefaultAdapterFactory{
 			Client: fullEthClient,
 			Filter: ethutil.Filter{
-				MinChunkSize: ethutil.DefaultMinChunkSize,
 				MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
 				Logger:       s.Logger,
 			},

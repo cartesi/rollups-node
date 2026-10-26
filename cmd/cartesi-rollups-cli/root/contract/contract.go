@@ -234,8 +234,7 @@ func newChainClient(
 			BlockNumber: pinnedBlock,
 		},
 		filter: ethutil.Filter{
-			MinChunkSize: new(big.Int).Set(ethutil.DefaultMinChunkSize),
-			Logger:       slog.Default(),
+			Logger: slog.Default(),
 		},
 		appAddr:  appAddr,
 		chainID:  chainID,

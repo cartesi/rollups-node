@@ -58,27 +58,27 @@ func TestChunkedFilterLogsMakesProgressToSingleBlocks(t *testing.T) {
 	const singleZeroBlockRange = "0-0"
 	for _, scenario := range []struct {
 		name, wantError string
-		minimum, end    int64
+		end             int64
 		fail            func(uint64, uint64) error
 		wantRanges      []string
 		wantBlocks      []uint64
 	}{
-		{name: "single blocks succeed", minimum: 1, end: 1,
+		{name: "single blocks succeed", end: 1,
 			fail: func(from, to uint64) error {
 				if from != to {
 					return progressRangeLimit{}
 				}
 				return nil
 			}, wantRanges: []string{twoBlockRange, singleZeroBlockRange, "1-1"}, wantBlocks: []uint64{0, 1}},
-		{name: "single block also rejected", minimum: 1, end: 1,
+		{name: "single block also rejected", end: 1,
 			fail:       func(uint64, uint64) error { return progressRangeLimit{} },
 			wantRanges: []string{twoBlockRange, singleZeroBlockRange}, wantError: progressRangeLimitMessage},
-		{name: "zero minimum cannot shrink one block", minimum: 0, end: 0,
+		{name: "single block cannot shrink", end: 0,
 			fail:       func(uint64, uint64) error { return progressRangeLimit{} },
 			wantRanges: []string{singleZeroBlockRange}, wantError: progressRangeLimitMessage},
-		{name: "timeout does not split", minimum: 1, end: 1,
+		{name: "timeout splits to one block", end: 1,
 			fail:       func(uint64, uint64) error { return context.DeadlineExceeded },
-			wantRanges: []string{twoBlockRange}, wantError: context.DeadlineExceeded.Error()},
+			wantRanges: []string{twoBlockRange, singleZeroBlockRange}, wantError: context.DeadlineExceeded.Error()},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			api := &progressFilterRPC{fail: scenario.fail}
@@ -87,7 +87,7 @@ func TestChunkedFilterLogsMakesProgressToSingleBlocks(t *testing.T) {
 			defer server.Stop()
 			client := ethclient.NewClient(rpc.DialInProc(server))
 			defer client.Close()
-			filter := Filter{MinChunkSize: big.NewInt(scenario.minimum), MaxChunkSize: big.NewInt(4),
+			filter := Filter{MaxChunkSize: big.NewInt(4),
 				Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 			logs, err := filter.ChunkedFilterLogs(t.Context(), client,
 				ethereum.FilterQuery{FromBlock: new(big.Int), ToBlock: big.NewInt(scenario.end)})
