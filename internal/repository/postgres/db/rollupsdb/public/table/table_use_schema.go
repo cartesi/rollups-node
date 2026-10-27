@@ -23,6 +23,7 @@ func UseSchema(schema string) {
 	Output = Output.FromSchema(schema)
 	Report = Report.FromSchema(schema)
 	SchemaMigrations = SchemaMigrations.FromSchema(schema)
+	StandingChanges = StandingChanges.FromSchema(schema)
 	StateHashes = StateHashes.FromSchema(schema)
 	Tournaments = Tournaments.FromSchema(schema)
 	Withdrawal = Withdrawal.FromSchema(schema)
