@@ -213,6 +213,18 @@ func TestPositionalParamsDeclarationOrder(t *testing.T) {
 			`["app","tx-hash","0x4"]`,
 			`{"application":"app","tx_hash":"tx-hash","log_index":"0x4"}`,
 		},
+		"ListStandingChangesParams": {
+			func() any { return &ListStandingChangesParams{} },
+			`["app","0x4","tournament",25,3,true]`,
+			`{"application":"app","epoch_index":"0x4","tournament_address":"tournament",` +
+				`"limit":25,"offset":3,"descending":true}`,
+		},
+		"GetStandingChangeParams": {
+			func() any { return &GetStandingChangeParams{} },
+			`["app","0x4","tournament","tx-hash","0x4"]`,
+			`{"application":"app","epoch_index":"0x4","tournament_address":"tournament",` +
+				`"tx_hash":"tx-hash","log_index":"0x4"}`,
+		},
 		"ListWithdrawalsParams": {
 			func() any { return &ListWithdrawalsParams{} },
 			`["app","0x8",25,3,true]`,
