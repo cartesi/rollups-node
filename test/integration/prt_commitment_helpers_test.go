@@ -25,8 +25,8 @@ type sparseDisputeCommitment struct {
 	final    []common.Hash // Entry h has the different state at its final leaf.
 }
 
-// The test helper uses uint64 leaf positions. All canonical heights (48, 17,
-// and 27) fit this bound. Solidity supports larger coordinates independently.
+// The test helper uses uint64 leaf positions. Both canonical heights fit this
+// bound. Solidity supports larger coordinates independently.
 const maxSparseDisputeHeight = 63
 
 func newSparseDisputeCommitment(height uint64, repeatedState, finalState common.Hash) (*sparseDisputeCommitment, error) {
