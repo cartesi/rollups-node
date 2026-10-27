@@ -950,6 +950,7 @@ func (s *ApplicationSuite) TestEventLastCheckBlock() {
 			MonitoredEvent_MatchCreated,
 			MonitoredEvent_MatchDeleted,
 			MonitoredEvent_NewInnerTournament,
+			MonitoredEvent_StandingChanged,
 		}
 		for _, event := range tournamentEvents {
 			err = s.Repo.UpdateEventLastCheckBlock(

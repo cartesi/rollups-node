@@ -698,7 +698,8 @@ func getColumnForEvent(event model.MonitoredEvent) (postgres.ColumnFloat, error)
 		return table.Application.LastOutputCheckBlock, nil
 	case model.MonitoredEvent_CommitmentJoined, model.MonitoredEvent_MatchAdvanced,
 		model.MonitoredEvent_MatchCreated, model.MonitoredEvent_MatchDeleted, model.MonitoredEvent_NewInnerTournament,
-		model.MonitoredEvent_LeafMatchSealed, model.MonitoredEvent_PartialBondRefund, model.MonitoredEvent_BondRecovered:
+		model.MonitoredEvent_LeafMatchSealed, model.MonitoredEvent_PartialBondRefund, model.MonitoredEvent_BondRecovered,
+		model.MonitoredEvent_StandingChanged:
 		return table.Application.LastTournamentCheckBlock, nil
 	case model.MonitoredEvent_ClaimAccepted:
 		// This safe cursor covers both staged and accepted claims.
