@@ -98,6 +98,7 @@ func TestHandleForeclosedApp_DefersWhenUndrained(t *testing.T) {
 	defer r.AssertExpectations(t)
 
 	app := prtForeclosedApp(1, 100)
+	admitTestDeployment(s, r, app)
 	r.On("HasUndrainedEpochsBeforeBlock",
 		mock.Anything, app.ID, app.ForecloseBlock,
 	).Return(true, nil).Once()
@@ -114,6 +115,7 @@ func TestHandleForeclosedApp_ObservesAfterLocalDrain(t *testing.T) {
 	defer r.AssertExpectations(t)
 
 	app := prtForeclosedApp(1, 100)
+	admitTestDeployment(s, r, app)
 	r.On("HasUndrainedEpochsBeforeBlock",
 		mock.Anything, app.ID, app.ForecloseBlock,
 	).Return(false, nil).Once()
@@ -133,6 +135,7 @@ func TestHandleForeclosedApp_SurfacesDrainCheckError(t *testing.T) {
 	defer r.AssertExpectations(t)
 
 	app := prtForeclosedApp(1, 100)
+	admitTestDeployment(s, r, app)
 	dbErr := errors.New("connection refused")
 	r.On("HasUndrainedEpochsBeforeBlock",
 		mock.Anything, app.ID, app.ForecloseBlock,
@@ -169,6 +172,7 @@ func TestHandleForeclosedApp_DefersWhenStillBackfilling(t *testing.T) {
 			var output bytes.Buffer
 			s.Logger = slog.New(slog.NewTextHandler(&output, nil))
 			app := prtForeclosedApp(1, 100)
+			admitTestDeployment(s, r, app)
 			app.LastEpochCheckBlock = test.epochCursor
 			app.LastInputCheckBlock = test.inputCursor
 
@@ -193,6 +197,7 @@ func TestHandleForeclosedApp_SurfacesReconciliationCheckError(t *testing.T) {
 	defer r.AssertExpectations(t)
 
 	app := prtForeclosedApp(1, 100)
+	admitTestDeployment(s, r, app)
 	dbErr := errors.New("connection refused")
 	r.On("HasUndrainedEpochsBeforeBlock",
 		mock.Anything, app.ID, app.ForecloseBlock,
@@ -213,6 +218,7 @@ func TestHandleForeclosedApp_SurfacesReconciliationCheckError(t *testing.T) {
 func TestHandleForeclosedApp_LeavesClaimedEpochForNextReconciliationPass(t *testing.T) {
 	s, r := newPRTServiceMock()
 	app := prtForeclosedApp(1, 100)
+	admitTestDeployment(s, r, app)
 	claimTx := common.HexToHash("0xbeef")
 	r.On("HasUndrainedEpochsBeforeBlock", mock.Anything, app.ID, app.ForecloseBlock).Return(false, nil).Once()
 	r.On("HasUnreconciledClaimsBeforeBlock", mock.Anything, app.ID, app.ForecloseBlock).Return(true, nil).Once()
@@ -232,6 +238,7 @@ func TestForeclosePendingClaimEpochsPreservesValidationAndSealedClaims(t *testin
 	defer r.AssertExpectations(t)
 
 	app := prtForeclosedApp(1, 100)
+	admitTestDeployment(s, r, app)
 	claimTx := common.HexToHash("0xbeef")
 	r.On("ListEpochs",
 		mock.Anything, app.Name,
@@ -270,6 +277,7 @@ func TestForeclosePendingClaimEpochs_PropagatesUpdateError(t *testing.T) {
 	defer r.AssertExpectations(t)
 
 	app := prtForeclosedApp(1, 100)
+	admitTestDeployment(s, r, app)
 	dbErr := errors.New("write failed")
 	r.On("ListEpochs", mock.Anything, app.Name, mock.Anything, repository.Pagination{}, false).
 		Return([]*model.Epoch{{Index: 7}}, uint64(1), nil).Once()

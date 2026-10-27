@@ -76,7 +76,7 @@ func TestClaimSubmissionWaitsPastFinalBlockWithoutDelayingAcceptance(t *testing.
 			require.NoError(t, s.publisher.tick(t.Context()))
 			require.Len(t, backend.published, 1)
 			backend.last = epoch.LastBlock
-			require.NoError(t, s.publisher.tick(t.Context()))
+			require.ErrorIs(t, s.publisher.tick(t.Context()), txsender.ErrInconclusive)
 			require.Len(t, backend.published, 1, "a held submission waits rather than being cancelled at the lower head")
 			backend.claims[app.ID] = makeClaimStatus(claimStatusStaged, epoch, 1)
 			app.ClaimStagingPeriod = 0

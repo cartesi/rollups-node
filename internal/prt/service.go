@@ -262,6 +262,13 @@ func (s *Service) serveLoops(ctx context.Context) error {
 func (s *Service) drainForeclosedClaims(
 	ctx context.Context, app *Application, epochs []*Epoch, consensus DaveConsensusAdapter, mostRecentBlock uint64,
 ) error {
+	state, generation, gateErr := s.deploymentVerdictState(ctx, app)
+	if gateErr != nil {
+		return gateErr
+	}
+	if state == deploymentNone || state == deploymentPending {
+		return nil
+	}
 	// Another observer can have committed a newer foreclosure. Absence at our
 	// protected head cannot prove that a claim is no longer acceptable there.
 	if app.ForecloseBlock > mostRecentBlock {
@@ -312,6 +319,9 @@ func (s *Service) drainForeclosedClaims(
 	}
 	if !unreconciled {
 		return nil
+	}
+	if state == deploymentGeneration {
+		return s.forecloseGenerationClaims(ctx, app, generation)
 	}
 
 	// Read-only reconciliation: accept epochs whose root result has

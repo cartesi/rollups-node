@@ -31,6 +31,14 @@ type DeploymentCompletionState struct {
 	Deployment *model.DeploymentAdmissionState
 }
 
+// DeploymentDrainRequest identifies an epoch selected by a fresh generation assessment.
+// The writer independently checks the durable generation and restriction tier.
+type DeploymentDrainRequest struct {
+	Identity        DeploymentIdentity
+	EpochIndex      uint64
+	ResetGeneration int64
+}
+
 type DeploymentRepository interface {
 	GetDeploymentAdmissionState(context.Context, DeploymentIdentity) (*model.DeploymentAdmissionState, error)
 	// BeginDeploymentStartup requires an existing control row and returns only its committed increment.
@@ -38,4 +46,5 @@ type DeploymentRepository interface {
 	// AcknowledgeDeploymentAssessment stores the nullable tier and returns the previous row after commit.
 	AcknowledgeDeploymentAssessment(context.Context, DeploymentAssessment) (*model.DeploymentAdmissionState, error)
 	GetDeploymentCompletionState(context.Context, DeploymentIdentity, uint64) (*DeploymentCompletionState, error)
+	ForecloseDeploymentEpoch(context.Context, DeploymentDrainRequest) error
 }

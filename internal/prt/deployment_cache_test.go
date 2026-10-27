@@ -12,10 +12,10 @@ import (
 
 func TestDeploymentCacheRevisionChangesForEqualPublications(t *testing.T) {
 	var cache deploymentCache
-	key := deploymentApplicationKey(prtRevertTestApp())
+	key := deploymentIdentity(prtRevertTestApp())
 	original := cache.capture(key)
 	require.Equal(t, deploymentNone, original.snapshot.Assessment.State)
-	snapshot := deploymentSnapshot{Assessment: deploymentAssessment{State: deploymentCompatible}}
+	snapshot := deploymentSnapshot{Acknowledged: true, ResetGeneration: 1, Assessment: deploymentAssessment{State: deploymentCompatible}}
 	cache.publish(key, snapshot)
 	current := cache.capture(key)
 	require.False(t, cache.same(key, original))
@@ -27,15 +27,15 @@ func TestDeploymentCacheRevisionChangesForEqualPublications(t *testing.T) {
 
 func TestDeploymentCacheConcurrentPublicationAndConsumption(t *testing.T) {
 	var cache deploymentCache
-	key := deploymentApplicationKey(prtRevertTestApp())
-	snapshot := deploymentSnapshot{Assessment: deploymentAssessment{State: deploymentCompatible}}
+	key := deploymentIdentity(prtRevertTestApp())
+	snapshot := deploymentSnapshot{Acknowledged: true, ResetGeneration: 1, Assessment: deploymentAssessment{State: deploymentCompatible}}
 	cache.publish(key, snapshot)
 	var wg sync.WaitGroup
 	for range 4 {
 		wg.Go(func() {
 			for range 200 {
 				captured := cache.capture(key)
-				if captured.snapshot.Assessment.State != deploymentCompatible {
+				if captured.snapshot.ResetGeneration != 1 {
 					t.Error("mixed cache publication")
 					return
 				}

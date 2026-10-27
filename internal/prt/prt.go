@@ -22,14 +22,13 @@ import (
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/prtprotection"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/txsender"
-	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 type prtRepository interface {
 	repository.DeliveryRepository
+	repository.DeploymentRepository
 	GetApplication(ctx context.Context, address string) (*Application, error)
 	ListApplications(ctx context.Context, f repository.ApplicationFilter,
 		p repository.Pagination, descending bool) ([]*Application, uint64, error)
@@ -406,6 +405,13 @@ func (s *Service) reconcileAcceptedEpochs(
 		if epoch == nil {
 			continue
 		}
+		state, _, gateErr := s.deploymentVerdictState(ctx, app)
+		if gateErr != nil {
+			return true, gateErr
+		}
+		if !deploymentAllowsVerdict(state) {
+			return true, nil
+		}
 		if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
 			epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
 			return true, s.setApplicationCorrupted(ctx, app,
@@ -435,67 +441,22 @@ func (s *Service) reconcileAcceptedEpochs(
 			break
 		}
 
-		receipt, err := s.client.TransactionReceipt(ctx, *epoch.ClaimTransactionHash)
-		if err != nil {
-			s.logErrorUnlessShutdown(ctx, "failed to fetch transaction receipt for epoch", err, "application", app.Name,
-				"epoch", epoch.Index, "tx", epoch.ClaimTransactionHash)
-			return true, err
-		}
-		if receipt == nil {
-			return true, fmt.Errorf("epoch %d: acceptance transaction receipt is nil", epoch.Index)
-		}
-		if receipt.TxHash != *epoch.ClaimTransactionHash {
-			return true, fmt.Errorf("epoch %d: acceptance receipt transaction hash %s differs from observed hash %s",
-				epoch.Index, receipt.TxHash, epoch.ClaimTransactionHash)
-		}
-		receiptBlock, err := checkedUint64(receipt.BlockNumber, "acceptance receipt block")
-		if err != nil {
-			return true, fmt.Errorf("epoch %d: %w", epoch.Index, err)
-		}
 		observedBlock := min(mostRecentBlock, tournament.Snapshot.AsOfBlock)
-		// A retired root's winner is immutable. Its older certificate remains
-		// sufficient while DaveConsensus stages and accepts the result later.
 		if tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, mostRecentBlock) {
 			observedBlock = mostRecentBlock
 		}
-		if receiptBlock > observedBlock {
-			s.Logger.Debug("Acceptance transaction is newer than the published tournament window",
-				"application", app.Name,
-				"epoch", epoch.Index,
-				"tx", epoch.ClaimTransactionHash,
-				"receipt_block", receiptBlock,
-				"snapshot_block", observedBlock)
+		event, err := s.readEpochAcceptance(ctx, app, epoch, consensus, observedBlock)
+		if err != nil || event == nil {
+			return true, err
+		}
+
+		state, _, gateErr = s.deploymentVerdictState(ctx, app)
+		if gateErr != nil {
+			return true, gateErr
+		}
+		if !deploymentAllowsVerdict(state) {
 			return true, nil
 		}
-		if err := s.validateAcceptanceReceipt(ctx, receipt); err != nil {
-			return true, fmt.Errorf("epoch %d: %w", epoch.Index, err)
-		}
-
-		if receipt.Status != types.ReceiptStatusSuccessful {
-			return true, fmt.Errorf("epoch %d: EpochSealed transaction hash points to failed transaction", epoch.Index)
-		}
-
-		var event *idaveconsensus.IDaveConsensusEpochSealed
-		expectedEventEpoch := new(big.Int).SetUint64(epoch.Index)
-		expectedEventEpoch.Add(expectedEventEpoch, common.Big1)
-		for _, vLog := range receipt.Logs {
-			if vLog == nil || vLog.Address != app.IConsensusAddress ||
-				vLog.TxHash != *epoch.ClaimTransactionHash || vLog.BlockNumber != receiptBlock ||
-				vLog.BlockHash != receipt.BlockHash || vLog.Removed {
-				continue
-			}
-			candidate, parseErr := consensus.ParseEpochSealed(*vLog)
-			if parseErr != nil || candidate == nil || candidate.EpochNumber == nil ||
-				candidate.EpochNumber.Cmp(expectedEventEpoch) != 0 {
-				continue // Skip logs that don't match
-			}
-			event = candidate
-			break
-		}
-		if event == nil {
-			return true, fmt.Errorf("%w: epoch %d: failed to find EpochSealed event in receipt logs", txsender.ErrInconclusive, epoch.Index)
-		}
-
 		if *epoch.MachineHash != event.InitialMachineStateHash {
 			return true, s.setApplicationDiverged(ctx, app,
 				"Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",

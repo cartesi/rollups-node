@@ -37,12 +37,19 @@ func pendingExecutionInputs(lower, upper, processed uint64) (uint64, error) {
 func (s *Service) reportSealBacklog(app *model.Application, target protectionTarget,
 	clock prtprotection.Clock, facts txsender.BlockRef,
 ) {
+	key := protectionNoticeKey{root: clock.Root, kind: protectionBacklog}
 	if protectionLocallyReady(target.epoch) {
+		delete(s.protectionNotices[app.ID], key)
 		return
 	}
 	status := "unavailable"
 	if target.epoch != nil {
 		status = target.epoch.Status.String()
+	}
+	identity := protectionClockIdentity(protectionNoticeIdentity{cause: status, epoch: clock.EpochIndex,
+		generation: s.deployments.capture(deploymentIdentity(app)).snapshot.ResetGeneration}, clock, facts)
+	if !s.protectionNoticeDue(app.ID, key, identity) {
+		return
 	}
 	args := []any{"application", app.Name, "address", app.IApplicationAddress, "epoch_index", target.index,
 		"root_tournament", target.root, "epoch_status", status, "configured_head", facts.Number,

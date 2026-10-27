@@ -19,6 +19,7 @@ func addDeliveryJoinCandidate(f *deliveryFixture, id int64, allowance uint64) *m
 	epoch := *f.epoch
 	epoch.ApplicationID, epoch.TournamentAddress = id, new(common.BigToAddress(big.NewInt(id*10+3)))
 	f.repo.apps = append(f.repo.apps, &app)
+	admitTestDeployment(f.d.Service, f.repo.prtRepositoryMock, &app)
 	f.backend.apps = f.repo.apps
 	f.repo.On("GetEpoch", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index).Return(&epoch, nil)
 	f.repo.publishRoot(&app, &epoch, app.LastTournamentCheckBlock)
