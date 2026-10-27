@@ -20,6 +20,11 @@ import (
 	"unsafe"
 )
 
+// GetVersion returns the linked library's encoded runtime semantic version.
+func GetVersion() uint64 {
+	return uint64(C.cm_get_version())
+}
+
 // DefaultMarchID reads the architecture from the linked library's default configuration.
 func DefaultMarchID() (uint64, error) {
 	var local Machine

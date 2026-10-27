@@ -13,6 +13,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/cartesi/rollups-node/internal/manager"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/pkg/emulator"
 	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
 )
@@ -47,6 +48,9 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	// every tick while reporting a misleading healthy service.
 	if err = machine.ValidateEmulatorComputationHashLimits(); err != nil {
 		return nil, fmt.Errorf("invalid machine execution constants: %w", err)
+	}
+	if err = machine.ValidateEmulatorMarchID(); err != nil {
+		return nil, fmt.Errorf("could not validate emulator architecture: %w", err)
 	}
 
 	if c.Supervisor == nil {
@@ -87,7 +91,20 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 		return nil, err
 	}
 
-	s.Logger.Info("Created", "config", c.Config)
+	identity, identityErr := machine.LinkedEmulatorIdentity()
+	version := emulator.GetVersion()
+	const semverComponentBase = 1000
+	attrs := []any{
+		"config", c.Config,
+		"version", fmt.Sprintf("%d.%d.%d", version/(semverComponentBase*semverComponentBase),
+			(version/semverComponentBase)%semverComponentBase, version%semverComponentBase),
+		"marchid", identity.RuntimeMarchID,
+		"uarch_pristine_state_hash", identity.UarchPristineStateHash.Hex(),
+	}
+	if identityErr != nil {
+		attrs = append(attrs, "identity_error", identityErr)
+	}
+	s.Logger.Info("Created", attrs...)
 
 	return s, nil
 }
