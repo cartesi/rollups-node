@@ -76,7 +76,7 @@ func TestTournamentObservationShutdownLogs(t *testing.T) {
 			t.Run(test.name+"/"+operation, func(t *testing.T) {
 				s, repo := newPRTServiceMock()
 				f := &observerCheckpointFixture{t: t, s: s, repo: repo, factory: &adapterFactoryMock{},
-					consensus: &daveConsensusAdapterMock{}, client: &ethClientMock{}, app: prtRevertTestApp()}
+					consensus: newCompatibleDaveConsensusAdapterMock(), client: &ethClientMock{}, app: prtRevertTestApp()}
 				f.app.LastTournamentCheckBlock = 50
 				f.s.adapterFactory, f.s.client = f.factory, f.client
 				t.Cleanup(func() {

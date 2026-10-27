@@ -34,6 +34,7 @@ type CreateInfo struct {
 
 type Service struct {
 	protectionNotices       map[int64]map[protectionNoticeKey]protectionNotice
+	deployments             deploymentCache
 	observationHardWarnedAt time.Time
 	service.TickServiceTemplate
 	delivery            *delivery

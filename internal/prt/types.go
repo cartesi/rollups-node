@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/txsender"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -133,6 +134,7 @@ type TournamentAdapter interface {
 
 // DaveConsensusAdapter wraps access to the IDaveConsensus contract.
 type DaveConsensusAdapter interface {
+	ReadDeployment(ctx context.Context, head txsender.BlockRef) (DeploymentEvidence, error)
 	ParseEpochSealed(log types.Log) (*idaveconsensus.IDaveConsensusEpochSealed, error)
 	EpochSealedAt(ctx context.Context, blockHash common.Hash, epoch uint64) ([]*idaveconsensus.IDaveConsensusEpochSealed, error)
 	TournamentLevelCount(opts *bind.CallOpts) (uint64, error)

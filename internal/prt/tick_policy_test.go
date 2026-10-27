@@ -55,7 +55,7 @@ func TestPRTTickOnlyObservesAndDoesNotCreateEmptyCoverage(t *testing.T) {
 	second.IApplicationAddress = common.HexToAddress("0x901")
 	second.IConsensusAddress = common.HexToAddress("0x902")
 	f.repo.apps = append(f.repo.apps, &second)
-	secondConsensus := &daveConsensusAdapterMock{}
+	secondConsensus := newCompatibleDaveConsensusAdapterMock(second.IConsensusAddress)
 	f.factory.On("CreateDaveConsensusAdapter", second.IConsensusAddress).Return(secondConsensus, nil)
 	f.repo.On("ListEpochs", mock.Anything, mock.Anything, repository.EpochFilter{HasTournament: new(true)},
 		repository.Pagination{}, false).Return([]*model.Epoch{}, uint64(0), nil)
