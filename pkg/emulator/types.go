@@ -74,6 +74,15 @@ const (
 	CM_JSONRPC_SHUTDOWN = C.CM_JSONRPC_SHUTDOWN
 )
 
+const (
+	// MarchID identifies the architecture supported by the compiled header.
+	MarchID uint64 = C.CM_MARCHID
+	// UarchStateStartAddress is the start of the complete uarch state.
+	UarchStateStartAddress uint64 = C.CM_UARCH_STATE_START_ADDRESS
+	// UarchStateLog2Size is the uarch state's size exponent in bytes.
+	UarchStateLog2Size int32 = C.CM_UARCH_STATE_LOG2_SIZE
+)
+
 // BreakReason
 type BreakReason int32
 
