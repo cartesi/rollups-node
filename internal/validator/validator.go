@@ -32,6 +32,11 @@ type Service struct {
 	// cached constants
 	pristineRootHash    common.Hash
 	pristinePostContext []common.Hash
+
+	// Tick owns this volatile state. A new service starts without retries.
+	claimRetries   map[claimRetryKey]claimRetry
+	claimRetryBase time.Duration
+	now            func() time.Time
 }
 
 type CreateInfo struct {
@@ -61,6 +66,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 		return nil, err
 	}
 
+	s.claimRetryBase = min(tickCfg.PollInterval, maxClaimRetryDelay)
 	s.repository = c.Repository
 	if s.repository == nil {
 		return nil, fmt.Errorf("repository on validator service Create is nil")
@@ -150,7 +156,11 @@ func getProcessedEpochs(ctx context.Context, er ValidatorRepository, address str
 
 func (s *Service) setApplicationCorrupted(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
 	reason := fmt.Sprintf(reasonFmt, args...)
+	before := app.Status
 	err := appstatus.SetCorrupted(ctx, s.Logger, s.repository, app, reason)
+	if app.Status != before { // appstatus changes app only after the write succeeds.
+		err = &claimStatusRecorded{err}
+	}
 	prtprotection.ReportStop(ctx, s.Logger, s.repository, app, 0, errors.New(reason))
 	return err
 }
@@ -158,7 +168,13 @@ func (s *Service) setApplicationCorrupted(ctx context.Context, app *Application,
 // validateApplication calculates, validates and stores the claim and/or proofs
 // for each processed epoch of the application.
 // Epochs are iterated in ascending virtual-index order as returned by getProcessedEpochs.
-func (s *Service) validateApplication(ctx context.Context, app *Application) error {
+func (s *Service) validateApplication(ctx context.Context, app *Application) (err error) {
+	var retryKey *claimRetryKey // The epoch in progress, unless it is cooling.
+	defer func() {
+		if err != nil && retryKey != nil {
+			err = s.failedClaim(*retryKey, app.IApplicationAddress.String(), err)
+		}
+	}()
 	s.Logger.Debug("Starting validation", "application", app.Name)
 	appAddress := app.IApplicationAddress.String()
 	processedEpochs, _, err := getProcessedEpochs(ctx, s.repository, appAddress)
@@ -172,6 +188,14 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 	for _, epoch := range processedEpochs {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		key := claimRetryKey{applicationID: app.ID, epochIndex: epoch.Index}
+		// A cooling epoch still reloads its state, so a failed read stays
+		// visible, but that read does not extend the cooldown.
+		waiting := s.claimWaiting(key)
+		retryKey = nil
+		if !waiting {
+			retryKey = &key
 		}
 		// The application list and epoch list are discovery only. Reload the
 		// application, epoch and stop boundary together before computing work.
@@ -202,6 +226,10 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 			)
 			continue
 		}
+		if s.claimWaiting(key) {
+			return nil
+		}
+		retryKey = &key
 		s.Logger.Debug("Started calculating outputs merkle root",
 			"application", appAddress,
 			"epoch_index", epoch.Index,
@@ -320,7 +348,7 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 			prtprotection.ReportStop(ctx, s.Logger, s.repository, app, epoch.Index, errors.New(reason))
 			s.Logger.Error("Invalid outputs root recorded", "application", app.Name, "address", appAddress,
 				"epoch_index", epoch.Index, "reason", reason)
-			return errors.New(reason)
+			return &claimStatusRecorded{errors.New(reason)}
 		}
 
 		if app.IsDaveConsensus() {
@@ -350,6 +378,8 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 				epoch.Index, appAddress, err,
 			)
 		}
+		delete(s.claimRetries, key)
+		retryKey = nil
 		s.Logger.Info("Claim and output proofs stored", "application", appAddress, "epoch_index", epoch.Index,
 			"transaction_elapsed", time.Since(transactionStart))
 
@@ -528,8 +558,12 @@ func (s *Service) proveCommitment(
 				"which needs a bundle opening that this node does not support, "+
 				"or its stored padding row is not the epoch's final entry", failure)
 		}
+		before := app.Status
 		statusErr := appstatus.SetFailed(ctx, s.Logger, s.repository, app, failure.Error())
 		prtprotection.ReportStop(ctx, s.Logger, s.repository, app, 0, failure)
+		if app.Status != before { // appstatus changes app only after the write succeeds.
+			return nil, nil, &claimStatusRecorded{failure}
+		}
 		return nil, nil, errors.Join(failure, statusErr)
 	}
 	// PRT reconstructs the root children from (epoch.MachineHash, proof).
@@ -541,8 +575,3 @@ func (s *Service) proveCommitment(
 	}
 	return &commitment, proof, nil
 }
-
-// computeMerkleTreeAndProofs calculates the claim and proofs for an epoch. It returns
-// the claim and the epoch outputs updated with their hash and proofs. In case
-// the epoch has no outputs, there are no proofs and it returns the pristine
-// claim for the first epoch or the previous epoch claim otherwise.
