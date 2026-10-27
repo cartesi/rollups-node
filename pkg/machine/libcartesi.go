@@ -18,6 +18,7 @@ import (
 type RemoteMachineInterface interface {
 	SetTimeout(timeoutMs int64) error
 	Load(dir string, runtimeConfig string) error
+	GetInitialConfig() (string, error)
 	Run(mcycleEnd uint64) (emulator.BreakReason, error)
 	GetRootHash() (emulator.Hash, error)
 	GetProof(address uint64, log2TargetSize, log2RootSize int32) (string, error)
@@ -173,6 +174,25 @@ func (e *LibCartesiBackend) Load(dir string, runtimeConfig string, timeout time.
 		return fmt.Errorf("failed to set operation timeout: %w", err)
 	}
 	return e.inner.Load(dir, runtimeConfig)
+}
+
+func (e *LibCartesiBackend) HashFunction(timeout time.Duration) (string, error) {
+	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
+		return "", fmt.Errorf("failed to set operation timeout: %w", err)
+	}
+	config, err := e.inner.GetInitialConfig()
+	if err != nil {
+		return "", fmt.Errorf("failed to get initial configuration: %w", err)
+	}
+	var initial struct {
+		HashTree struct {
+			HashFunction string `json:"hash_function"`
+		} `json:"hash_tree"`
+	}
+	if err := json.Unmarshal([]byte(config), &initial); err != nil {
+		return "", fmt.Errorf("failed to decode initial configuration: %w", err)
+	}
+	return initial.HashTree.HashFunction, nil
 }
 
 func (e *LibCartesiBackend) Run(mcycleEnd uint64, timeout time.Duration) (BreakReason, error) {

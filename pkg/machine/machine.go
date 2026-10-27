@@ -111,6 +111,7 @@ type InspectResponse struct {
 // Common errors
 var (
 	ErrMachineInternal            = errors.New("machine internal error")
+	ErrUnsupportedHashFunction    = errors.New("unsupported machine hash function")
 	ErrDeadlineExceeded           = fmt.Errorf("machine operation deadline exceeded: %w", context.DeadlineExceeded)
 	ErrCanceled                   = fmt.Errorf("machine operation canceled: %w", context.Canceled)
 	ErrOrphanServer               = errors.New("machine server was left orphan")
@@ -270,6 +271,19 @@ func Load(ctx context.Context, logger *slog.Logger, config *MachineConfig) (Mach
 		machine.Close()
 		err = fmt.Errorf("could not load the machine: %w", err)
 		return nil, errors.Join(ErrMachineInternal, err)
+	}
+
+	if err := checkContext(ctx); err != nil {
+		return nil, errors.Join(err, machine.Close())
+	}
+	hashFunction, err := machine.backend.HashFunction(machine.params.FastDeadline)
+	if err != nil {
+		err = fmt.Errorf("could not read machine hash function: %w", err)
+		return nil, errors.Join(ErrMachineInternal, err, machine.Close())
+	}
+	if hashFunction != "keccak256" {
+		err = fmt.Errorf("machine hash function %q, expected keccak256: %w", hashFunction, ErrUnsupportedHashFunction)
+		return nil, errors.Join(err, machine.Close())
 	}
 
 	// Ensures that the machine is at a manual yield.

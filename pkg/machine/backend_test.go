@@ -23,6 +23,11 @@ func (m *MockBackend) Load(dir string, runtimeConfig string, timeout time.Durati
 	return args.Error(0)
 }
 
+func (m *MockBackend) HashFunction(timeout time.Duration) (string, error) {
+	args := m.Called(timeout)
+	return args.String(0), args.Error(1)
+}
+
 func (m *MockBackend) Store(directory string, timeout time.Duration) error {
 	args := m.Called(directory, timeout)
 	return args.Error(0)
@@ -193,6 +198,7 @@ func (m *MockBackend) SetupManualYield(reason manualYieldReason, length uint32) 
 
 // SetupForLoad configures the mock for successful machine loading
 func (m *MockBackend) SetupForLoad() {
+	m.On("HashFunction", mock.AnythingOfType("time.Duration")).Return(testKeccakHashFunction, nil).Once()
 	hash := randomFakeHash()
 	m.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_hash_tree":1}}`, nil).Once()
 	m.On("Load", mock.AnythingOfType("string"), mock.AnythingOfType("string"), mock.AnythingOfType("time.Duration")).Return(nil).Once()

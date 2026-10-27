@@ -773,6 +773,11 @@ func (m *MockRemoteMachine) Load(dir string, runtimeConfig string) error {
 	return args.Error(0)
 }
 
+func (m *MockRemoteMachine) GetInitialConfig() (string, error) {
+	args := m.Called()
+	return args.String(0), args.Error(1)
+}
+
 func (m *MockRemoteMachine) Run(mcycleEnd uint64) (emulator.BreakReason, error) {
 	args := m.Called(mcycleEnd)
 	return args.Get(0).(emulator.BreakReason), args.Error(1)
