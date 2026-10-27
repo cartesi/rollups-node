@@ -106,7 +106,20 @@ func (r *PostgresRepository) CreateApplication(
 		return 0, fmt.Errorf("unable to create database application: %w", err)
 	}
 
-	if !withExecutionParameters {
+	switch {
+	case !withExecutionParameters && app.ConsensusType == model.Consensus_PRT:
+		sqlStr, args = table.ExecutionParameters.
+			INSERT(
+				table.ExecutionParameters.ApplicationID,
+				table.ExecutionParameters.AdvanceIncDeadline,
+				table.ExecutionParameters.AdvanceMaxDeadline,
+			).
+			VALUES(
+				newID,
+				model.PrtAdvanceIncDeadline,
+				model.PrtAdvanceMaxDeadline,
+			).Sql()
+	case !withExecutionParameters:
 		sqlStr, args = table.ExecutionParameters.
 			INSERT(
 				table.ExecutionParameters.ApplicationID,
@@ -114,7 +127,7 @@ func (r *PostgresRepository) CreateApplication(
 			VALUES(
 				newID,
 			).Sql()
-	} else {
+	default:
 		sqlStr, args = table.ExecutionParameters.
 			INSERT(
 				table.ExecutionParameters.ApplicationID,

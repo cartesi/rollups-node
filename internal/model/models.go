@@ -453,6 +453,12 @@ func (e SnapshotPolicy) String() string {
 	return string(e)
 }
 
+// PRT uses longer advance deadlines for the 2^18-mcycle sampling period.
+const (
+	PrtAdvanceIncDeadline = 60 * time.Second
+	PrtAdvanceMaxDeadline = 3600 * time.Second
+)
+
 type ExecutionParameters struct {
 	ApplicationID         int64          `sql:"primary_key" json:"-"`
 	SnapshotPolicy        SnapshotPolicy `json:"snapshot_policy"`
