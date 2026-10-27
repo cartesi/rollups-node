@@ -11,6 +11,9 @@ import (
 	"math/bits"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
 
@@ -104,12 +107,46 @@ func (p *proofJSON) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func NewLibCartesiBackend(address string, timeout time.Duration) (Backend, string, uint32, error) {
-	// Keep this defensive check even though the advancer validates the constants
-	// at startup. Other callers can construct a backend directly.
-	if err := ValidateEmulatorComputationHashLimits(); err != nil {
-		return nil, "", 0, err
+// EmulatorIdentity reports compiled-header and linked-library identity facts.
+type EmulatorIdentity struct {
+	HeaderMarchID          uint64
+	RuntimeMarchID         uint64
+	UarchPristineStateHash common.Hash
+}
+
+// LinkedEmulatorIdentity reads all identity facts, retaining available values and independent read errors.
+func LinkedEmulatorIdentity() (EmulatorIdentity, error) {
+	marchID, marchErr := emulator.DefaultMarchID()
+	pristine, pristineErr := emulator.GetUarchPristineHash()
+	identity := EmulatorIdentity{
+		HeaderMarchID:          emulator.MarchID,
+		RuntimeMarchID:         marchID,
+		UarchPristineStateHash: common.Hash(pristine),
 	}
+	if marchErr != nil {
+		marchErr = fmt.Errorf("could not read linked emulator runtime marchid: %w", marchErr)
+	}
+	if pristineErr != nil {
+		pristineErr = fmt.Errorf("could not read linked emulator pristine uarch hash: %w", pristineErr)
+	}
+	return identity, errors.Join(marchErr, pristineErr)
+}
+
+// ValidateEmulatorMarchID checks the compiled header and linked runtime architecture.
+func ValidateEmulatorMarchID() error {
+	if err := model.CheckMarchID("emulator header", emulator.MarchID); err != nil {
+		return err
+	}
+	marchID, err := emulator.DefaultMarchID()
+	if err != nil {
+		return fmt.Errorf("could not read linked emulator runtime marchid: %w", err)
+	}
+	return model.CheckMarchID("linked emulator runtime", marchID)
+}
+
+// NewLibCartesiBackend starts a server. Direct callers must first validate
+// SDK architecture and computation-hash limits with the exported validators.
+func NewLibCartesiBackend(address string, timeout time.Duration) (Backend, string, uint32, error) {
 	rm, address, pid, err := emulator.SpawnServer(address, timeout)
 	if err != nil {
 		return nil, address, pid, err
