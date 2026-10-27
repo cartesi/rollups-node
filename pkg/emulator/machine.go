@@ -203,6 +203,32 @@ func (m *Machine) GetRootHash() (Hash, error) {
 	return *(*Hash)(unsafe.Pointer(&cHash)), nil
 }
 
+// GetUarchPristineHash reads the pristine uarch hash from this machine's library or server.
+func (m *Machine) GetUarchPristineHash() (Hash, error) {
+	var cHash C.cm_hash
+	var err error
+	m.callCAPI(func() {
+		err = newError(C.cm_get_uarch_pristine_hash(m.ptr, &cHash))
+	})
+	if err != nil {
+		return Hash{}, err
+	}
+	return *(*Hash)(unsafe.Pointer(&cHash)), nil
+}
+
+// GetNodeHash reads the hash of an aligned machine-memory span.
+func (m *Machine) GetNodeHash(address uint64, log2Size int32) (Hash, error) {
+	var cHash C.cm_hash
+	var err error
+	m.callCAPI(func() {
+		err = newError(C.cm_get_node_hash(m.ptr, C.uint64_t(address), C.int32_t(log2Size), &cHash))
+	})
+	if err != nil {
+		return Hash{}, err
+	}
+	return *(*Hash)(unsafe.Pointer(&cHash)), nil
+}
+
 // get_runtime_config
 func (m *Machine) GetRuntimeConfig() (string, error) {
 	var rcfg *C.char
