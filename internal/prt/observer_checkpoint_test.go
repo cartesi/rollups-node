@@ -138,12 +138,20 @@ func (f *observerCheckpointFixture) tournament(
 	if level != uint64(RootLevel) {
 		state = TournamentStandingInnerWinner
 	}
+	if len(events.MatchCreated) > 0 && len(events.MatchDeleted) == 0 {
+		state = TournamentStandingMatchesActive
+	}
 	finishedAt := finish
 	if finishedAt == 0 {
 		finishedAt = scanEnd
 	}
+	if state == TournamentStandingMatchesActive {
+		finishedAt = 0
+		candidate = common.Hash{}
+	}
 	adapter.On("Standing", mock.MatchedBy(resultCallOptsAtBlock(scanEnd))).Return(TournamentStanding{
-		State: state, HasCandidate: true, Candidate: candidate, FinalState: finalState, FinishedAt: finishedAt,
+		State: state, HasCandidate: state != TournamentStandingMatchesActive, Candidate: candidate, FinalState: finalState,
+		FinishedAt: finishedAt,
 	}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, mock.MatchedBy(resultCallOptsAtBlock(scanEnd)), TournamentLevel(level), state)
 	end := scanEnd
@@ -316,9 +324,11 @@ func TestGatherTournamentDataKeepsNewFinishedProjectionBelowCursor(t *testing.T)
 		Return((*Tournament)(nil), nil).Once()
 	adapter := &tournamentAdapterMock{}
 	opts := mock.MatchedBy(resultCallOptsAtBlock(100))
-	adapter.On("Descriptor", opts).Return(TournamentDescriptor{
+	descriptor := TournamentDescriptor{
 		BaseCycle: big.NewInt(0), Kind: TournamentKindLeaf, StartInstant: epoch.LastBlock,
-	}, nil).Once()
+	}
+	adapter.On("Descriptor", opts).Return(descriptor, nil).Once()
+	adapter.On("BondValue", opts).Return(big.NewInt(1), nil).Once()
 	adapter.On("Standing", opts).Return(TournamentStanding{
 		State: TournamentStandingRootWinner, HasCandidate: true, Candidate: *epoch.Commitment,
 		FinalState: *epoch.MachineHash, FinishedAt: 49,
@@ -334,7 +344,8 @@ func TestGatherTournamentDataKeepsNewFinishedProjectionBelowCursor(t *testing.T)
 	factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()
 	s.adapterFactory = factory
 
-	batches, err := s.gatherTournamentData(t.Context(), app, epoch, RootLevel, nil, nil, address, 1, 100)
+	batches, err := s.gatherTournamentData(t.Context(), app, epoch, RootLevel, nil, nil, address, 1, 100, creationFixture(t, address,
+		descriptor), nil)
 	require.NoError(t, err)
 	require.Len(t, batches, 1, "a new projection must reach the caller even when no event scan is needed")
 	require.Equal(t, address, batches[0].Tournament.Address)

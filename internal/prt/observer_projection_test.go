@@ -65,6 +65,7 @@ func TestTournamentProjectionPreservesWinnerPresence(t *testing.T) {
 					require.NoError(t, service.refreshTournament(t.Context(), app, epoch, test.level, adapter, tournament, 10))
 					stored = tournament
 				} else {
+					adapter.On("BondValue", opts).Return(big.NewInt(1), nil).Once()
 					tournament, err := service.readTournament(t.Context(), app, epoch, test.level,
 						nil, nil, *epoch.TournamentAddress, adapter, 3, 10)
 					require.NoError(t, err)
@@ -235,6 +236,7 @@ func TestRootWinnerMismatchDoesNotChangeLocalHealthDuringObservation(t *testing.
 					&model.Tournament{Address: *epoch.TournamentAddress, MaxLevel: 3, Kind: model.TournamentKindNonLeaf}, 10)
 				require.NoError(t, err)
 			} else {
+				adapter.On("BondValue", mock.Anything).Return(big.NewInt(1), nil).Once()
 				tournament, err := service.readTournament(t.Context(), app, epoch, RootLevel,
 					nil, nil, *epoch.TournamentAddress, adapter, 3, 10)
 				require.NoError(t, err)

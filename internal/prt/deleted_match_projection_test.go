@@ -178,12 +178,13 @@ func TestTournamentEventBatchKeepsNewFactsForCertifiedDeletion(t *testing.T) {
 				}}
 			case matchAdvanceEventName:
 				events.MatchAdvanced = []*itournament.ITournamentMatchAdvanced{{
-					MatchIdHash: stored.IDHash, SegmentStartPosition: big.NewInt(8),
+					MatchIdHash: stored.IDHash, One: stored.CommitmentOne, Two: stored.CommitmentTwo, SegmentStartPosition: big.NewInt(8),
 					Raw: types.Log{BlockNumber: 30, TxHash: common.HexToHash("0x77"), Index: 1},
 				}}
 			case leafSealEventName:
 				events.LeafMatchSealed = []*itournament.ITournamentLeafMatchSealed{{
-					MatchIdHash: stored.IDHash, EliminableAt: 34,
+					MatchIdHash: stored.IDHash, One: stored.CommitmentOne, Two: stored.CommitmentTwo,
+					DivergencePosition: big.NewInt(0), EliminableAt: 34,
 					Raw: types.Log{BlockNumber: 30, TxHash: common.HexToHash("0x77"), Index: 1},
 				}}
 			case matchDeletionEventName:
@@ -285,7 +286,7 @@ func expectDeletedMatchTournament(
 	if f.repo.eventCounts == nil {
 		f.repo.eventCounts = map[common.Address]repository.TournamentEventCounts{}
 	}
-	f.repo.eventCounts[address] = repository.TournamentEventCounts{
+	f.repo.eventCounts[address] = repository.TournamentEventCounts{StandingChanged: counts.MatchDeleted.Uint64(),
 		MatchCreated: counts.MatchCreated.Uint64(), MatchDeleted: counts.MatchDeleted.Uint64(),
 	}
 	adapter.On("StructuralEventCounts", opts).Return(counts, nil).Once()

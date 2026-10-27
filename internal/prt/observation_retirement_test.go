@@ -14,8 +14,9 @@ import (
 )
 
 func TestTournamentRetirementRequiresImmutableCommittedSnapshot(t *testing.T) {
-	base := Tournament{Snapshot: TournamentSnapshot{AsOfBlock: 50, FinishedAtBlock: 40,
-		Standing: TournamentStandingRootWinner, BondRecovery: TournamentBondRecovery{Disposition: BondDispositionRecovered}}}
+	base := Tournament{Snapshot: TournamentSnapshot{AsOfBlock: 50,
+		FinishedAtBlock: 40,
+		Standing:        TournamentStandingRootWinner, BondRecovery: TournamentBondRecovery{Disposition: BondDispositionRecovered}}}
 	for _, test := range []struct {
 		name    string
 		change  func(*Tournament)
@@ -36,7 +37,7 @@ func TestTournamentRetirementRequiresImmutableCommittedSnapshot(t *testing.T) {
 			v.Level, v.CreationEvent, v.Snapshot.Standing = 1, &TournamentCreationEvent{}, TournamentStandingInnerEliminableWinnerExpired
 		}, true},
 		{"missing child creation", func(v *Tournament) {
-			v.Level, v.Snapshot.Standing = 1, TournamentStandingInnerEliminableNoWinner
+			v.Level, v.CreationEvent, v.Snapshot.Standing = 1, nil, TournamentStandingInnerEliminableNoWinner
 		}, false},
 		{"child no winner", func(v *Tournament) {
 			v.Level, v.CreationEvent, v.Snapshot.Standing = 1, &TournamentCreationEvent{}, TournamentStandingInnerEliminableNoWinner
@@ -58,10 +59,11 @@ func TestRetiredParentStillObservesMutableChildren(t *testing.T) {
 	epoch.Status = EpochStatus_ClaimAccepted
 	f.epochs(epoch)
 	f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(2), nil).Once()
-	parent := &Tournament{Address: *epoch.TournamentAddress, MaxLevel: 2, Snapshot: TournamentSnapshot{
-		AsOfBlock: 50, FinishedAtBlock: 40, Standing: TournamentStandingRootWinner,
-		BondRecovery: TournamentBondRecovery{Disposition: BondDispositionRecovered},
-	}}
+	parent := &Tournament{Address: *epoch.TournamentAddress, MaxLevel: 2,
+		Snapshot: TournamentSnapshot{
+			AsOfBlock: 50, FinishedAtBlock: 40, Standing: TournamentStandingRootWinner,
+			BondRecovery: TournamentBondRecovery{Disposition: BondDispositionRecovered},
+		}}
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), parent.Address.Hex()).Return(parent, nil).Maybe()
 	child := f.tournament(epoch, common.HexToAddress("0x101"), 1, 2, 45, 100, &TournamentEvents{}, nil)
 	retiredChild := &Tournament{Address: common.HexToAddress("0x102"), Level: 1, MaxLevel: 2,

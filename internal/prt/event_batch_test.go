@@ -30,7 +30,8 @@ func newEventBatchFixture(t *testing.T, commitments []*Commitment, matches []*Ma
 	base := &observerCheckpointFixture{t: t, s: s, repo: repo, app: prtRevertTestApp()}
 	epoch := checkpointEpoch(0, "0x100")
 	f := &eventBatchFixture{observerCheckpointFixture: base, epoch: epoch,
-		tournament: &Tournament{Address: *epoch.TournamentAddress}, adapter: &tournamentAdapterMock{}}
+		tournament: &Tournament{Address: *epoch.TournamentAddress, Height: 256, Kind: TournamentKindLeaf},
+		adapter:    &tournamentAdapterMock{}}
 	address := f.tournament.Address.Hex()
 	repo.On("ListCommitments", mock.Anything, base.app.Name,
 		repository.CommitmentFilter{EpochIndex: &epoch.Index, TournamentAddress: &address}, repository.Pagination{}, false).
@@ -43,7 +44,7 @@ func newEventBatchFixture(t *testing.T, commitments []*Commitment, matches []*Ma
 }
 
 func (f *eventBatchFixture) project(events *TournamentEvents) (*repository.TournamentEventBatch, error) {
-	return f.s.tournamentEventBatch(f.t.Context(), f.app, f.epoch, f.tournament, f.adapter, events, 100)
+	return f.s.tournamentEventBatch(f.t.Context(), f.app, f.epoch, f.tournament, f.adapter, events, 100, nil)
 }
 
 func TestTournamentEventBatchKeepsFactsAndCurrentViewsSeparate(t *testing.T) {
@@ -62,12 +63,14 @@ func TestTournamentEventBatchKeepsFactsAndCurrentViewsSeparate(t *testing.T) {
 			MatchIdHash: matchID, One: one, Two: two, LeftOfTwo: finalTwo, EliminableAt: 120, Raw: logAt(2),
 		}},
 		MatchAdvanced: []*itournament.ITournamentMatchAdvanced{
-			{MatchIdHash: matchID, OtherParent: finalOne, LeftNode: one, SegmentStartPosition: large, EliminableAt: 121, Raw: logAt(3)},
-			{MatchIdHash: matchID, OtherParent: finalOne, LeftNode: two,
+			{MatchIdHash: matchID, One: one, Two: two, OtherParent: finalOne, LeftNode: one, SegmentStartPosition: large, EliminableAt: 121,
+				Raw: logAt(3)},
+			{MatchIdHash: matchID, One: one, Two: two, OtherParent: finalOne, LeftNode: two,
 				SegmentStartPosition: big.NewInt(8), EliminableAt: 122, Raw: logAt(4)},
 		},
-		LeafMatchSealed: []*itournament.ITournamentLeafMatchSealed{{MatchIdHash: matchID, EliminableAt: 123, Raw: logAt(5)}},
-		MatchDeleted:    []*itournament.ITournamentMatchDeleted{{MatchIdHash: matchID, One: one, Two: two, Reason: 1, Raw: logAt(6)}},
+		LeafMatchSealed: []*itournament.ITournamentLeafMatchSealed{{MatchIdHash: matchID, One: one, Two: two,
+			DivergencePosition: big.NewInt(0), EliminableAt: 123, Raw: logAt(5)}},
+		MatchDeleted: []*itournament.ITournamentMatchDeleted{{MatchIdHash: matchID, One: one, Two: two, Reason: 1, Raw: logAt(6)}},
 		PartialBondRefund: []*itournament.ITournamentPartialBondRefund{{
 			Recipient: common.HexToAddress("0xc"), Value: large, Success: false, Raw: logAt(7),
 		}},
@@ -174,17 +177,17 @@ func TestTournamentEventBatchReadFailuresDoNotMutateStoredRows(t *testing.T) {
 }
 
 func TestTournamentCreationEventChecksCloneStartAndKeepsIdentity(t *testing.T) {
-	matchID := common.HexToHash("0x11")
-	child := &Tournament{Address: common.HexToAddress("0x100"), ParentMatchIDHash: &matchID, StartInstant: 50}
-	event := &itournament.ITournamentNewInnerTournament{MatchIdHash: matchID, ChildTournament: child.Address,
-		Raw: types.Log{BlockNumber: 50, TxHash: common.HexToHash("0x22"), Index: 4}}
+	child := &Tournament{Address: common.HexToAddress("0x100"), StartInstant: 50, BondValue: Uint256{1}}
+	event := &TournamentCreation{Address: child.Address, BondValue: Uint256{1},
+		Descriptor: TournamentDescriptor{BaseCycle: new(big.Int), StartInstant: 50},
+		Event:      TournamentCreationEvent{BlockNumber: 50, TxHash: common.HexToHash("0x22"), LogIndex: 4}}
 	require.NoError(t, applyTournamentCreationEvent(child, event))
 	require.Equal(t, uint64(4), child.CreationEvent.LogIndex)
 	before := *child.CreationEvent
 	require.NoError(t, applyTournamentCreationEvent(child, event), "an exact repeated fact is harmless")
-	event.Raw.Index++
+	event.Event.LogIndex++
 	require.ErrorContains(t, applyTournamentCreationEvent(child, event), "conflicting creation events")
 	require.Equal(t, before, *child.CreationEvent)
-	event.Raw.BlockNumber++
-	require.ErrorContains(t, applyTournamentCreationEvent(child, event), "descriptor does not match")
+	event.Event.BlockNumber++
+	require.ErrorContains(t, applyTournamentCreationEvent(child, event), "descriptor or bond does not match")
 }

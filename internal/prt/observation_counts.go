@@ -106,3 +106,12 @@ func validateTournamentEventCounts(before, after StructuralEventCounts, events *
 	}
 	return nil
 }
+
+// Stored standing history must have the same authenticated cumulative baseline.
+func validateStoredStandingCount(counts repository.TournamentEventCounts) error {
+	expected := new(big.Int).Add(new(big.Int).SetUint64(counts.CommitmentJoined), new(big.Int).SetUint64(counts.MatchDeleted))
+	if expected.Cmp(new(big.Int).SetUint64(counts.StandingChanged)) != 0 {
+		return fmt.Errorf("stored StandingChanged count mismatch: expected %s, stored %d", expected, counts.StandingChanged)
+	}
+	return nil
+}

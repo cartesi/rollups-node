@@ -294,7 +294,7 @@ func (s *Service) observeTournamentState(
 			expected = new(target.Snapshot.AsOfBlock)
 		}
 		batches, readErr := s.gatherTournamentData(ctx, app, epoch, TournamentLevel(target.Level), target.ParentMatchIDHash,
-			target.ParentTournamentAddress, target.Address, levels, facts.Number)
+			target.ParentTournamentAddress, target.Address, levels, facts.Number, nil, nil)
 		if readErr == nil && len(batches) > 0 {
 			// Revalidate after all reads and before publishing this complete unit.
 			readErr = s.validateObservationBlock(ctx, facts)

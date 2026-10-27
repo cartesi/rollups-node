@@ -188,9 +188,11 @@ func TestFalseFinalStatePublishesBeforeLocalDivergence(t *testing.T) {
 	adapter := &tournamentAdapterMock{}
 	f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), address.Hex()).Return((*model.Tournament)(nil), nil).Once()
-	adapter.On("Descriptor", opts).Return(TournamentDescriptor{
+	descriptor := TournamentDescriptor{
 		BaseCycle: big.NewInt(0), Kind: model.TournamentKindLeaf, StartInstant: 10,
-	}, nil).Once()
+	}
+	adapter.On("Descriptor", opts).Return(descriptor, nil).Once()
+	adapter.On("BondValue", opts).Return(big.NewInt(1), nil).Once()
 	adapter.On("Standing", opts).Return(TournamentStanding{
 		State: model.TournamentStandingRootWinner, HasCandidate: true, Candidate: foreign, FinalState: falseState, FinishedAt: 90,
 	}, nil).Once()

@@ -160,7 +160,7 @@ func (f *observerCheckpointFixture) expectResultBoundaryWindowForState(
 	counts := zeroStructuralEventCounts()
 	counts.CommitmentJoined.SetUint64(1)
 	f.repo.eventCounts = map[common.Address]repository.TournamentEventCounts{
-		tournament.Address: {CommitmentJoined: 1},
+		tournament.Address: {StandingChanged: 1, CommitmentJoined: 1},
 	}
 	adapter.On("StructuralEventCounts", opts).Return(counts, nil).Once()
 	address := tournament.Address.Hex()

@@ -157,6 +157,9 @@ func runObservationWithIOError(ctx context.Context, t *testing.T, f *observerChe
 		}
 		adapter.On("Descriptor", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(descriptor, descriptorError).Once()
 		if descriptorError == nil {
+			if stored == nil {
+				adapter.On("BondValue", mock.Anything).Return(big.NewInt(1), nil).Once()
+			}
 			var standingError error
 			if strings.HasSuffix(operation, standingReadName) {
 				standingError = cause
@@ -183,7 +186,7 @@ func runObservationWithIOError(ctx context.Context, t *testing.T, f *observerChe
 				Return([]*model.Match{}, uint64(0), cause).Once()
 		}
 	}
-	_, err := f.s.gatherTournamentData(ctx, f.app, epoch, 1, nil, nil, address, 3, 100)
+	_, err := f.s.gatherTournamentData(ctx, f.app, epoch, 1, nil, nil, address, 3, 100, nil, nil)
 	return err
 }
 
