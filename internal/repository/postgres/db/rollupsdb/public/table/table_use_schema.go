@@ -13,6 +13,7 @@ func UseSchema(schema string) {
 	Application = Application.FromSchema(schema)
 	BondEvents = BondEvents.FromSchema(schema)
 	Commitments = Commitments.FromSchema(schema)
+	DeploymentAdmissionState = DeploymentAdmissionState.FromSchema(schema)
 	Epoch = Epoch.FromSchema(schema)
 	ExecutionParameters = ExecutionParameters.FromSchema(schema)
 	Input = Input.FromSchema(schema)
