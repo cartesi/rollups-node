@@ -265,6 +265,7 @@ type deliveryBackendFake struct {
 	recoveryFalse             bool
 	preflightError            error
 	onPreflight               func(context.Context, ethereum.CallMsg, txsender.BlockRef) error
+	onCall                    func(context.Context, ethereum.CallMsg, txsender.BlockRef) error
 	onHeader                  func(context.Context) error
 
 	txsender.Backend
@@ -287,6 +288,11 @@ func (b *deliveryBackendFake) Call(
 	ctx context.Context, msg ethereum.CallMsg, ref txsender.BlockRef,
 ) ([]byte, error) {
 	b.calls = append(b.calls, ref)
+	if b.onCall != nil {
+		if err := b.onCall(ctx, msg, ref); err != nil {
+			return nil, err
+		}
+	}
 	if b.callError != nil {
 		return nil, b.callError
 	}

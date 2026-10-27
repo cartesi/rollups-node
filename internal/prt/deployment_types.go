@@ -4,6 +4,8 @@
 package prt
 
 import (
+	"time"
+
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/ethereum/go-ethereum/common"
@@ -71,16 +73,6 @@ type DeploymentEvidence struct {
 	Cause        deploymentCause
 }
 
-type deploymentKey struct {
-	ID          int64
-	Application common.Address
-	Consensus   common.Address
-}
-
-func deploymentApplicationKey(app *model.Application) deploymentKey {
-	return deploymentKey{ID: app.ID, Application: app.IApplicationAddress, Consensus: app.IConsensusAddress}
-}
-
 type deploymentAssessment struct {
 	State           deploymentState
 	PendingEvidence *DeploymentEvidence
@@ -92,9 +84,15 @@ func (a deploymentAssessment) confirmed() bool {
 
 // Pending evidence is immutable after publication and is discarded after confirmation.
 type deploymentSnapshot struct {
-	Assessment   deploymentAssessment
-	Head         txsender.BlockRef
-	Cause        deploymentCause
-	Alpha6Shape  bool
-	ShapeFactory common.Address
+	ResetGeneration int64
+	Acknowledged    bool
+	Recovery        bool
+	UnknownHeads    uint64
+	UnknownHeadIDs  [deploymentUnknownHeadLimit]common.Hash
+	LastNotice      time.Time
+	Assessment      deploymentAssessment
+	Head            txsender.BlockRef
+	Cause           deploymentCause
+	Alpha6Shape     bool
+	ShapeFactory    common.Address
 }

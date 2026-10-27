@@ -48,6 +48,8 @@ const (
 
 type Planner[A comparable] interface {
 	Next(context.Context, BlockRef, *Current[A]) (Decision[A], error)
+	// Recheck confirms eligibility for this action and immutable
+	// request. It cannot select another protocol action or replace its bytes.
 	Recheck(context.Context, BlockRef, A) (Eligibility, error)
 }
 
@@ -96,7 +98,6 @@ var (
 	ErrFinality     = errors.New("protected view contradicts saved finality")
 	ErrNonCanonical = errors.New("protected block is not canonical on this backend")
 	ErrStale        = errors.New("transaction preparation is stale")
-	ErrHeld         = errors.New("signer nonce is held by another action")
 	ErrLimit        = errors.New("transaction policy limit reached")
 	ErrContent      = errors.New("action reused with different transaction content")
 	ErrIneligible   = errors.New("action is no longer eligible")

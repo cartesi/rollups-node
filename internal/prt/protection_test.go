@@ -104,7 +104,8 @@ func TestProtectionIndependentPinnedClocksKeepSiblingAfterFailure(t *testing.T) 
 		}
 		t.Cleanup(func() { adapter.AssertExpectations(t) })
 	}
-	f.s.observeProtection(t.Context(), f.app, []*model.Epoch{first, second}, f.consensus, facts, nil)
+	clocks := f.s.observeProtection(t.Context(), f.app, []*model.Epoch{first, second}, f.consensus, facts, nil)
+	f.s.reportProtectionStops(t.Context(), f.app, clocks, facts, deploymentCompatible, 0, nil)
 	require.Equal(t, 2, strings.Count(output.String(), "PRT protection stopped"))
 	require.Contains(t, output.String(), "epoch_index=0 root_tournament="+first.TournamentAddress.Hex())
 	require.Contains(t, output.String(), "clock_available=false")
@@ -185,7 +186,8 @@ func TestProtectionExecutionStopKeepsValidPrefix(t *testing.T) {
 				Return(&repository.EpochCompletionState{Application: f.app, Epoch: first, Problem: prtTestProblem(status, 1)}, nil).Once()
 			var output bytes.Buffer
 			f.s.Logger = slog.New(slog.NewTextHandler(&output, nil))
-			f.s.observeProtection(t.Context(), f.app, []*model.Epoch{first, second}, f.consensus, facts, nil)
+			clocks := f.s.observeProtection(t.Context(), f.app, []*model.Epoch{first, second}, f.consensus, facts, nil)
+			f.s.reportProtectionStops(t.Context(), f.app, clocks, facts, deploymentCompatible, 0, nil)
 			require.Equal(t, 1, strings.Count(output.String(), "PRT protection stopped"))
 			require.Contains(t, output.String(), "epoch_index=1 root_tournament="+second.TournamentAddress.Hex())
 			require.Equal(t, status, f.app.Status)

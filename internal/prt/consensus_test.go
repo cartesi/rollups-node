@@ -318,6 +318,7 @@ func TestCheckEpochsAcceptsComputedOrStagedEpochFromExactEpochSealedEvent(t *tes
 
 			service, _ := newPRTServiceMock()
 			service.repository = repo
+			admitTestDeployment(service, repo, app)
 			service.adapterFactory = factory
 			service.client = client
 			service.submissionEnabled = true
@@ -376,6 +377,7 @@ func TestCheckEpochsValidatesAcceptanceReceiptAgainstPinnedHead(t *testing.T) {
 			client.On("TransactionReceipt", mock.Anything, acceptTx).Return(test.receipt, nil).Once()
 			service, _ := newPRTServiceMock()
 			service.repository = repo
+			admitTestDeployment(service, repo, app)
 			service.adapterFactory = factory
 			service.client = client
 
@@ -423,6 +425,7 @@ func TestValidateApplicationDefersActionsForAcceptanceAfterPinnedHead(t *testing
 	}, nil).Once()
 	service, _ := newPRTServiceMock()
 	service.repository = repo
+	admitTestDeployment(service, repo, app)
 	service.adapterFactory = factory
 	service.client = client
 	service.defaultBlock = model.DefaultBlock_Finalized

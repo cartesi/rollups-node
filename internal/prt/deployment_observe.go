@@ -5,6 +5,7 @@ package prt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -15,18 +16,16 @@ import (
 func (s *Service) observeDeployment(
 	ctx context.Context, app *model.Application, consensus DaveConsensusAdapter, head txsender.BlockRef,
 ) (deploymentSnapshot, error) {
-	key := deploymentApplicationKey(app)
-	captured := s.deployments.capture(key)
+	key := deploymentIdentity(app)
+	captured, episodeErr := s.deploymentEpisode(ctx, app)
+	if episodeErr != nil {
+		return captured.snapshot, episodeErr
+	}
 	if captured.snapshot.Assessment.confirmed() ||
 		captured.snapshot.Assessment.State == deploymentCompatible && captured.snapshot.Head == head {
 		return captured.snapshot, nil
 	}
 	evidence, readErr := consensus.ReadDeployment(ctx, head)
-	if evidence.FactoryKnown && evidence.Cause == deploymentCauseEmpty {
-		s.Logger.Warn("PRT deployment dependency is not visible at the observation head",
-			"application", app.Name, "factory", evidence.Factory, "state_transition", evidence.Transition,
-			"block", head.Number, "block_hash", head.Hash, "reason", evidence.Cause)
-	}
 	previousCanonical := true
 	prior := captured.snapshot.Assessment
 	if readErr == nil && hasDeploymentConfirmationPair(prior, evidence) {
@@ -38,6 +37,18 @@ func (s *Service) observeDeployment(
 		}
 	}
 	next := planDeploymentAssessment(captured.snapshot, evidence, readErr, previousCanonical)
+	persistErr := s.persistDeployment(ctx, app, next)
+	if persistErr != nil {
+		if next.Assessment.confirmed() && captured.snapshot.Recovery {
+			captured.snapshot.Recovery = false
+			s.deployments.publish(key, captured.snapshot)
+		}
+		return captured.snapshot, errors.Join(readErr, persistErr)
+	}
+	if next.Assessment.State == deploymentCompatible || next.Assessment.confirmed() {
+		next.Recovery = false
+	}
+	s.deploymentNotice(ctx, app, captured.snapshot, &next, evidence, readErr)
 	s.deployments.publish(key, next)
 	return next, readErr
 }

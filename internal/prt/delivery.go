@@ -4,6 +4,7 @@
 package prt
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -139,8 +140,27 @@ func (s *delivery) planEpochAction(
 	}
 	revalidating := expected != nil
 	retained := revalidating
-	if err := applicationEligible(app, snap); err != nil {
-		return nil, err
+	var state *repository.EpochCompletionState
+	if expected != nil {
+		var gateErr error
+		state, gateErr = s.checkDeploymentAction(ctx, app, expected.Epoch, kind, snap)
+		if gateErr != nil && state == nil {
+			return nil, gateErr
+		}
+		// Unknown admission does not prevent fresh protocol evidence from proving
+		// obsolescence. Useful work still needs the final deployment check below.
+		app = state.Application
+	} else {
+		if err := applicationEligible(app, snap); err != nil {
+			return nil, err
+		}
+		state := s.deployments.capture(deploymentIdentity(app)).snapshot
+		if !state.Acknowledged || state.Assessment.State == deploymentNone || state.Assessment.State == deploymentPending {
+			return nil, txsender.ErrInconclusive
+		}
+		if deploymentBlocksAction(state.Assessment.State, kind) {
+			return nil, txsender.ErrIneligible
+		}
 	}
 	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
 	if err != nil {
@@ -151,12 +171,19 @@ func (s *delivery) planEpochAction(
 		return nil, fmt.Errorf("application %s (%s), consensus snapshot block %d hash %s: %w",
 			app.Name, app.IApplicationAddress, snap.Number, snap.Hash, err)
 	}
-	if revalidating && view.sealed.EpochNumber != expected.Epoch {
-		return nil, txsender.ErrIneligible
+	if revalidating {
+		if state.Epoch != nil && state.Epoch.LastBlock > snap.Number {
+			return nil, txsender.ErrInconclusive
+		}
+		if view.sealed.EpochNumber != expected.Epoch {
+			return nil, txsender.ErrIneligible
+		}
 	}
-	state, err := s.repository.GetEpochCompletionState(ctx, app.IApplicationAddress.Hex(), view.sealed.EpochNumber)
-	if err != nil {
-		return nil, err
+	if state == nil {
+		state, err = s.repository.GetEpochCompletionState(ctx, app.IApplicationAddress.Hex(), view.sealed.EpochNumber)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if state == nil || state.Application == nil || state.Application.ID != app.ID {
 		return nil, txsender.ErrIneligible
@@ -286,6 +313,32 @@ func (s *delivery) planEpochAction(
 	}
 	if call.Key.Kind == 0 {
 		return nil, nil
+	}
+	final, err := s.checkDeploymentAction(ctx, app, epoch.Index, kind, snap)
+	if err != nil {
+		return nil, err
+	}
+	currentEpoch := final.Epoch
+	if currentEpoch.TournamentAddress == nil || currentEpoch.MachineHash == nil || currentEpoch.Commitment == nil ||
+		currentEpoch.TxBufferDataBlock == nil || *currentEpoch.TournamentAddress != *epoch.TournamentAddress ||
+		*currentEpoch.MachineHash != *epoch.MachineHash || *currentEpoch.Commitment != *epoch.Commitment ||
+		*currentEpoch.TxBufferDataBlock != *epoch.TxBufferDataBlock {
+		return nil, txsender.ErrInconclusive
+	}
+	if err = matchConsensusSnapshotToEpoch(currentEpoch, view); err != nil {
+		return nil, txsender.ErrInconclusive
+	}
+	if !retained && !pendingTournamentResult(currentEpoch) {
+		return nil, txsender.ErrIneligible
+	}
+	var exactData []byte
+	if kind == joinTournament {
+		exactData, err = joinData(currentEpoch)
+	} else {
+		exactData, err = consensusActionData(currentEpoch, kind)
+	}
+	if err != nil || !bytes.Equal(exactData, call.Data) {
+		return nil, errors.Join(txsender.ErrInconclusive, err)
 	}
 	return &call, nil
 }

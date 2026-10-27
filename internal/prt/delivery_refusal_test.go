@@ -18,6 +18,7 @@ func addSecondStageApplication(f *deliveryFixture) *model.Application {
 	app.ID, app.Name = 8, secondApplicationName
 	app.IApplicationAddress, app.IConsensusAddress = common.HexToAddress("0x801"), common.HexToAddress("0x802")
 	f.repo.apps = append(f.repo.apps, &app)
+	admitTestDeployment(f.d.Service, f.repo.prtRepositoryMock, &app)
 	f.backend.apps = f.repo.apps
 	epoch := *f.epoch
 	epoch.ApplicationID = app.ID

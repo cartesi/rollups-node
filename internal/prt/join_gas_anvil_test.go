@@ -50,7 +50,7 @@ func (p joinGasPlanner) Next(context.Context, txsender.BlockRef, *txsender.Curre
 	return txsender.Publish(uint8(1), p.request), nil
 }
 
-func (joinGasPlanner) Recheck(context.Context, txsender.BlockRef, uint8) (txsender.Eligibility, error) {
+func (joinGasPlanner) Recheck(_ context.Context, _ txsender.BlockRef, _ uint8) (txsender.Eligibility, error) {
 	return txsender.Useful, nil
 }
 

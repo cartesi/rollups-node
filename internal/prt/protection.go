@@ -74,10 +74,6 @@ func (s *Service) observeProtection(ctx context.Context, app *model.Application,
 		return nil
 	}
 	s.reportProtectionDiscovery(app, protectionClockDiscovery, errors.Join(discoveryErr, sealedErr))
-	first, stopErr := s.protectionStopBoundary(ctx, app, targets)
-	if len(targets) > 0 && !txsender.ShutdownOnly(ctx, stopErr) {
-		s.reportProtectionDiscovery(app, protectionBoundaryDiscovery, stopErr)
-	}
 	clocks := make([]prtprotection.Clock, 0, len(targets))
 	for _, target := range targets {
 		clock := s.readProtectionClock(ctx, app, target, facts)
@@ -85,16 +81,6 @@ func (s *Service) observeProtection(ctx context.Context, app *model.Application,
 			return clocks
 		}
 		clocks = append(clocks, clock)
-		if first != nil && target.index >= *first {
-			cause := fmt.Errorf("application status %s", app.Status)
-			if app.Reason != nil {
-				cause = fmt.Errorf("application status %s: %s", app.Status, *app.Reason)
-			}
-			if s.publicationStopped() {
-				cause = errors.Join(cause, s.publicationFailure())
-			}
-			prtprotection.ReportClock(s.Logger, app, clock, cause)
-		}
 		s.reportSealBacklog(app, target, clock, facts)
 	}
 	return clocks
@@ -136,7 +122,7 @@ func (s *Service) readProtectionClock(ctx context.Context, app *model.Applicatio
 	return clock
 }
 
-func (s *Service) protectionStopBoundary(ctx context.Context, app *model.Application, targets []protectionTarget) (*uint64, error) {
+func (s *Service) protectionStopBoundary(ctx context.Context, app *model.Application, clocks []prtprotection.Clock) (*uint64, error) {
 	if s.publicationStopped() {
 		return new(uint64(0)), nil
 	}
@@ -144,15 +130,15 @@ func (s *Service) protectionStopBoundary(ctx context.Context, app *model.Applica
 		app.Status == model.ApplicationStatus_Corrupted {
 		return new(uint64(0)), nil
 	}
-	if !app.Status.IsExecutionTerminal() && app.Status != model.ApplicationStatus_InvalidOutputsRoot || len(targets) == 0 {
+	if !app.Status.IsExecutionTerminal() && app.Status != model.ApplicationStatus_InvalidOutputsRoot || len(clocks) == 0 {
 		return nil, nil
 	}
-	state, err := s.repository.GetEpochCompletionState(ctx, app.IApplicationAddress.Hex(), targets[0].index)
+	state, err := s.repository.GetEpochCompletionState(ctx, app.IApplicationAddress.Hex(), clocks[0].EpochIndex)
 	if err != nil {
 		return nil, err
 	}
 	if state == nil || state.Application == nil || state.Application.ID != app.ID ||
-		state.Epoch == nil || state.Epoch.Index != targets[0].index {
+		state.Epoch == nil || state.Epoch.Index != clocks[0].EpochIndex {
 		return nil, errors.New("protection stop boundary identity is unavailable")
 	}
 	if !state.Application.Enabled || !state.Application.Status.IsExecutionTerminal() &&

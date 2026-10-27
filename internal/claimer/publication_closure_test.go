@@ -122,7 +122,7 @@ func (signingPolicyPlanner) Next(context.Context, txsender.BlockRef, *txsender.C
 ) {
 	return txsender.Publish(claimAction{}, txsender.Request{To: common.HexToAddress("0xb1")}), nil
 }
-func (signingPolicyPlanner) Recheck(context.Context, txsender.BlockRef, claimAction) (txsender.Eligibility, error) {
+func (signingPolicyPlanner) Recheck(_ context.Context, _ txsender.BlockRef, _ claimAction) (txsender.Eligibility, error) {
 	return txsender.Useful, nil
 }
 

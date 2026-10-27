@@ -48,7 +48,7 @@ func WaitOnly(err error, extra ...error) bool {
 	case interface{ Unwrap() error }:
 		return WaitOnly(cause.Unwrap(), extra...)
 	}
-	for _, wait := range append([]error{ErrHeld, ErrStale, ErrInconclusive, ErrIneligible}, extra...) {
+	for _, wait := range append([]error{ErrStale, ErrInconclusive, ErrIneligible}, extra...) {
 		if err == wait {
 			return true
 		}

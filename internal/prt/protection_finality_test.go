@@ -31,6 +31,7 @@ func TestProtectionReportsMidIntervalFinalityInSameObserverPass(t *testing.T) {
 	second.Name = "second application"
 	second.IApplicationAddress = common.HexToAddress("0x991")
 	second.IConsensusAddress = common.HexToAddress("0x992")
+	f.repo.deploymentRows[second.ID] = model.DeploymentAdmissionState{ApplicationID: second.ID}
 	secondConsensus := newCompatibleDaveConsensusAdapterMock(second.IConsensusAddress)
 	f.factory.On("CreateDaveConsensusAdapter", second.IConsensusAddress).Return(secondConsensus, nil).Once()
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -21,7 +22,7 @@ import (
 )
 
 func TestDeploymentObserverReadsOutsideCacheLockAndRetainsKnownShape(t *testing.T) {
-	service := &Service{}
+	service := newDeploymentObserverService()
 	service.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app := prtRevertTestApp()
 	head := deploymentTestHead(100)
@@ -58,7 +59,7 @@ func TestDeploymentObserverReadsOutsideCacheLockAndRetainsKnownShape(t *testing.
 func TestDeploymentObserverConfirmsOnlyCanonicalDistinctHeads(t *testing.T) {
 	for _, canonical := range []bool{true, false} {
 		t.Run(map[bool]string{true: "canonical", false: "reorged first head"}[canonical], func(t *testing.T) {
-			service := &Service{}
+			service := newDeploymentObserverService()
 			service.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 			app := prtRevertTestApp()
 			oldHeader := &types.Header{Number: big.NewInt(100)}
@@ -105,6 +106,8 @@ func TestDeploymentObservationNeverBecomesWholeApplicationTierGate(t *testing.T)
 	for _, confirmed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "pending old shape", true: "confirmed generation"}[confirmed], func(t *testing.T) {
 			f := newDeliveryIntervalFixture(t)
+			var logs bytes.Buffer
+			f.d.Logger = slog.New(slog.NewTextHandler(&logs, nil))
 			f.repo.publishedRoots = nil
 			f.checkpoint.epochs(f.epoch)
 			f.block = f.facts
@@ -121,8 +124,9 @@ func TestDeploymentObservationNeverBecomesWholeApplicationTierGate(t *testing.T)
 				return e, nil
 			}
 			if confirmed {
-				key := deploymentApplicationKey(f.app)
-				snapshot := deploymentSnapshot{Assessment: deploymentAssessment{State: deploymentGeneration}}
+				key := deploymentIdentity(f.app)
+				snapshot := deploymentSnapshot{Acknowledged: true, ResetGeneration: 1,
+					Assessment: deploymentAssessment{State: deploymentGeneration}}
 				f.d.deployments.publish(key, snapshot)
 			}
 			require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.facts))
@@ -132,6 +136,8 @@ func TestDeploymentObservationNeverBecomesWholeApplicationTierGate(t *testing.T)
 			require.Empty(t, f.repo.windows)
 			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
 			require.False(t, f.d.publicationStopped())
+			require.Contains(t, logs.String(), "join_close_block=310")
+			require.Contains(t, logs.String(), "clock_available=true")
 			expected := 1
 			if confirmed {
 				expected = 0
@@ -144,8 +150,9 @@ func TestDeploymentObservationNeverBecomesWholeApplicationTierGate(t *testing.T)
 func TestDeploymentObservationSkipsDisabledApplicationBeforeRPC(t *testing.T) {
 	f := newDeliveryFixture(t)
 	f.app.Enabled = false
+	before := f.d.deployments.capture(deploymentIdentity(f.app))
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.block))
-	require.Zero(t, f.d.deployments.capture(deploymentApplicationKey(f.app)).revision)
+	require.True(t, f.d.deployments.same(deploymentIdentity(f.app), before))
 	f.factory.AssertNotCalled(t, "CreateDaveConsensusAdapter", mock.Anything)
 }
 
@@ -158,7 +165,7 @@ func TestDeploymentObserverMissingDependencyWarnsWithoutVerdict(t *testing.T) {
 			} else {
 				b.absent[b.transition] = true
 			}
-			service := &Service{}
+			service := newDeploymentObserverService()
 			var logs bytes.Buffer
 			service.Logger = slog.New(slog.NewTextHandler(&logs, nil))
 			app := prtRevertTestApp()
@@ -167,7 +174,7 @@ func TestDeploymentObserverMissingDependencyWarnsWithoutVerdict(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, deploymentNone, snapshot.Assessment.State)
 			require.Contains(t, logs.String(), "level=WARN")
-			require.Contains(t, logs.String(), "dependency is not visible")
+			require.Contains(t, logs.String(), "reason=empty_return")
 			require.Contains(t, logs.String(), b.factory.Hex())
 			require.False(t, service.publicationStopped())
 			require.Equal(t, model.ApplicationStatus_OK, app.Status)
@@ -176,7 +183,7 @@ func TestDeploymentObserverMissingDependencyWarnsWithoutVerdict(t *testing.T) {
 }
 
 func TestDeploymentObserverCanonicalReadErrorKeepsThePendingPair(t *testing.T) {
-	service := &Service{}
+	service := newDeploymentObserverService()
 	service.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	app := prtRevertTestApp()
 	firstHeader := &types.Header{Number: big.NewInt(100)}
@@ -193,7 +200,7 @@ func TestDeploymentObserverCanonicalReadErrorKeepsThePendingPair(t *testing.T) {
 	next, err := service.observeDeployment(t.Context(), app, reader, deploymentTestHead(101))
 	require.ErrorIs(t, err, cause)
 	require.Equal(t, first.Assessment, next.Assessment)
-	require.Equal(t, first.Head, next.Head)
+	require.Equal(t, first.Assessment.PendingEvidence, next.Assessment.PendingEvidence)
 	require.Equal(t, deploymentPending, next.Assessment.State)
 	client.AssertExpectations(t)
 }
@@ -252,11 +259,12 @@ func TestDeploymentObserverConfirmsActualGenerationAndTableEvidence(t *testing.T
 			b.head = txsender.BlockRef{Number: 100, Hash: firstHeader.Hash()}
 			client := &ethClientMock{}
 			client.On("HeaderByNumber", mock.Anything, big.NewInt(100)).Return(firstHeader, nil).Once()
-			service := &Service{client: client}
+			service := newDeploymentObserverService()
+			service.client = client
 			service.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 			app := prtRevertTestApp()
 			app.IConsensusAddress = b.consensus
-			key := deploymentApplicationKey(app)
+			key := deploymentIdentity(app)
 
 			first, err := service.observeDeployment(t.Context(), app, adapter, b.head)
 			require.NoError(t, err)
@@ -279,6 +287,98 @@ func TestDeploymentObserverConfirmsActualGenerationAndTableEvidence(t *testing.T
 			require.Equal(t, b.head, published.Head)
 			require.False(t, service.publicationStopped())
 			client.AssertExpectations(t)
+		})
+	}
+}
+
+func TestCompatibleDeploymentReadFailureDoesNotReportProtectionStop(t *testing.T) {
+	f := newDeliveryIntervalFixture(t)
+	var logs bytes.Buffer
+	f.d.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	f.checkpoint.epochs(f.epoch)
+	f.block = f.facts
+	f.snapshot(resultTestSnapshot(f.epoch, false))
+	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+	cause := errors.New("deployment read unavailable")
+	f.consensus.deploymentRead = func(_ context.Context, h txsender.BlockRef) (DeploymentEvidence, error) {
+		return DeploymentEvidence{Head: h, Consensus: f.app.IConsensusAddress}, cause
+	}
+	require.ErrorIs(t, f.d.observeApplication(t.Context(), f.app, f.facts), cause)
+	state, _, err := f.d.deploymentVerdictState(t.Context(), f.app)
+	require.NoError(t, err)
+	require.Equal(t, deploymentCompatible, state)
+	require.NotContains(t, logs.String(), "PRT protection stopped")
+}
+
+func TestDeploymentReadShutdownDoesNotReportProtectionStop(t *testing.T) {
+	f := newDeliveryIntervalFixture(t)
+	var logs bytes.Buffer
+	f.d.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	f.checkpoint.epochs(f.epoch)
+	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	f.consensus.deploymentRead = func(_ context.Context, h txsender.BlockRef) (DeploymentEvidence, error) {
+		cancel()
+		return DeploymentEvidence{Head: h, Consensus: f.app.IConsensusAddress}, context.Canceled
+	}
+	require.ErrorIs(t, f.d.observeApplication(ctx, f.app, f.facts), context.Canceled)
+	require.NotContains(t, logs.String(), "PRT protection stopped")
+}
+
+func TestDeploymentResetAcknowledgementFailureReportsEffectiveAdmission(t *testing.T) {
+	f := newDeliveryIntervalFixture(t)
+	var logs bytes.Buffer
+	f.d.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	f.checkpoint.epochs(f.epoch)
+	f.block = f.facts
+	f.snapshot(resultTestSnapshot(f.epoch, false))
+	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+	row := f.repo.deploymentRows[f.app.ID]
+	row.ResetGeneration++
+	f.repo.deploymentRows[f.app.ID] = row
+	cause := errors.New("episode read unavailable")
+	f.repo.deploymentRead = func(context.Context, repository.DeploymentIdentity) (*model.DeploymentAdmissionState, error) {
+		return nil, cause
+	}
+	require.ErrorIs(t, f.d.observeApplication(t.Context(), f.app, f.facts), cause)
+	require.Equal(t, deploymentCompatible, f.d.deployments.capture(deploymentIdentity(f.app)).snapshot.Assessment.State)
+	f.repo.deploymentRead = nil
+	effective, _, err := f.d.deploymentVerdictState(t.Context(), f.app)
+	require.NoError(t, err)
+	require.Equal(t, deploymentNone, effective)
+	require.Contains(t, logs.String(), "PRT protection stopped")
+	require.Contains(t, logs.String(), "join_close_block=310")
+}
+
+func TestUnknownDeploymentShutdownReportsOnlyIndependentFailure(t *testing.T) {
+	for _, mixed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "shutdown only", true: "independent failure"}[mixed], func(t *testing.T) {
+			f := newDeliveryIntervalFixture(t)
+			setTestDeployment(f.d.Service, f.repo.prtRepositoryMock, f.app, 1, deploymentNone, nil)
+			var logs bytes.Buffer
+			f.d.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+			f.checkpoint.epochs(f.epoch)
+			expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			dependency := errors.New("independent deployment failure")
+			f.consensus.deploymentRead = func(_ context.Context, h txsender.BlockRef) (DeploymentEvidence, error) {
+				cancel()
+				cause := error(context.Canceled)
+				if mixed {
+					cause = errors.Join(cause, dependency)
+				}
+				return DeploymentEvidence{Head: h, Consensus: f.app.IConsensusAddress}, cause
+			}
+			err := f.d.observeApplication(ctx, f.app, f.facts)
+			require.ErrorIs(t, err, context.Canceled)
+			if mixed {
+				require.ErrorIs(t, err, dependency)
+				require.Contains(t, logs.String(), "PRT protection stopped")
+			} else {
+				require.NotContains(t, logs.String(), "PRT protection stopped")
+			}
 		})
 	}
 }
@@ -314,29 +414,8 @@ func TestDeploymentAssessmentRetainsMalformedIdentityAndDecodedZeroFactory(t *te
 
 }
 
-func TestDeploymentSameHeadRetriesNoneAndPending(t *testing.T) {
-	for _, candidate := range []deploymentState{deploymentNone, deploymentGeneration} {
-		t.Run(string(candidate), func(t *testing.T) {
-			s, _ := newPRTServiceMock()
-			app := prtRevertTestApp()
-			reads := 0
-			reader := &daveConsensusAdapterMock{deploymentRead: func(_ context.Context, h txsender.BlockRef) (DeploymentEvidence, error) {
-				reads++
-				return DeploymentEvidence{Head: h, Consensus: app.IConsensusAddress,
-					Candidate: candidate, Cause: deploymentCauseStaticShape}, nil
-			}}
-			head := deploymentTestHead(100)
-			_, err := s.observeDeployment(t.Context(), app, reader, head)
-			require.NoError(t, err)
-			_, err = s.observeDeployment(t.Context(), app, reader, head)
-			require.NoError(t, err)
-			require.Equal(t, 2, reads)
-		})
-	}
-}
-
-func TestCompatibleDeploymentCacheUsesOnlyCurrentPinnedHead(t *testing.T) {
-	s, _ := newPRTServiceMock()
+func TestCompatibleDeploymentCacheUsesOnlyCurrentPinnedHeadAndEpisode(t *testing.T) {
+	s := newDeploymentObserverService()
 	app := prtRevertTestApp()
 	reads := 0
 	reader := &daveConsensusAdapterMock{deploymentRead: func(_ context.Context, h txsender.BlockRef) (DeploymentEvidence, error) {
@@ -354,8 +433,36 @@ func TestCompatibleDeploymentCacheUsesOnlyCurrentPinnedHead(t *testing.T) {
 	_, err = s.observeDeployment(t.Context(), app, reader, head)
 	require.NoError(t, err)
 	require.Equal(t, 1, reads)
-	snapshot, err := s.observeDeployment(t.Context(), app, reader, deploymentTestHead(101))
+	repo := s.repository.(*prtRepositoryMock)
+	row := repo.deploymentRows[app.ID]
+	row.ResetGeneration++
+	repo.deploymentRows[app.ID] = row
+	snapshot, err := s.observeDeployment(t.Context(), app, reader, head)
 	require.NoError(t, err)
-	require.Equal(t, 2, reads)
+	require.Equal(t, 2, reads, "a same-head reset must read new evidence before using the compatible cache")
 	require.Equal(t, deploymentPending, snapshot.Assessment.State)
+	_, err = s.observeDeployment(t.Context(), app, reader, deploymentTestHead(101))
+	require.NoError(t, err)
+	require.Equal(t, 3, reads)
+}
+
+func TestDeploymentSameHeadRetriesNoneAndPending(t *testing.T) {
+	for _, candidate := range []deploymentState{deploymentNone, deploymentGeneration} {
+		t.Run(string(candidate), func(t *testing.T) {
+			s := newDeploymentObserverService()
+			app := prtRevertTestApp()
+			reads := 0
+			reader := &daveConsensusAdapterMock{deploymentRead: func(_ context.Context, h txsender.BlockRef) (DeploymentEvidence, error) {
+				reads++
+				return DeploymentEvidence{Head: h, Consensus: app.IConsensusAddress,
+					Candidate: candidate, Cause: deploymentCauseStaticShape}, nil
+			}}
+			head := deploymentTestHead(100)
+			_, err := s.observeDeployment(t.Context(), app, reader, head)
+			require.NoError(t, err)
+			_, err = s.observeDeployment(t.Context(), app, reader, head)
+			require.NoError(t, err)
+			require.Equal(t, 2, reads)
+		})
+	}
 }

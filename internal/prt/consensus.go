@@ -97,15 +97,22 @@ func (s *Service) recordTournamentResult(
 	epoch *model.Epoch,
 	snapshot daveConsensusSnapshot,
 ) error {
-	if err := s.validateResultEpoch(ctx, app, epoch, snapshot.sealed.EpochNumber); err != nil {
-		return err
-	}
 	if epoch.InputIndexLowerBound != snapshot.sealed.InputIndexLowerBound ||
 		epoch.InputIndexUpperBound != snapshot.sealed.InputIndexUpperBound {
 		return s.setApplicationCorrupted(ctx, app,
 			"epoch %d has input bounds inconsistent with DaveConsensus: local=[%d,%d] on-chain=[%d,%d]",
 			epoch.Index, epoch.InputIndexLowerBound, epoch.InputIndexUpperBound,
 			snapshot.sealed.InputIndexLowerBound, snapshot.sealed.InputIndexUpperBound)
+	}
+	state, _, gateErr := s.deploymentVerdictState(ctx, app)
+	if gateErr != nil {
+		return gateErr
+	}
+	if !deploymentAllowsVerdict(state) {
+		return nil
+	}
+	if err := s.validateResultEpoch(ctx, app, epoch, snapshot.sealed.EpochNumber); err != nil {
+		return err
 	}
 	if err := matchConsensusSnapshotToEpoch(epoch, snapshot); err != nil {
 		return s.setApplicationDiverged(ctx, app, "%v", err)

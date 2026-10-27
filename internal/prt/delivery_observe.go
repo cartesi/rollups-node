@@ -123,10 +123,16 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 			return nil
 		}
 	}
-	s.observeProtection(ctx, app, epochs, consensus, facts, errors.Join(epochErr, err))
+	clocks := s.observeProtection(ctx, app, epochs, consensus, facts, errors.Join(epochErr, err))
 	var deployment deploymentSnapshot
 	if err == nil {
 		deployment, deploymentErr = s.observeDeployment(ctx, app, consensus, facts)
+	}
+	state, generation, admissionErr := s.deploymentVerdictState(ctx, app)
+	deploymentErr = errors.Join(deploymentErr, admissionErr)
+	s.reportProtectionStops(ctx, app, clocks, facts, state, generation, deploymentErr)
+	if ctx.Err() != nil {
+		return errors.Join(epochErr, err, ctx.Err())
 	}
 	if epochErr != nil || err != nil {
 		return errors.Join(epochErr, err)
