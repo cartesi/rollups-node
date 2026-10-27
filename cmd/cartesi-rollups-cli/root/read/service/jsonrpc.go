@@ -385,6 +385,44 @@ func (s *JsonrpcReadService) ListMatchAdvances(ctx context.Context, params api.L
 	return resp, err
 }
 
+func (s *JsonrpcReadService) GetStandingChange(ctx context.Context, params api.GetStandingChangeParams) (json.RawMessage, error) {
+	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
+		return nil, fmt.Errorf("invalid application: %w", err)
+	}
+	if _, err := config.ToIndexFromString(params.EpochIndex); err != nil {
+		return nil, fmt.Errorf("invalid epoch index: %w", err)
+	}
+	if _, err := config.ToAddressFromString(params.TournamentAddress); err != nil {
+		return nil, fmt.Errorf("invalid tournament address: %w", err)
+	}
+	if _, err := config.ToHashFromString(params.TxHash); err != nil {
+		return nil, fmt.Errorf("invalid transaction hash: %w", err)
+	}
+	if _, err := config.ToIndexFromString(params.LogIndex); err != nil {
+		return nil, fmt.Errorf("invalid log index: %w", err)
+	}
+
+	var resp json.RawMessage
+	err := s.Client.Call(ctx, "cartesi_getStandingChange", params, &resp)
+	return resp, err
+}
+
+func (s *JsonrpcReadService) ListStandingChanges(ctx context.Context, params api.ListStandingChangesParams) (json.RawMessage, error) {
+	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
+		return nil, fmt.Errorf("invalid application: %w", err)
+	}
+	if _, err := config.ToIndexFromString(params.EpochIndex); err != nil {
+		return nil, fmt.Errorf("invalid epoch index: %w", err)
+	}
+	if _, err := config.ToAddressFromString(params.TournamentAddress); err != nil {
+		return nil, fmt.Errorf("invalid tournament address: %w", err)
+	}
+
+	var resp json.RawMessage
+	err := s.Client.Call(ctx, "cartesi_listStandingChanges", params, &resp)
+	return resp, err
+}
+
 func (s *JsonrpcReadService) Close() {
 }
 

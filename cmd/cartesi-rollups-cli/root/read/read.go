@@ -11,6 +11,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/matches"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/outputs"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/reports"
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/standingchanges"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/tournaments"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/withdrawals"
 	"github.com/cartesi/rollups-node/internal/config"
@@ -48,4 +49,5 @@ func init() {
 	Cmd.AddCommand(commitments.Cmd)
 	Cmd.AddCommand(matches.Cmd)
 	Cmd.AddCommand(matchadvances.Cmd)
+	Cmd.AddCommand(standingchanges.Cmd)
 }
