@@ -4,13 +4,47 @@
 package contract
 
 import (
+	"encoding/json"
 	"math/big"
+	"strconv"
 	"testing"
 
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCollectAdvancedMatchSchedule(t *testing.T) {
+	for _, test := range []struct {
+		name              string
+		height            uint64
+		responderDeadline uint64
+		eliminableAt      uint64
+	}{
+		{name: "bisection response", height: 6, responderDeadline: 210, eliminableAt: 310},
+		{name: "seal response at height one", height: 1, responderDeadline: 420, eliminableAt: 520},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			matchID := common.HexToHash("0xaa")
+			events := collectScheduleEvent(t, "MatchAdvanced", []common.Hash{matchID},
+				[32]byte{0x01}, [32]byte{0x02}, [32]byte{0x03}, [32]byte{0x04},
+				big.NewInt(0), test.height, test.responderDeadline, test.eliminableAt)
+			require.Len(t, events.matchesAdvanced, 1)
+			result := formatAdvanceEvents(events.matchesAdvanced)
+			require.Len(t, result, 1)
+			encoded, err := json.Marshal(result[0])
+			require.NoError(t, err)
+			var fields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &fields))
+			require.JSONEq(t, `"`+matchID.Hex()+`"`, string(fields["match_id_hash"]))
+			require.JSONEq(t, `"0"`, string(fields["segment_start_position"]))
+			require.Equal(t, strconv.FormatUint(test.height, 10), string(fields["current_height"]))
+			require.Equal(t, strconv.FormatUint(test.responderDeadline, 10), string(fields["responder_deadline"]))
+			require.Equal(t, strconv.FormatUint(test.eliminableAt, 10), string(fields["eliminable_at"]))
+		})
+	}
+}
 
 func TestPopulateBisectingMatchResult(t *testing.T) {
 	result := &MatchResult{}

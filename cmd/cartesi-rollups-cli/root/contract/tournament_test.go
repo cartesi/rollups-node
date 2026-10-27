@@ -4,14 +4,121 @@
 package contract
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"math/big"
 	"testing"
 
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
+
+type tournamentScheduleRPC struct{ mock.Mock }
+
+func (m *tournamentScheduleRPC) Call(
+	_ context.Context, call map[string]json.RawMessage, block rpc.BlockNumber,
+) (hexutil.Bytes, error) {
+	var address common.Address
+	var input hexutil.Bytes
+	if err := json.Unmarshal(call["to"], &address); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(call["input"], &input); err != nil {
+		return nil, err
+	}
+	args := m.Called(address, []byte(input), block)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *tournamentScheduleRPC) GetLogs(
+	_ context.Context, query map[string]json.RawMessage,
+) ([]types.Log, error) {
+	args := m.Called(query)
+	return args.Get(0).([]types.Log), args.Error(1)
+}
+
+func collectScheduleEvent(
+	t *testing.T, eventName string, indexed []common.Hash, values ...any,
+) *tournamentEvents {
+	t.Helper()
+	contractABI, err := itournament.ITournamentMetaData.GetAbi()
+	require.NoError(t, err)
+	event := contractABI.Events[eventName]
+	data, err := event.Inputs.NonIndexed().Pack(values...)
+	require.NoError(t, err)
+	address := common.HexToAddress("0x100")
+	block := rpc.BlockNumber(1234)
+	log := types.Log{
+		Address: address, BlockNumber: uint64(block), TxHash: common.HexToHash("0x200"),
+		Topics: append([]common.Hash{event.ID}, indexed...), Data: data,
+	}
+	backend := &tournamentScheduleRPC{}
+	for _, name := range []string{"CommitmentJoined", "MatchCreated", "MatchAdvanced", "MatchDeleted"} {
+		method := "get" + name + "Count"
+		input, packErr := contractABI.Pack(method)
+		require.NoError(t, packErr)
+		count := big.NewInt(0)
+		if name == eventName {
+			count.SetUint64(1)
+		}
+		output, packErr := contractABI.Methods[method].Outputs.Pack(count)
+		require.NoError(t, packErr)
+		backend.On("Call", address, input, block).Return(output, nil).Once()
+	}
+	queryJSON, err := json.Marshal(map[string]any{
+		"address": []common.Address{address}, "topics": [][]common.Hash{{event.ID}},
+		"fromBlock": hexutil.EncodeUint64(uint64(block)), "toBlock": hexutil.EncodeUint64(uint64(block)),
+	})
+	require.NoError(t, err)
+	var query map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(queryJSON, &query))
+	backend.On("GetLogs", query).Return([]types.Log{log}, nil).Once()
+	server := rpc.NewServer()
+	require.NoError(t, server.RegisterName("eth", backend))
+	t.Cleanup(server.Stop)
+	client := ethclient.NewClient(rpc.DialInProc(server))
+	t.Cleanup(client.Close)
+	t.Cleanup(func() { backend.AssertExpectations(t) })
+	c := &chainClient{
+		eth: client, callOpts: &bind.CallOpts{Context: t.Context()}, blockNum: uint64(block),
+		filter: ethutil.Filter{Logger: slog.Default()},
+	}
+	events, err := c.fetchTournamentEvents(address, uint64(block))
+	require.NoError(t, err)
+	return events
+}
+
+func TestCollectCreatedMatchSchedule(t *testing.T) {
+	matchID := common.HexToHash("0xaa")
+	one := common.HexToHash("0xbb")
+	two := common.HexToHash("0xcc")
+	leftOfTwo := [32]byte{0xdd}
+	// Distinct values above 2^53 also check exact decimal JSON numbers.
+	const responderDeadline, eliminableAt = uint64(9007199254740993), uint64(9007199254740999)
+	events := collectScheduleEvent(t, "MatchCreated", []common.Hash{matchID, one, two},
+		leftOfTwo, responderDeadline, eliminableAt)
+	require.Len(t, events.matchesCreated, 1)
+	result := formatMatchEvents(events.matchesCreated, events.matchesDeleted, nil)
+	require.Len(t, result, 1)
+	encoded, err := json.Marshal(result[0])
+	require.NoError(t, err)
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(encoded, &fields))
+	require.JSONEq(t, `"`+matchID.Hex()+`"`, string(fields["match_id_hash"]))
+	require.Equal(t, "9007199254740993", string(fields["responder_deadline"]))
+	require.Equal(t, "9007199254740999", string(fields["eliminable_at"]))
+}
 
 func TestCommitmentRegistryResolve(t *testing.T) {
 	addr := common.HexToAddress("0xABCDEF0000000000000000000000000000000001")

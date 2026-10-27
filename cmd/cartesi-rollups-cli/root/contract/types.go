@@ -105,20 +105,21 @@ type CommitmentEvent struct {
 
 // MatchEvent is a match created event.
 type MatchEvent struct {
-	MatchIDHash    string  `json:"match_id_hash"`
-	CommitmentOne  string  `json:"commitment_one"`
-	CommitmentTwo  string  `json:"commitment_two"`
-	PlayerOneAddr  string  `json:"player_one_addr,omitempty"`
-	PlayerTwoAddr  string  `json:"player_two_addr,omitempty"`
-	LeftOfTwo      string  `json:"left_of_two"`
-	EliminableAt   uint64  `json:"eliminable_at"`
-	BlockNumber    uint64  `json:"block_number"`
-	TxHash         string  `json:"tx_hash"`
-	DeletionReason string  `json:"deletion_reason,omitempty"`
-	Winner         string  `json:"winner,omitempty"`
-	WinnerAddr     string  `json:"winner_addr,omitempty"`
-	DeletionBlock  *uint64 `json:"deletion_block,omitempty"`
-	DeletionTxHash string  `json:"deletion_tx_hash,omitempty"`
+	MatchIDHash       string  `json:"match_id_hash"`
+	CommitmentOne     string  `json:"commitment_one"`
+	CommitmentTwo     string  `json:"commitment_two"`
+	PlayerOneAddr     string  `json:"player_one_addr,omitempty"`
+	PlayerTwoAddr     string  `json:"player_two_addr,omitempty"`
+	LeftOfTwo         string  `json:"left_of_two"`
+	ResponderDeadline uint64  `json:"responder_deadline"`
+	EliminableAt      uint64  `json:"eliminable_at"`
+	BlockNumber       uint64  `json:"block_number"`
+	TxHash            string  `json:"tx_hash"`
+	DeletionReason    string  `json:"deletion_reason,omitempty"`
+	Winner            string  `json:"winner,omitempty"`
+	WinnerAddr        string  `json:"winner_addr,omitempty"`
+	DeletionBlock     *uint64 `json:"deletion_block,omitempty"`
+	DeletionTxHash    string  `json:"deletion_tx_hash,omitempty"`
 }
 
 // MatchAdvanceEvent is a match advance (bisection step) event.
@@ -127,6 +128,8 @@ type MatchAdvanceEvent struct {
 	OtherParent          string `json:"other_parent"`
 	LeftNode             string `json:"left_node"`
 	SegmentStartPosition string `json:"segment_start_position"`
+	CurrentHeight        uint64 `json:"current_height"`
+	ResponderDeadline    uint64 `json:"responder_deadline"`
 	EliminableAt         uint64 `json:"eliminable_at"`
 	BlockNumber          uint64 `json:"block_number"`
 	TxHash               string `json:"tx_hash"`
