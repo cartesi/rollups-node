@@ -46,6 +46,7 @@ type MemoryProof struct {
 // It is to abstract the emulator package and allow for easier testing and mocking in unit tests.
 type Backend interface {
 	Load(dir string, runtimeConfig string, timeout time.Duration) error
+	HashFunction(timeout time.Duration) (string, error)
 	Store(directory string, timeout time.Duration) error
 
 	Run(mcycleEnd uint64, timeout time.Duration) (BreakReason, error)

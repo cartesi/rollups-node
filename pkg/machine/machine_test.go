@@ -103,6 +103,7 @@ func (s *MachineSuite) TestLoad() {
 	// Test with machine not at manual yield
 	mockBackend = NewMockBackend()
 	mockBackend.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_hash_tree":1}}`, nil)
+	mockBackend.On("HashFunction", mock.AnythingOfType("time.Duration")).Return(testKeccakHashFunction, nil).Once()
 	mockBackend.On("Load",
 		mock.AnythingOfType("string"),
 		mock.AnythingOfType("string"),
@@ -121,6 +122,7 @@ func (s *MachineSuite) TestLoad() {
 	// Test with IsAtManualYield returning error
 	mockBackend = NewMockBackend()
 	mockBackend.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_hash_tree":1}}`, nil)
+	mockBackend.On("HashFunction", mock.AnythingOfType("time.Duration")).Return(testKeccakHashFunction, nil).Once()
 	mockBackend.On("Load",
 		mock.AnythingOfType("string"),
 		mock.AnythingOfType("string"),
@@ -140,6 +142,7 @@ func (s *MachineSuite) TestLoad() {
 	// Test with machine last request not accepted
 	mockBackend = NewMockBackend()
 	mockBackend.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_hash_tree":1}}`, nil)
+	mockBackend.On("HashFunction", mock.AnythingOfType("time.Duration")).Return(testKeccakHashFunction, nil).Once()
 	mockBackend.On("Load",
 		mock.AnythingOfType("string"),
 		mock.AnythingOfType("string"),
@@ -160,6 +163,7 @@ func (s *MachineSuite) TestLoad() {
 	// Test with an unsupported manual yield reason.
 	mockBackend = NewMockBackend()
 	mockBackend.On("NewMachineRuntimeConfig").Return(`{"concurrency":{"update_hash_tree":1}}`, nil)
+	mockBackend.On("HashFunction", mock.AnythingOfType("time.Duration")).Return(testKeccakHashFunction, nil).Once()
 	mockBackend.On("Load",
 		mock.AnythingOfType("string"),
 		mock.AnythingOfType("string"),

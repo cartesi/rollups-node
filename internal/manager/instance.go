@@ -734,7 +734,9 @@ func createMachineRuntimeCommon(
 		"remote-machine", m.Address(),
 		"path", machinePath)
 
-	// Verify the machine hash if required
+	// Verify the machine hash if required.
+	// This compares the loaded root without verifying stored bytes against the
+	// hash tree. Emulator 0.22 documents cm_verify_hash_tree for internal tests.
 	if verifyExpectedHash {
 		logger.Debug("Verifying machine hash",
 			"application", app.Name,
