@@ -253,8 +253,34 @@ func TestReadinessBudget(t *testing.T) {
 func TestCreateRejectsNegativeReadinessBudget(t *testing.T) {
 	_, err := Create(t.Context(), &CreateInfo{Config: config.EvmreaderConfig{
 		EvmReaderReadyMaxStaleness: -time.Second,
+		EvmReaderMaxInputsPerStep:  500,
 	}})
 	require.ErrorContains(t, err, "CARTESI_EVM_READER_READY_MAX_STALENESS must be non-negative")
+}
+
+func TestCreateValidatesInputBudgetBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		limit uint64
+		want  string
+	}{
+		{"zero", 0, "max input per step must be at least 1"},
+		{"minimum", 1, "CARTESI_EVM_READER_READY_MAX_STALENESS must be non-negative"},
+		{"maximum", 1000, "CARTESI_EVM_READER_READY_MAX_STALENESS must be non-negative"},
+		{"above maximum", 1001, "max input per step must be at most 1000"},
+		{"largest uint64", ^uint64(0), "max input per step must be at most 1000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A negative readiness budget stops initialization before external
+			// dependencies, proving valid input bounds reach the next validation.
+			created, err := Create(t.Context(), &CreateInfo{Config: config.EvmreaderConfig{
+				EvmReaderMaxInputsPerStep:  tc.limit,
+				EvmReaderReadyMaxStaleness: -time.Second,
+			}})
+			require.Nil(t, created)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
 }
 
 func (s *EvmReaderSuite) TestReadinessRefreshesAfterScan() {

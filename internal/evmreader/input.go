@@ -415,8 +415,9 @@ func (r *Service) inputBudgetExhausted() bool {
 }
 
 // inputBatchUpperBound uses the remaining tick budget when a tick is active,
-// or the configured limit for standalone scans. Zero configuration is unlimited;
-// an exhausted tick budget yields an empty range. Addition saturates on overflow.
+// or the configured limit for standalone scans. Create requires a limit in
+// [1, 1000]; direct internal use with a zero-valued limit remains unlimited.
+// An exhausted tick budget yields an empty range. Addition saturates on overflow.
 func (r *Service) inputBatchUpperBound(lower uint64) uint64 {
 	limit := r.maxInputsPerStep
 	if r.inputBudget != nil {
