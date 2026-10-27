@@ -49,6 +49,9 @@ func (r *PostgresRepository) StoreTournamentEvents(
 		if err := insertChunked(ctx, tx, appID, batch.MatchAdvances, insertMatchAdvancedChunk); err != nil {
 			return fmt.Errorf("storing tournament match advances: %w", err)
 		}
+		if err := insertChunked(ctx, tx, appID, batch.StandingChanges, insertStandingChangedChunk); err != nil {
+			return fmt.Errorf("storing tournament standing changes: %w", err)
+		}
 		if err := insertChunked(ctx, tx, appID, batch.BondEvents, insertBondEventChunk); err != nil {
 			return fmt.Errorf("storing tournament bonds: %w", err)
 		}

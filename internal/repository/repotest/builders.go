@@ -290,6 +290,8 @@ type TournamentBuilder struct {
 	tournament *Tournament
 }
 
+const observedRootSealBlock = 9
+
 func NewTournamentBuilder(appID int64) *TournamentBuilder {
 	return &TournamentBuilder{
 		tournament: &Tournament{
@@ -302,8 +304,9 @@ func NewTournamentBuilder(appID int64) *TournamentBuilder {
 			Height:        2,
 			Kind:          TournamentKindNonLeaf,
 			InitialHash:   UniqueHash(),
-			StartInstant:  1,
+			StartInstant:  observedRootSealBlock,
 			Allowance:     100,
+			BondValue:     Uint256{1},
 			Snapshot: TournamentSnapshot{
 				AsOfBlock:    100,
 				Standing:     TournamentStandingAwaitingClosure,
@@ -338,6 +341,9 @@ func (b *TournamentBuilder) WithParent(addr common.Address, matchIDHash common.H
 	b.tournament.ParentTournamentAddress = &addr
 	b.tournament.ParentMatchIDHash = &matchIDHash
 	b.tournament.CreationEvent = &TournamentCreationEvent{BlockNumber: 100, TxHash: UniqueHash()}
+	b.tournament.StartInstant = 100
+	b.tournament.ContestedFinalStateOne = new(UniqueHash())
+	b.tournament.ContestedFinalStateTwo = new(UniqueHash())
 	b.tournament.Snapshot.InnerResult = &TournamentInnerResult{Disposition: InnerTournamentUnsettled}
 	return b
 }
@@ -494,6 +500,7 @@ type MatchAdvancedBuilder struct {
 func NewMatchAdvancedBuilder(appID int64) *MatchAdvancedBuilder {
 	return &MatchAdvancedBuilder{
 		ma: &MatchAdvanced{
+			CurrentHeight:     1,
 			ApplicationID:     appID,
 			EpochIndex:        0,
 			TournamentAddress: UniqueAddress(),

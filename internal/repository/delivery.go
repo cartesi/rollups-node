@@ -27,6 +27,7 @@ type TournamentEventCounts struct {
 	LeafMatchSealed    uint64
 	MatchDeleted       uint64
 	NewInnerTournament uint64
+	StandingChanged    uint64
 }
 
 type DeliveryRepository interface {

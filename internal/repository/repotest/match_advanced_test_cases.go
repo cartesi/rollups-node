@@ -114,12 +114,14 @@ func (s *MatchAdvancedSuite) TestListMatchAdvances() {
 
 	s.Run("ReturnsAll", func() {
 		seed, tournAddr, matchIDHash := s.createTournamentAndMatch()
-		for range 3 {
+		const advanceCount = 3
+		for height := range uint64(advanceCount) {
 			ma := NewMatchAdvancedBuilder(seed.App.ID).
 				WithEpochIndex(0).
 				WithTournamentAddress(tournAddr).
 				WithIDHash(matchIDHash).
 				Build()
+			ma.CurrentHeight = height + 1
 			err := s.Repo.CreateMatchAdvanced(
 				s.Ctx, seed.App.IApplicationAddress.String(), ma)
 			s.Require().NoError(err)
