@@ -221,7 +221,7 @@ func (s *SealedEpochsSuite) TestOpenEpochHappyPathCreatesNewEpoch() {
 	// Input 3 at block 150
 	s.inputBox.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 150 }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(3, 4),
 	).Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 3, 150)}, nil)
 
 	var storedEpoch *Epoch
@@ -303,7 +303,7 @@ func (s *SealedEpochsSuite) TestOpenEpochExistingEpochAccumulatesInputs() {
 	// Input 4 at block 250
 	s.inputBox.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 250 }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(4, 5),
 	).Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 4, 250)}, nil)
 
 	var storedEpoch *Epoch
@@ -372,7 +372,7 @@ func (s *SealedEpochsSuite) TestOpenEpochScansBoundaryBlockAfterIntraTickCursorA
 
 	s.inputBox.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == mostRecentBlock }),
-		mock.Anything, mock.Anything,
+		mock.Anything, inputIndexRange(4, 5),
 	).Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 4, mostRecentBlock)}, nil)
 
 	var storedEpoch *Epoch

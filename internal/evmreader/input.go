@@ -188,6 +188,9 @@ func (r *Service) scanIConsensusInputUnit(
 			if ctx.Err() != nil {
 				return false
 			}
+			if r.inputBudgetExhausted() {
+				return success
+			}
 			err := r.readAndStoreApplicationInputs(ctx, unit.lastInputCheckBlock, unit.endBlock, app)
 			if err != nil {
 				success = false
@@ -339,7 +342,7 @@ func (r *Service) readAndStoreApplicationInputs(
 		return r.recordInputCorruption(ctx, app.application, "Application has epoch length of zero")
 	}
 
-	inputs, err := r.readApplicationInputs(ctx, app, lastProcessedBlock+1, mostRecentBlockNumber)
+	inputs, lastInputBlock, err := r.readApplicationInputs(ctx, app, lastProcessedBlock+1, mostRecentBlockNumber)
 	if err != nil {
 		return err
 	}
@@ -347,7 +350,7 @@ func (r *Service) readAndStoreApplicationInputs(
 	if err != nil {
 		return fmt.Errorf("retrieve current epoch: %w", err)
 	}
-	epochInputMap, err := indexInputsIntoEpochs(epochLength, currentEpoch, inputs, mostRecentBlockNumber)
+	epochInputMap, err := indexInputsIntoEpochs(epochLength, currentEpoch, inputs, lastInputBlock)
 	if err != nil {
 		if errors.Is(err, ErrInputForNonOpenEpoch) {
 			return r.recordInputCorruption(ctx, app.application, "Should never happen. %v", err)
@@ -359,7 +362,7 @@ func (r *Service) readAndStoreApplicationInputs(
 		// No epoch needs to be stored or closed. Only this application's
 		// successfully processed range is eligible for the cursor-only update.
 		err = r.repository.UpdateEventLastCheckBlock(
-			ctx, []int64{app.application.ID}, MonitoredEvent_InputAdded, mostRecentBlockNumber)
+			ctx, []int64{app.application.ID}, MonitoredEvent_InputAdded, lastInputBlock)
 		if err != nil {
 			return fmt.Errorf("update input cursor: %w", err)
 		}
@@ -368,7 +371,7 @@ func (r *Service) readAndStoreApplicationInputs(
 
 	// This transaction stores inputs, closes epochs, and advances the cursor.
 	// An epoch closure with no new inputs must use the same atomic write.
-	err = r.repository.CreateEpochsAndInputs(ctx, address.String(), epochInputMap, mostRecentBlockNumber)
+	err = r.repository.CreateEpochsAndInputs(ctx, address.String(), epochInputMap, lastInputBlock)
 	if err != nil {
 		if errors.Is(err, repository.ErrInputLogIdentityConflict) {
 			return r.recordInputCorruption(ctx, app.application,
@@ -407,53 +410,76 @@ func (r *Service) readAndStoreApplicationInputs(
 	return nil
 }
 
+func (r *Service) inputBudgetExhausted() bool {
+	return r.inputBudget != nil && *r.inputBudget == 0
+}
+
+// inputBatchUpperBound uses the remaining tick budget when a tick is active,
+// or the configured limit for standalone scans. Create requires a limit in
+// [1, 1000]; direct internal use with a zero-valued limit remains unlimited.
+// An exhausted tick budget yields an empty range. Addition saturates on overflow.
+func (r *Service) inputBatchUpperBound(lower uint64) uint64 {
+	limit := r.maxInputsPerStep
+	if r.inputBudget != nil {
+		limit = *r.inputBudget
+		if limit == 0 {
+			return lower
+		}
+	}
+	if limit == 0 || limit > math.MaxUint64-lower {
+		return math.MaxUint64
+	}
+	return lower + limit
+}
+
 // readApplicationInputs preserves the failure cause for the scan caller. It
 // validates the fetched logs against the counter observed in the same walk.
 func (r *Service) readApplicationInputs(
 	ctx context.Context,
 	app appContracts,
 	startBlock, endBlock uint64,
-) ([]*Input, error) {
+) ([]*Input, uint64, error) {
 	inputCount, err := r.repository.GetNumberOfInputs(ctx, app.application.IApplicationAddress.String())
 	if err != nil {
-		return nil, fmt.Errorf("get stored input count: %w", err)
+		return nil, startBlock - 1, fmt.Errorf("get stored input count: %w", err)
 	}
-	inputs, endCount, err := r.fetchInputs(
-		ctx, app, startBlock, endBlock, new(big.Int).SetUint64(inputCount), 0, math.MaxUint64)
+	inputs, lastInputBlock, endCount, err := r.fetchInputs(
+		ctx, app, startBlock, endBlock, new(big.Int).SetUint64(inputCount), inputCount, r.inputBatchUpperBound(inputCount))
 	if err != nil {
-		return nil, fmt.Errorf("fetch inputs: %w", err)
+		return nil, startBlock - 1, fmt.Errorf("fetch inputs: %w", err)
 	}
 	expectedNew := endCount - inputCount
 	if uint64(len(inputs)) != expectedNew {
-		return nil, fmt.Errorf("input count mismatch: stored %d, on-chain %d, expected %d new inputs, got %d",
+		return nil, startBlock - 1, fmt.Errorf("input count mismatch: stored %d, on-chain %d, expected %d new inputs, got %d",
 			inputCount, endCount, expectedNew, len(inputs))
 	}
-	return inputs, nil
+	return inputs, lastInputBlock, nil
 }
 
-// fetchInputs locates blocks where new inputs were added via FindTransitions
-// and accumulates them. The prevValue, lowerBound, and upperBound are caller-
-// determined: IConsensus passes prevValue from the DB input count with full
-// bounds [0, MaxUint64), while DaveConsensus sealed epochs use the epoch's
-// InputIndexLowerBound as prevValue and the epoch's own index range as bounds.
+// fetchInputs locates input transitions and fetches events with indices in
+// [lowerBound, upperBound). IConsensus seeds prevValue from the stored input
+// count and bounds the next batch. Dave sealed scans seed it from the epoch's
+// next unstored index and also cap the batch at the seal's exclusive input bound.
 //
-// The second return value is the input counter observed at endBlock during the
-// same transition walk, letting callers validate the on-chain count delta
-// without a second eth_call pinned to endBlock.
+// The second return value is the last completely processed block. If a batch
+// ends partway through a block, that block must be revisited with an updated
+// prevValue. The third return value is the counter through the fetched batch,
+// capped at upperBound; it includes any inputs fetched from a partial block.
+// Callers can validate the count delta without another counter query.
 func (r *Service) fetchInputs(
 	ctx context.Context,
 	app appContracts,
 	startBlock, endBlock uint64,
 	prevValue *big.Int,
 	lowerBound, upperBound uint64,
-) ([]*Input, uint64, error) {
+) ([]*Input, uint64, uint64, error) {
 	prevCount := uint64(0)
 	if prevValue != nil {
 		prevCount = prevValue.Uint64()
 	}
 	if startBlock > endBlock {
 		// Empty range: no new inputs, and the counter is unchanged from prevValue.
-		return nil, prevCount, nil
+		return nil, endBlock, prevCount, nil
 	}
 
 	r.Logger.Debug("Fetching inputs",
@@ -484,16 +510,31 @@ func (r *Service) fetchInputs(
 	}
 
 	var sortedInputs []*Input
-	onHit := func(block uint64) error {
+	onHit := func(block uint64, prevValue, currValue *big.Int) error {
 		filterOpts := &bind.FilterOpts{
 			Context: ctx,
 			Start:   block,
 			End:     &block,
 		}
+		firstInputIdx := max(lowerBound, prevValue.Uint64())
+		lastInputIdx := min(upperBound, currValue.Uint64())
+		observedEndValue = new(big.Int).SetUint64(lastInputIdx)
+		if firstInputIdx >= lastInputIdx {
+			return nil
+		}
+		if r.inputBudget != nil {
+			// Reserve before allocating topics or calling RPC. Failed queries
+			// still consumed this tick's allowance and are retried next tick.
+			*r.inputBudget -= lastInputIdx - firstInputIdx
+		}
+		indices := make([]*big.Int, 0, max(0, lastInputIdx-firstInputIdx))
+		for i := firstInputIdx; i < lastInputIdx; i++ {
+			indices = append(indices, new(big.Int).SetUint64(i))
+		}
 		inputEvents, err := app.inputSource.RetrieveInputs(
 			filterOpts,
 			[]common.Address{app.application.IApplicationAddress},
-			nil,
+			indices,
 		)
 		if err != nil {
 			return fmt.Errorf(
@@ -524,17 +565,21 @@ func (r *Service) fetchInputs(
 				)
 			}
 		}
+		if lastInputIdx < currValue.Uint64() {
+			return ethutil.ErrIncompleteProcessing
+		}
 		return nil
 	}
 
-	_, err := ethutil.FindTransitions(
-		ctx, startBlock, endBlock, prevValue, oracle, onHit)
-	if err != nil {
-		return nil, 0, fmt.Errorf(
+	_, lastProcessedBlock, err := ethutil.FindTransitions(
+		ctx, startBlock, endBlock, prevValue, new(big.Int).SetUint64(upperBound), oracle, onHit)
+	if err != nil && !errors.Is(err, ethutil.ErrIncompleteProcessing) {
+		return nil, startBlock - 1, 0, fmt.Errorf(
 			"failed to walk input transitions: %w", err)
 	}
 	if observedEndValue == nil {
-		return nil, 0, fmt.Errorf("failed to observe input count at end block %d", endBlock)
+		return nil, startBlock - 1, 0, fmt.Errorf(
+			"failed to observe input count at end block %d", endBlock)
 	}
 
 	r.Logger.Debug("Fetched inputs",
@@ -545,5 +590,5 @@ func (r *Service) fetchInputs(
 		"end_input_count", observedEndValue.Uint64(),
 		"new_inputs", len(sortedInputs),
 	)
-	return sortedInputs, observedEndValue.Uint64(), nil
+	return sortedInputs, lastProcessedBlock, observedEndValue.Uint64(), nil
 }

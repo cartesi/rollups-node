@@ -203,6 +203,15 @@ func (r *Service) runBlockScanners(
 	if ctx.Err() != nil {
 		return false
 	}
+	// Every input scanner in this tick draws from the same allowance. Restore
+	// the previous scope on every exit, including cancellation and failures.
+	previousBudget := r.inputBudget
+	r.inputBudget = nil
+	if r.maxInputsPerStep != 0 {
+		remaining := r.maxInputsPerStep
+		r.inputBudget = &remaining
+	}
+	defer func() { r.inputBudget = previousBudget }()
 	// Detect foreclosure first so later scanners use the marker observed in this same tick.
 	success := r.checkForForeclosure(ctx, apps, blockNumber)
 	if ctx.Err() != nil {
@@ -211,11 +220,7 @@ func (r *Service) runBlockScanners(
 
 	plan := buildBlockScanPlan(apps)
 
-	success = r.scanDaveConsensusEpochsAndInputs(ctx, plan.daveEpochTargets, blockNumber) && success
-	if ctx.Err() != nil {
-		return false
-	}
-	success = r.scanIConsensusInputs(ctx, plan.iConsensusInputTargets, blockNumber) && success
+	success = r.scanApplicationInputs(ctx, plan, blockNumber) && success
 	if ctx.Err() != nil {
 		return false
 	}

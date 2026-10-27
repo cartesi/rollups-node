@@ -42,6 +42,11 @@ type Service struct {
 	lastSuccessfulPoll      atomic.Pointer[time.Time]
 	consecutiveScanFailures atomic.Uint32
 	readyMaxStaleness       time.Duration
+	maxInputsPerStep        uint64
+	// inputBudget is scoped to runBlockScanners; nil means no shared budget.
+	inputBudget *uint64
+	// The database ID survives changes in application order and membership.
+	lastInputApplicationID int64
 }
 
 const EvmReaderConfigKey = "evm-reader"
@@ -52,6 +57,13 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	err := ctx.Err()
 	if err != nil {
 		return nil, err // This returns context.Canceled or context.DeadlineExceeded.
+	}
+
+	if c.Config.EvmReaderMaxInputsPerStep <= 0 {
+		return nil, errors.New("max input per step must be at least 1")
+	}
+	if c.Config.EvmReaderMaxInputsPerStep > 1000 {
+		return nil, errors.New("max input per step must be at most 1000")
 	}
 
 	readyMaxStaleness, err := readinessBudget(&c.Config)
@@ -104,7 +116,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 
 	s.repository = c.Repository
 	if s.repository == nil {
-		return nil, fmt.Errorf("repository on evmreader service Create is nil")
+		return nil, errors.New("repository on evmreader service Create is nil")
 	}
 
 	nodeConfig, err := s.setupPersistentConfig(ctx, &c.Config)
@@ -122,7 +134,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	} else {
 		fullEthClient, ok := ethClient.(*ethclient.Client)
 		if !ok {
-			return nil, fmt.Errorf("EthClient must be *ethclient.Client when AdapterFactory is not provided")
+			return nil, errors.New("EthClient must be *ethclient.Client when AdapterFactory is not provided")
 		}
 		s.adapterFactory = &DefaultAdapterFactory{
 			Client: fullEthClient,
@@ -136,6 +148,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 
 	s.resolver = newApplicationAdapterResolver(s.Logger, s.adapterFactory)
 	s.readyMaxStaleness = readyMaxStaleness
+	s.maxInputsPerStep = c.Config.EvmReaderMaxInputsPerStep
 	s.lastSuccessfulPoll.Store(&time.Time{})
 
 	s.Logger.Info("Created", "config", c.Config)
@@ -175,7 +188,7 @@ func (s *Service) setupPersistentConfig(
 // readinessBudget is independent of the HTTP retry-backoff cap.
 func readinessBudget(c *config.EvmreaderConfig) (time.Duration, error) {
 	if c.EvmReaderReadyMaxStaleness < 0 {
-		return 0, fmt.Errorf("CARTESI_EVM_READER_READY_MAX_STALENESS must be non-negative")
+		return 0, errors.New("CARTESI_EVM_READER_READY_MAX_STALENESS must be non-negative")
 	}
 	if c.EvmReaderReadyMaxStaleness > 0 {
 		return c.EvmReaderReadyMaxStaleness, nil

@@ -733,11 +733,12 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 	s.contractFactory = newMockAdapterFactory()
 
 	s.evmReader = &Service{
-		client:         s.client,
-		repository:     s.repository,
-		defaultBlock:   DefaultBlock_Latest,
-		adapterFactory: s.contractFactory,
-		hasEnabledApps: true,
+		client:           s.client,
+		repository:       s.repository,
+		defaultBlock:     DefaultBlock_Latest,
+		adapterFactory:   s.contractFactory,
+		hasEnabledApps:   true,
+		maxInputsPerStep: 500,
 	}
 
 	logLevel, err := config.GetLogLevel()
@@ -866,8 +867,7 @@ func (s *EvmReaderSuite) setupOutputMismatchTest() {
 
 	s.inputBox.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
-		[]common.Address{app1Addr},
-		mock.Anything,
+		[]common.Address{app1Addr}, inputIndexRange(0, 1),
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent0}, nil)
 
 	// On-chain: 0 inputs before block 0x11, 1 from block 0x11
