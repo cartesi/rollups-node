@@ -259,10 +259,16 @@ func (value *TournamentCreationEvent) UnmarshalJSON(data []byte) error {
 }
 
 type LeafMatchSeal struct {
-	EliminableAt uint64      `json:"eliminable_at"`
-	BlockNumber  uint64      `json:"block_number"`
-	TxHash       common.Hash `json:"tx_hash"`
-	LogIndex     uint64      `json:"log_index"`
+	AgreeState         common.Hash `json:"agree_state"`
+	DivergencePosition Uint256     `json:"divergence_position"`
+	FinalStateOne      common.Hash `json:"final_state_one"`
+	FinalStateTwo      common.Hash `json:"final_state_two"`
+	DeadlineOne        uint64      `json:"deadline_one"`
+	DeadlineTwo        uint64      `json:"deadline_two"`
+	EliminableAt       uint64      `json:"eliminable_at"`
+	BlockNumber        uint64      `json:"block_number"`
+	TxHash             common.Hash `json:"tx_hash"`
+	LogIndex           uint64      `json:"log_index"`
 }
 
 func (value LeafMatchSeal) MarshalJSON() ([]byte, error) {
@@ -270,11 +276,15 @@ func (value LeafMatchSeal) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		*Alias
 		EliminableAt hexutil.Uint64 `json:"eliminable_at"`
+		DeadlineTwo  hexutil.Uint64 `json:"deadline_two"`
+		DeadlineOne  hexutil.Uint64 `json:"deadline_one"`
 		BlockNumber  hexutil.Uint64 `json:"block_number"`
 		LogIndex     hexutil.Uint64 `json:"log_index"`
 	}{
 		Alias:        (*Alias)(&value),
 		EliminableAt: hexutil.Uint64(value.EliminableAt),
+		DeadlineTwo:  hexutil.Uint64(value.DeadlineTwo),
+		DeadlineOne:  hexutil.Uint64(value.DeadlineOne),
 		BlockNumber:  hexutil.Uint64(value.BlockNumber),
 		LogIndex:     hexutil.Uint64(value.LogIndex),
 	})
@@ -286,6 +296,8 @@ func (value *LeafMatchSeal) UnmarshalJSON(data []byte) error {
 	aux := struct {
 		*Alias
 		EliminableAt hexutil.Uint64 `json:"eliminable_at"`
+		DeadlineTwo  hexutil.Uint64 `json:"deadline_two"`
+		DeadlineOne  hexutil.Uint64 `json:"deadline_one"`
 		BlockNumber  hexutil.Uint64 `json:"block_number"`
 		LogIndex     hexutil.Uint64 `json:"log_index"`
 	}{Alias: (*Alias)(&decoded)}
@@ -293,6 +305,66 @@ func (value *LeafMatchSeal) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	decoded.EliminableAt = uint64(aux.EliminableAt)
+	decoded.DeadlineTwo = uint64(aux.DeadlineTwo)
+	decoded.DeadlineOne = uint64(aux.DeadlineOne)
+	decoded.BlockNumber = uint64(aux.BlockNumber)
+	decoded.LogIndex = uint64(aux.LogIndex)
+	*value = decoded
+	return nil
+}
+
+type StandingChanged struct {
+	ApplicationID     int64          `sql:"primary_key" json:"-"`
+	EpochIndex        uint64         `json:"epoch_index"`
+	TournamentAddress common.Address `json:"tournament_address"`
+	MatchCount        Uint256        `json:"match_count"`
+	Dangling          *common.Hash   `json:"dangling"`
+	ParentCommitment  *common.Hash   `json:"parent_commitment"`
+	ResultAt          uint64         `json:"result_at"`
+	WinnerExpiresAt   uint64         `json:"winner_expires_at"`
+	BlockNumber       uint64         `json:"block_number"`
+	TxHash            common.Hash    `sql:"primary_key" json:"tx_hash"`
+	LogIndex          uint64         `sql:"primary_key" json:"log_index"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+}
+
+func (value StandingChanged) MarshalJSON() ([]byte, error) {
+	type Alias StandingChanged
+	return json.Marshal(struct {
+		*Alias
+		EpochIndex      hexutil.Uint64 `json:"epoch_index"`
+		ResultAt        hexutil.Uint64 `json:"result_at"`
+		WinnerExpiresAt hexutil.Uint64 `json:"winner_expires_at"`
+		BlockNumber     hexutil.Uint64 `json:"block_number"`
+		LogIndex        hexutil.Uint64 `json:"log_index"`
+	}{
+		Alias:           (*Alias)(&value),
+		EpochIndex:      hexutil.Uint64(value.EpochIndex),
+		ResultAt:        hexutil.Uint64(value.ResultAt),
+		WinnerExpiresAt: hexutil.Uint64(value.WinnerExpiresAt),
+		BlockNumber:     hexutil.Uint64(value.BlockNumber),
+		LogIndex:        hexutil.Uint64(value.LogIndex),
+	})
+}
+
+func (value *StandingChanged) UnmarshalJSON(data []byte) error {
+	type Alias StandingChanged
+	var decoded StandingChanged
+	aux := struct {
+		*Alias
+		EpochIndex      hexutil.Uint64 `json:"epoch_index"`
+		ResultAt        hexutil.Uint64 `json:"result_at"`
+		WinnerExpiresAt hexutil.Uint64 `json:"winner_expires_at"`
+		BlockNumber     hexutil.Uint64 `json:"block_number"`
+		LogIndex        hexutil.Uint64 `json:"log_index"`
+	}{Alias: (*Alias)(&decoded)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	decoded.EpochIndex = uint64(aux.EpochIndex)
+	decoded.ResultAt = uint64(aux.ResultAt)
+	decoded.WinnerExpiresAt = uint64(aux.WinnerExpiresAt)
 	decoded.BlockNumber = uint64(aux.BlockNumber)
 	decoded.LogIndex = uint64(aux.LogIndex)
 	*value = decoded

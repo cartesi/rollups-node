@@ -1480,6 +1480,8 @@ const (
 	MonitoredEvent_LeafMatchSealed               MonitoredEvent = "LeafMatchSealed"
 	MonitoredEvent_PartialBondRefund             MonitoredEvent = "PartialBondRefund"
 	MonitoredEvent_BondRecovered                 MonitoredEvent = "BondRecovered"
+	//nolint:revive // follows the MonitoredEvent_<Event> constants
+	MonitoredEvent_StandingChanged MonitoredEvent = "StandingChanged"
 )
 
 func (e MonitoredEvent) String() string {
@@ -1498,6 +1500,9 @@ type Tournament struct {
 	Height                  uint64                   `json:"height"`
 	InitialHash             common.Hash              `json:"initial_hash"`
 	BaseCycle               Uint256                  `json:"base_cycle"`
+	BondValue               Uint256                  `json:"bond_value"`
+	ContestedFinalStateOne  *common.Hash             `json:"contested_final_state_one"`
+	ContestedFinalStateTwo  *common.Hash             `json:"contested_final_state_two"`
 	Kind                    TournamentKind           `json:"kind"`
 	StartInstant            uint64                   `json:"start_instant"`
 	Allowance               uint64                   `json:"allowance"`
@@ -1618,6 +1623,7 @@ type Match struct {
 	TxHash              common.Hash         `json:"tx_hash"`
 	LogIndex            uint64              `json:"log_index"`
 	EliminableAt        uint64              `json:"eliminable_at"`
+	ResponderDeadline   uint64              `json:"responder_deadline"`
 	LeafSeal            *LeafMatchSeal      `json:"leaf_seal"`
 	Winner              WinnerCommitment    `json:"winner_commitment"`
 	DeletionReason      MatchDeletionReason `json:"deletion_reason"`
@@ -1637,6 +1643,7 @@ func (value Match) MarshalJSON() ([]byte, error) {
 		BlockNumber         hexutil.Uint64  `json:"block_number"`
 		LogIndex            hexutil.Uint64  `json:"log_index"`
 		EliminableAt        hexutil.Uint64  `json:"eliminable_at"`
+		ResponderDeadline   hexutil.Uint64  `json:"responder_deadline"`
 		DeletionBlockNumber hexutil.Uint64  `json:"deletion_block_number"`
 		DeletionLogIndex    *hexutil.Uint64 `json:"deletion_log_index"`
 	}{
@@ -1645,6 +1652,7 @@ func (value Match) MarshalJSON() ([]byte, error) {
 		BlockNumber:         hexutil.Uint64(value.BlockNumber),
 		LogIndex:            hexutil.Uint64(value.LogIndex),
 		EliminableAt:        hexutil.Uint64(value.EliminableAt),
+		ResponderDeadline:   hexutil.Uint64(value.ResponderDeadline),
 		DeletionBlockNumber: hexutil.Uint64(value.DeletionBlockNumber),
 		DeletionLogIndex:    (*hexutil.Uint64)(value.DeletionLogIndex),
 	})
@@ -1659,6 +1667,7 @@ func (value *Match) UnmarshalJSON(data []byte) error {
 		BlockNumber         hexutil.Uint64  `json:"block_number"`
 		LogIndex            hexutil.Uint64  `json:"log_index"`
 		EliminableAt        hexutil.Uint64  `json:"eliminable_at"`
+		ResponderDeadline   hexutil.Uint64  `json:"responder_deadline"`
 		DeletionBlockNumber hexutil.Uint64  `json:"deletion_block_number"`
 		DeletionLogIndex    *hexutil.Uint64 `json:"deletion_log_index"`
 	}{Alias: (*Alias)(&decoded)}
@@ -1669,6 +1678,7 @@ func (value *Match) UnmarshalJSON(data []byte) error {
 	decoded.BlockNumber = uint64(aux.BlockNumber)
 	decoded.LogIndex = uint64(aux.LogIndex)
 	decoded.EliminableAt = uint64(aux.EliminableAt)
+	decoded.ResponderDeadline = uint64(aux.ResponderDeadline)
 	decoded.DeletionBlockNumber = uint64(aux.DeletionBlockNumber)
 	decoded.DeletionLogIndex = (*uint64)(aux.DeletionLogIndex)
 	*value = decoded
@@ -1684,6 +1694,8 @@ type MatchAdvanced struct {
 	LeftNode             common.Hash    `json:"left_node"`
 	SegmentStartPosition Uint256        `json:"segment_start_position"`
 	EliminableAt         uint64         `json:"eliminable_at"`
+	CurrentHeight        uint64         `json:"current_height"`
+	ResponderDeadline    uint64         `json:"responder_deadline"`
 	BlockNumber          uint64         `json:"block_number"`
 	TxHash               common.Hash    `sql:"primary_key" json:"tx_hash"`
 	LogIndex             uint64         `sql:"primary_key" json:"log_index"`
@@ -1695,16 +1707,20 @@ func (value MatchAdvanced) MarshalJSON() ([]byte, error) {
 	type Alias MatchAdvanced
 	return json.Marshal(struct {
 		*Alias
-		EpochIndex   hexutil.Uint64 `json:"epoch_index"`
-		EliminableAt hexutil.Uint64 `json:"eliminable_at"`
-		BlockNumber  hexutil.Uint64 `json:"block_number"`
-		LogIndex     hexutil.Uint64 `json:"log_index"`
+		EpochIndex        hexutil.Uint64 `json:"epoch_index"`
+		EliminableAt      hexutil.Uint64 `json:"eliminable_at"`
+		ResponderDeadline hexutil.Uint64 `json:"responder_deadline"`
+		CurrentHeight     hexutil.Uint64 `json:"current_height"`
+		BlockNumber       hexutil.Uint64 `json:"block_number"`
+		LogIndex          hexutil.Uint64 `json:"log_index"`
 	}{
-		Alias:        (*Alias)(&value),
-		EpochIndex:   hexutil.Uint64(value.EpochIndex),
-		EliminableAt: hexutil.Uint64(value.EliminableAt),
-		BlockNumber:  hexutil.Uint64(value.BlockNumber),
-		LogIndex:     hexutil.Uint64(value.LogIndex),
+		Alias:             (*Alias)(&value),
+		EpochIndex:        hexutil.Uint64(value.EpochIndex),
+		EliminableAt:      hexutil.Uint64(value.EliminableAt),
+		ResponderDeadline: hexutil.Uint64(value.ResponderDeadline),
+		CurrentHeight:     hexutil.Uint64(value.CurrentHeight),
+		BlockNumber:       hexutil.Uint64(value.BlockNumber),
+		LogIndex:          hexutil.Uint64(value.LogIndex),
 	})
 }
 
@@ -1713,16 +1729,20 @@ func (value *MatchAdvanced) UnmarshalJSON(data []byte) error {
 	var decoded MatchAdvanced
 	aux := struct {
 		*Alias
-		EpochIndex   hexutil.Uint64 `json:"epoch_index"`
-		EliminableAt hexutil.Uint64 `json:"eliminable_at"`
-		BlockNumber  hexutil.Uint64 `json:"block_number"`
-		LogIndex     hexutil.Uint64 `json:"log_index"`
+		EpochIndex        hexutil.Uint64 `json:"epoch_index"`
+		EliminableAt      hexutil.Uint64 `json:"eliminable_at"`
+		ResponderDeadline hexutil.Uint64 `json:"responder_deadline"`
+		CurrentHeight     hexutil.Uint64 `json:"current_height"`
+		BlockNumber       hexutil.Uint64 `json:"block_number"`
+		LogIndex          hexutil.Uint64 `json:"log_index"`
 	}{Alias: (*Alias)(&decoded)}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 	decoded.EpochIndex = uint64(aux.EpochIndex)
 	decoded.EliminableAt = uint64(aux.EliminableAt)
+	decoded.ResponderDeadline = uint64(aux.ResponderDeadline)
+	decoded.CurrentHeight = uint64(aux.CurrentHeight)
 	decoded.BlockNumber = uint64(aux.BlockNumber)
 	decoded.LogIndex = uint64(aux.LogIndex)
 	*value = decoded
