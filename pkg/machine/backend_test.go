@@ -28,6 +28,11 @@ func (m *MockBackend) HashFunction(timeout time.Duration) (string, error) {
 	return args.String(0), args.Error(1)
 }
 
+func (m *MockBackend) MachineIdentity(timeout time.Duration) (Identity, error) {
+	args := m.Called(timeout)
+	return args.Get(0).(Identity), args.Error(1)
+}
+
 func (m *MockBackend) Store(directory string, timeout time.Duration) error {
 	args := m.Called(directory, timeout)
 	return args.Error(0)

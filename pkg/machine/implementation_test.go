@@ -715,6 +715,10 @@ func (b *statefulAdvanceBackend) Load(string, string, time.Duration) error { ret
 func (b *statefulAdvanceBackend) HashFunction(time.Duration) (string, error) {
 	return testKeccakHashFunction, nil
 }
+func (b *statefulAdvanceBackend) MachineIdentity(time.Duration) (Identity, error) {
+	pristine := Hash(model.UarchPristineStateHash())
+	return Identity{MarchID: model.CartesiMachineMarchID, UarchStateHash: pristine, UarchPristineStateHash: pristine}, nil
+}
 func (b *statefulAdvanceBackend) Store(string, time.Duration) error { return nil }
 func (b *statefulAdvanceBackend) Run(end uint64, _ time.Duration) (BreakReason, error) {
 	return b.run(end)
