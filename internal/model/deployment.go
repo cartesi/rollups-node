@@ -10,3 +10,13 @@ const (
 	DeploymentTierGeneration DeploymentTier = "generation"
 	DeploymentTierTable      DeploymentTier = "table"
 )
+
+// DeploymentAdmissionState retains a restriction independently of application health.
+// ResetGeneration fences explicit enable resets and process startup episodes.
+// A nil restriction is neutral storage, never proof of compatibility.
+type DeploymentAdmissionState struct {
+	ApplicationID    int64
+	ResetGeneration  int64
+	ConfirmedTier    *DeploymentTier
+	DeploymentReason *string
+}

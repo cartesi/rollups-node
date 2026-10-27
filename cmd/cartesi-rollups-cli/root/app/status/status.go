@@ -119,7 +119,7 @@ func run(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if app.Enabled == targetEnabled && (app.Status != model.ApplicationStatus_Failed || !targetEnabled) {
+	if !targetEnabled && !app.Enabled {
 		fmt.Printf("Application %s enabled flag is already %t\n", app.Name, app.Enabled)
 		repo.Close()
 		os.Exit(0)
@@ -127,7 +127,8 @@ func run(cmd *cobra.Command, args []string) {
 
 	// Re-enabling a FAILED application clears the failure status and requires
 	// confirmation because processing may restart from the last snapshot.
-	if app.Status == model.ApplicationStatus_Failed && targetEnabled && !yesFlag {
+	clearFailed := app.Status == model.ApplicationStatus_Failed && targetEnabled
+	if clearFailed && !yesFlag {
 		fmt.Printf("Application %q has FAILED status.\n", app.Name)
 		if app.Reason != nil {
 			fmt.Printf("Reason: %s\n", *app.Reason)
@@ -152,9 +153,8 @@ func run(cmd *cobra.Command, args []string) {
 		fmt.Printf("Previous failure reason: %s\n", *app.Reason)
 	}
 
-	clearFailureStatus := targetEnabled && app.Status == model.ApplicationStatus_Failed
-	if clearFailureStatus {
-		err = repo.EnableApplicationAndClearFailed(ctx, app.ID)
+	if targetEnabled {
+		err = repo.EnableApplicationAndResetDeployment(ctx, app.ID, clearFailed)
 	} else {
 		err = repo.UpdateApplicationEnabled(ctx, app.ID, targetEnabled)
 	}

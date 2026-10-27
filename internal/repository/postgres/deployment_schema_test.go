@@ -42,8 +42,8 @@ func TestDeploymentSchemaRejectsInvalidControlValues(t *testing.T) {
 func TestDeploymentSchemaApplicationRemovalCascades(t *testing.T) {
 	repo := newEpochPublicationRepository(t).(*PostgresRepository)
 	app := repotest.NewApplicationBuilder().Create(t.Context(), t, repo)
-	_, err := repo.db.Exec(t.Context(), `INSERT INTO deployment_admission_state
-		(application_id, confirmed_tier, deployment_reason) VALUES ($1, 'table', 'table mismatch')`, app.ID)
+	_, err := repo.db.Exec(t.Context(), `UPDATE deployment_admission_state
+		SET confirmed_tier='table',deployment_reason='table mismatch' WHERE application_id=$1`, app.ID)
 	require.NoError(t, err)
 	require.NoError(t, repo.UpdateApplicationEnabled(t.Context(), app.ID, false))
 	require.NoError(t, repo.DeleteApplication(t.Context(), app.ID))
