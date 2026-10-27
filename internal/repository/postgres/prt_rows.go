@@ -33,6 +33,9 @@ var tournamentColumns = postgres.ColumnList{
 	table.Tournaments.Kind,
 	table.Tournaments.StartInstant,
 	table.Tournaments.Allowance,
+	table.Tournaments.BondValue,
+	table.Tournaments.ContestedFinalStateOne,
+	table.Tournaments.ContestedFinalStateTwo,
 	table.Tournaments.CreationBlockNumber,
 	table.Tournaments.CreationTxHash,
 	table.Tournaments.CreationLogIndex,
@@ -85,6 +88,9 @@ func tournamentValues(v *Tournament) []any {
 		v.Kind,
 		uint64Expr(v.StartInstant),
 		uint64Expr(v.Allowance),
+		v.BondValue,
+		hashToBytes(v.ContestedFinalStateOne),
+		hashToBytes(v.ContestedFinalStateTwo),
 		creationBlock,
 		creationTx,
 		creationLog,
@@ -128,6 +134,9 @@ func scanTournament(row pgx.Row) (*Tournament, error) {
 		&v.Kind,
 		&v.StartInstant,
 		&v.Allowance,
+		&v.BondValue,
+		&v.ContestedFinalStateOne,
+		&v.ContestedFinalStateTwo,
 		&creationBlock,
 		&creationTx,
 		&creationLog,
@@ -235,7 +244,14 @@ var matchColumns = postgres.ColumnList{
 	table.Matches.TxHash,
 	table.Matches.LogIndex,
 	table.Matches.EliminableAt,
+	table.Matches.ResponderDeadline,
 	table.Matches.SealEliminableAt,
+	table.Matches.SealAgreeState,
+	table.Matches.SealDivergencePosition,
+	table.Matches.SealFinalStateOne,
+	table.Matches.SealFinalStateTwo,
+	table.Matches.SealDeadlineOne,
+	table.Matches.SealDeadlineTwo,
 	table.Matches.SealBlockNumber,
 	table.Matches.SealTxHash,
 	table.Matches.SealLogIndex,
@@ -263,9 +279,13 @@ var matchColumns = postgres.ColumnList{
 }
 
 func matchValues(v *Match) []any {
-	var sealEliminable, sealBlock, sealTx, sealLog any
+	var sealEliminable, sealAgree, sealPosition, sealOne, sealTwo, sealDeadlineOne, sealDeadlineTwo, sealBlock, sealTx, sealLog any
 	if v.LeafSeal != nil {
 		sealEliminable = uint64Expr(v.LeafSeal.EliminableAt)
+		sealAgree = v.LeafSeal.AgreeState.Bytes()
+		sealPosition = v.LeafSeal.DivergencePosition
+		sealOne, sealTwo = v.LeafSeal.FinalStateOne.Bytes(), v.LeafSeal.FinalStateTwo.Bytes()
+		sealDeadlineOne, sealDeadlineTwo = uint64Expr(v.LeafSeal.DeadlineOne), uint64Expr(v.LeafSeal.DeadlineTwo)
 		sealBlock = uint64Expr(v.LeafSeal.BlockNumber)
 		sealTx = v.LeafSeal.TxHash.Bytes()
 		sealLog = uint64Expr(v.LeafSeal.LogIndex)
@@ -299,7 +319,14 @@ func matchValues(v *Match) []any {
 		v.TxHash.Bytes(),
 		uint64Expr(v.LogIndex),
 		uint64Expr(v.EliminableAt),
+		uint64Expr(v.ResponderDeadline),
 		sealEliminable,
+		sealAgree,
+		sealPosition,
+		sealOne,
+		sealTwo,
+		sealDeadlineOne,
+		sealDeadlineTwo,
 		sealBlock,
 		sealTx,
 		sealLog,
@@ -329,7 +356,9 @@ func matchValues(v *Match) []any {
 
 func scanMatch(row pgx.Row) (*Match, error) {
 	var v Match
-	var sealEliminable, sealBlock, sealLog *uint64
+	var sealEliminable, sealDeadlineOne, sealDeadlineTwo, sealBlock, sealLog *uint64
+	var sealAgree, sealOne, sealTwo *common.Hash
+	var sealPosition *Uint256
 	var sealTx *common.Hash
 	var revealingParent, waitingLeft, waitingRight *common.Hash
 	var segmentPosition, segmentCycle *Uint256
@@ -349,7 +378,14 @@ func scanMatch(row pgx.Row) (*Match, error) {
 		&v.TxHash,
 		&v.LogIndex,
 		&v.EliminableAt,
+		&v.ResponderDeadline,
 		&sealEliminable,
+		&sealAgree,
+		&sealPosition,
+		&sealOne,
+		&sealTwo,
+		&sealDeadlineOne,
+		&sealDeadlineTwo,
 		&sealBlock,
 		&sealTx,
 		&sealLog,
@@ -379,7 +415,11 @@ func scanMatch(row pgx.Row) (*Match, error) {
 		return nil, err
 	}
 	if sealBlock != nil {
-		v.LeafSeal = &LeafMatchSeal{EliminableAt: *sealEliminable, BlockNumber: *sealBlock, TxHash: *sealTx, LogIndex: *sealLog}
+		v.LeafSeal = &LeafMatchSeal{
+			AgreeState: *sealAgree, DivergencePosition: *sealPosition, FinalStateOne: *sealOne, FinalStateTwo: *sealTwo,
+			DeadlineOne: *sealDeadlineOne, DeadlineTwo: *sealDeadlineTwo, EliminableAt: *sealEliminable,
+			BlockNumber: *sealBlock, TxHash: *sealTx, LogIndex: *sealLog,
+		}
 	}
 	if revealingParent != nil {
 		v.Snapshot.Bisection = &MatchBisectionSnapshot{
@@ -405,6 +445,8 @@ var matchAdvanceColumns = postgres.ColumnList{
 	table.MatchAdvances.LeftNode,
 	table.MatchAdvances.SegmentStartPosition,
 	table.MatchAdvances.EliminableAt,
+	table.MatchAdvances.CurrentHeight,
+	table.MatchAdvances.ResponderDeadline,
 	table.MatchAdvances.BlockNumber,
 	table.MatchAdvances.TxHash,
 	table.MatchAdvances.LogIndex,
@@ -421,6 +463,8 @@ func matchAdvanceValues(v *MatchAdvanced) []any {
 		v.LeftNode.Bytes(),
 		v.SegmentStartPosition,
 		uint64Expr(v.EliminableAt),
+		uint64Expr(v.CurrentHeight),
+		uint64Expr(v.ResponderDeadline),
 		uint64Expr(v.BlockNumber),
 		v.TxHash.Bytes(),
 		uint64Expr(v.LogIndex),
@@ -439,6 +483,8 @@ func scanMatchAdvanced(row pgx.Row) (*MatchAdvanced, error) {
 		&v.LeftNode,
 		&v.SegmentStartPosition,
 		&v.EliminableAt,
+		&v.CurrentHeight,
+		&v.ResponderDeadline,
 		&v.BlockNumber,
 		&v.TxHash,
 		&v.LogIndex,
@@ -524,6 +570,57 @@ func scanBondEvent(row pgx.Row) (*BondEvent, error) {
 	}
 	if commitment != nil {
 		v.Recovery = &BondRecovered{Commitment: *commitment, Claimer: *claimer, Payment: *payment, Burned: *burned}
+	}
+	return &v, nil
+}
+
+var standingChangeColumns = postgres.ColumnList{
+	table.StandingChanges.ApplicationID,
+	table.StandingChanges.EpochIndex,
+	table.StandingChanges.TournamentAddress,
+	table.StandingChanges.MatchCount,
+	table.StandingChanges.Dangling,
+	table.StandingChanges.ParentCommitment,
+	table.StandingChanges.ResultAt,
+	table.StandingChanges.WinnerExpiresAt,
+	table.StandingChanges.BlockNumber,
+	table.StandingChanges.TxHash,
+	table.StandingChanges.LogIndex,
+}
+
+func standingChangeValues(v *StandingChanged) []any {
+	return []any{
+		v.ApplicationID,
+		uint64Expr(v.EpochIndex),
+		v.TournamentAddress.Bytes(),
+		v.MatchCount,
+		hashToBytes(v.Dangling),
+		hashToBytes(v.ParentCommitment),
+		uint64Expr(v.ResultAt),
+		uint64Expr(v.WinnerExpiresAt),
+		uint64Expr(v.BlockNumber),
+		v.TxHash.Bytes(),
+		uint64Expr(v.LogIndex),
+	}
+}
+
+func scanStandingChanged(row pgx.Row) (*StandingChanged, error) {
+	var v StandingChanged
+	if err := row.Scan(
+		&v.ApplicationID,
+		&v.EpochIndex,
+		&v.TournamentAddress,
+		&v.MatchCount,
+		&v.Dangling,
+		&v.ParentCommitment,
+		&v.ResultAt,
+		&v.WinnerExpiresAt,
+		&v.BlockNumber,
+		&v.TxHash,
+		&v.LogIndex,
+		&v.CreatedAt, &v.UpdatedAt,
+	); err != nil {
+		return nil, err
 	}
 	return &v, nil
 }

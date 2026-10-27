@@ -65,6 +65,9 @@ func (r *PostgresRepository) StoreTournamentInterval(
 		if err = insertChunked(ctx, tx, appID, batch.MatchAdvances, insertMatchAdvancedChunk); err != nil {
 			return fmt.Errorf("storing tournament match advances: %w", err)
 		}
+		if err := insertChunked(ctx, tx, appID, batch.StandingChanges, insertStandingChangedChunk); err != nil {
+			return fmt.Errorf("storing tournament standing changes: %w", err)
+		}
 		if err = insertChunked(ctx, tx, appID, batch.BondEvents, insertBondEventChunk); err != nil {
 			return fmt.Errorf("storing tournament bonds: %w", err)
 		}
@@ -127,7 +130,8 @@ func validateTournamentInterval(
 				if err = tx.QueryRow(ctx, query, args...).Scan(&address, &sealBlock); err != nil {
 					return fmt.Errorf("reading new root provenance: %w", err)
 				}
-				if address == nil || *address != t.Address || sealBlock > through {
+				if address == nil || *address != t.Address || sealBlock > through ||
+					t.StartInstant != sealBlock {
 					return errors.New("new root does not match its observed epoch seal")
 				}
 			}
@@ -147,6 +151,11 @@ func validateTournamentInterval(
 		for _, event := range batch.MatchAdvances {
 			if event.BlockNumber < from {
 				return errors.New("match advance precedes tournament interval")
+			}
+		}
+		for _, event := range batch.StandingChanges {
+			if event.BlockNumber < from {
+				return errors.New("standing change precedes tournament interval")
 			}
 		}
 		for _, event := range batch.BondEvents {

@@ -57,6 +57,12 @@ func validateTournamentBatch(appID int64, batch *repository.TournamentEventBatch
 			return fmt.Errorf("advance does not belong to tournament %s at block %d", t.Address, lastBlock)
 		}
 	}
+	for _, v := range batch.StandingChanges {
+		if v == nil || v.ApplicationID != appID || v.EpochIndex != t.EpochIndex ||
+			v.TournamentAddress != t.Address || v.BlockNumber > lastBlock {
+			return fmt.Errorf("standing change does not belong to tournament %s at block %d", t.Address, lastBlock)
+		}
+	}
 	for _, v := range batch.BondEvents {
 		if v == nil || v.ApplicationID != appID || v.EpochIndex != t.EpochIndex ||
 			v.TournamentAddress != t.Address || v.BlockNumber > lastBlock {
@@ -101,6 +107,9 @@ func tournamentUpsert(v *Tournament, applicationID any) postgres.InsertStatement
 		table.Tournaments.Kind.IS_NOT_DISTINCT_FROM(table.Tournaments.EXCLUDED.Kind),
 		table.Tournaments.StartInstant.IS_NOT_DISTINCT_FROM(table.Tournaments.EXCLUDED.StartInstant),
 		table.Tournaments.Allowance.IS_NOT_DISTINCT_FROM(table.Tournaments.EXCLUDED.Allowance),
+		table.Tournaments.BondValue.IS_NOT_DISTINCT_FROM(table.Tournaments.EXCLUDED.BondValue),
+		table.Tournaments.ContestedFinalStateOne.IS_NOT_DISTINCT_FROM(table.Tournaments.EXCLUDED.ContestedFinalStateOne),
+		table.Tournaments.ContestedFinalStateTwo.IS_NOT_DISTINCT_FROM(table.Tournaments.EXCLUDED.ContestedFinalStateTwo),
 		table.Tournaments.CreationBlockNumber.IS_NOT_DISTINCT_FROM(table.Tournaments.EXCLUDED.CreationBlockNumber),
 		table.Tournaments.CreationTxHash.IS_NOT_DISTINCT_FROM(table.Tournaments.EXCLUDED.CreationTxHash),
 		table.Tournaments.CreationLogIndex.IS_NOT_DISTINCT_FROM(table.Tournaments.EXCLUDED.CreationLogIndex),
@@ -183,6 +192,12 @@ func insertMatchChunk(ctx context.Context, tx pgx.Tx, appID int64, values []*Mat
 		table.Matches.ApplicationID, table.Matches.EpochIndex, table.Matches.TournamentAddress, table.Matches.IDHash,
 	).DO_UPDATE(postgres.SET(
 		table.Matches.SealEliminableAt.SET(table.Matches.EXCLUDED.SealEliminableAt),
+		table.Matches.SealAgreeState.SET(table.Matches.EXCLUDED.SealAgreeState),
+		table.Matches.SealDivergencePosition.SET(table.Matches.EXCLUDED.SealDivergencePosition),
+		table.Matches.SealFinalStateOne.SET(table.Matches.EXCLUDED.SealFinalStateOne),
+		table.Matches.SealFinalStateTwo.SET(table.Matches.EXCLUDED.SealFinalStateTwo),
+		table.Matches.SealDeadlineOne.SET(table.Matches.EXCLUDED.SealDeadlineOne),
+		table.Matches.SealDeadlineTwo.SET(table.Matches.EXCLUDED.SealDeadlineTwo),
 		table.Matches.SealBlockNumber.SET(table.Matches.EXCLUDED.SealBlockNumber),
 		table.Matches.SealTxHash.SET(table.Matches.EXCLUDED.SealTxHash),
 		table.Matches.SealLogIndex.SET(table.Matches.EXCLUDED.SealLogIndex),
@@ -218,9 +233,16 @@ func insertMatchChunk(ctx context.Context, tx pgx.Tx, appID int64, values []*Mat
 		table.Matches.TxHash.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.TxHash),
 		table.Matches.LogIndex.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.LogIndex),
 		table.Matches.EliminableAt.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.EliminableAt),
+		table.Matches.ResponderDeadline.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.ResponderDeadline),
 		table.Matches.AsOfBlock.LT_EQ(table.Matches.EXCLUDED.AsOfBlock),
 		table.Matches.SealTxHash.IS_NULL().OR(postgres.AND(
 			table.Matches.SealEliminableAt.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.SealEliminableAt),
+			table.Matches.SealAgreeState.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.SealAgreeState),
+			table.Matches.SealDivergencePosition.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.SealDivergencePosition),
+			table.Matches.SealFinalStateOne.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.SealFinalStateOne),
+			table.Matches.SealFinalStateTwo.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.SealFinalStateTwo),
+			table.Matches.SealDeadlineOne.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.SealDeadlineOne),
+			table.Matches.SealDeadlineTwo.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.SealDeadlineTwo),
 			table.Matches.SealBlockNumber.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.SealBlockNumber),
 			table.Matches.SealTxHash.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.SealTxHash),
 			table.Matches.SealLogIndex.IS_NOT_DISTINCT_FROM(table.Matches.EXCLUDED.SealLogIndex),
@@ -301,6 +323,8 @@ func sameMatchAdvancedEvent(a, b *MatchAdvanced) bool {
 		a.LeftNode == b.LeftNode &&
 		a.SegmentStartPosition == b.SegmentStartPosition &&
 		a.EliminableAt == b.EliminableAt &&
+		a.CurrentHeight == b.CurrentHeight &&
+		a.ResponderDeadline == b.ResponderDeadline &&
 		a.BlockNumber == b.BlockNumber &&
 		a.TxHash == b.TxHash &&
 		a.LogIndex == b.LogIndex

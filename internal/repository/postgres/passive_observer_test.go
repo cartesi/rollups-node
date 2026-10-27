@@ -38,6 +38,7 @@ func newPassiveObserverWindow(t *testing.T) (*PostgresRepository, *Application, 
 	require.NoError(t, r.CreateEpochsAndInputs(t.Context(), app.Name, map[*Epoch][]*Input{epoch: {}}, observerCheckpoint))
 	root := repotest.NewTournamentBuilder(app.ID).Build()
 	root.MaxLevel = 2
+	root.StartInstant = epoch.LastBlock
 	makePair := func(tournament *Tournament) (*Commitment, *Commitment, *Match) {
 		one := repotest.NewCommitmentBuilder(app.ID).WithTournamentAddress(tournament.Address).Build()
 		two := repotest.NewCommitmentBuilder(app.ID).WithTournamentAddress(tournament.Address).Build()
@@ -60,7 +61,9 @@ func newPassiveObserverWindow(t *testing.T) (*PostgresRepository, *Application, 
 	childOne, childTwo, childMatch := makePair(child)
 	childOne.BlockNumber, childTwo.BlockNumber, childMatch.BlockNumber = 51, 52, 52
 	childMatch.DeletionReason, childMatch.DeletionBlockNumber = MatchDeletionReason_STEP, 70
-	childMatch.LeafSeal = &LeafMatchSeal{EliminableAt: 90, BlockNumber: 60, TxHash: repotest.UniqueHash()}
+	childMatch.LeafSeal = &LeafMatchSeal{AgreeState: common.Hash{}, DivergencePosition: observerUint256(t, "3"),
+		FinalStateOne: repotest.UniqueHash(), FinalStateTwo: repotest.UniqueHash(),
+		DeadlineOne: 85, DeadlineTwo: 90, EliminableAt: 90, BlockNumber: 60, TxHash: repotest.UniqueHash()}
 	root.Snapshot = TournamentSnapshot{
 		AsOfBlock: observerCheckpoint, Standing: TournamentStandingRootWinner,
 		Candidate: new(one.Commitment), WinnerCommitment: new(one.Commitment), FinalStateHash: new(one.FinalStateHash),
@@ -81,9 +84,11 @@ func newPassiveObserverWindow(t *testing.T) (*PostgresRepository, *Application, 
 	childOne.Snapshot.Claimer = common.Address{}
 	firstAdvance := repotest.NewMatchAdvancedBuilder(app.ID).WithTournamentAddress(child.Address).WithIDHash(childMatch.IDHash).Build()
 	firstAdvance.BlockNumber, firstAdvance.LogIndex, firstAdvance.EliminableAt = 55, 0, 85
+	firstAdvance.CurrentHeight, firstAdvance.ResponderDeadline = 2, 84
 	firstAdvance.SegmentStartPosition = observerUint256(t, "18446744073709551616")
 	secondAdvance := *firstAdvance
 	secondAdvance.LogIndex, secondAdvance.EliminableAt = 1, 86
+	secondAdvance.CurrentHeight, secondAdvance.ResponderDeadline = 1, 85
 	secondAdvance.LeftNode = repotest.UniqueHash()
 	refund := &BondEvent{
 		ApplicationID: app.ID, EpochIndex: child.EpochIndex, TournamentAddress: child.Address, Type: BondEventPartialRefund,
@@ -304,7 +309,7 @@ func TestPassiveObserverRejectsImmutableFactChangesAndOlderViews(t *testing.T) {
 		{"child creation", func(b *repository.TournamentEventBatch) { b.Tournament.CreationEvent.LogIndex++ }},
 		{"commitment join", func(b *repository.TournamentEventBatch) { b.Commitments[0].FinalStateHash = repotest.UniqueHash() }},
 		{"match creation", func(b *repository.TournamentEventBatch) { b.Matches[0].LeftOfTwo = repotest.UniqueHash() }},
-		{"leaf seal", func(b *repository.TournamentEventBatch) { b.Matches[0].LeafSeal.EliminableAt++ }},
+		{"leaf seal", func(b *repository.TournamentEventBatch) { b.Matches[0].LeafSeal.LogIndex++ }},
 		{"match deletion", func(b *repository.TournamentEventBatch) { b.Matches[0].DeletionTxHash = new(repotest.UniqueHash()) }},
 		{"older view", func(b *repository.TournamentEventBatch) {
 			b.Tournament.Snapshot.AsOfBlock = observerCheckpoint - 1

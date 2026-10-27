@@ -398,6 +398,13 @@ type MatchAdvancedRepository interface {
 		idHashHex string, p Pagination, descending bool) ([]*MatchAdvanced, uint64, error)
 }
 
+type StandingChangedRepository interface {
+	GetStandingChange(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string,
+		txHash common.Hash, logIndex uint64) (*StandingChanged, error)
+	ListStandingChanges(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string,
+		p Pagination, descending bool) ([]*StandingChanged, uint64, error)
+}
+
 type BondEventRepository interface {
 	GetBondEvent(ctx context.Context, nameOrAddress string, txHash common.Hash, logIndex uint64) (*BondEvent, error)
 	ListBondEvents(ctx context.Context, nameOrAddress string, f BondEventFilter, p Pagination, descending bool) ([]*BondEvent, uint64, error)
@@ -407,11 +414,12 @@ type BondEventRepository interface {
 // a completed scan window. Batches are ordered with parents before children:
 // a child tournament references a match written in its parent's batch.
 type TournamentEventBatch struct {
-	Tournament    *Tournament
-	Commitments   []*Commitment
-	Matches       []*Match
-	MatchAdvances []*MatchAdvanced
-	BondEvents    []*BondEvent
+	Tournament      *Tournament
+	Commitments     []*Commitment
+	Matches         []*Match
+	MatchAdvances   []*MatchAdvanced
+	StandingChanges []*StandingChanged
+	BondEvents      []*BondEvent
 }
 
 type BulkOperationsRepository interface {
@@ -524,6 +532,7 @@ type Repository interface {
 	CommitmentRepository
 	MatchRepository
 	MatchAdvancedRepository
+	StandingChangedRepository
 	BondEventRepository
 	BulkOperationsRepository
 	NodeConfigReader

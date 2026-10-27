@@ -3371,13 +3371,14 @@ func TestMethod(t *testing.T) {
 			limit := uint64(many / 2)
 			for nr := range many {
 				otherParent := common.HexToHash(hexutil.EncodeUint64(nr))
-				err = s.repository.CreateMatchAdvanced(ctx, numberToName(app),
-					repotest.NewMatchAdvancedBuilder(appID).
-						WithEpochIndex(enr).
-						WithTournamentAddress(tournamentAddress).
-						WithIDHash(idHash).
-						WithOtherParent(otherParent).
-						Build())
+				advance := repotest.NewMatchAdvancedBuilder(appID).
+					WithEpochIndex(enr).
+					WithTournamentAddress(tournamentAddress).
+					WithIDHash(idHash).
+					WithOtherParent(otherParent).
+					Build()
+				advance.CurrentHeight = many - nr
+				err = s.repository.CreateMatchAdvanced(ctx, numberToName(app), advance)
 				require.NoError(t, err, "failed to create match advance, app: %v, nr: %v", app, nr)
 			}
 

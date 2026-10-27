@@ -38,6 +38,7 @@ func TestTournamentEventWindowLocksApplicationBeforeChildren(t *testing.T) {
 	registerDeliveryTest(t, writer, repotest.UniqueAddress())
 	app := repotest.NewApplicationBuilder().WithConsensus(Consensus_PRT).WithEnabled(false).Create(ctx, t, writer)
 	root := repotest.NewTournamentBuilder(app.ID).Build()
+	root.StartInstant = 9
 	epoch := repotest.NewEpochBuilder(app.ID).WithStatus(EpochStatus_Closed).WithInputBounds(0, 0).Build()
 	epoch.TournamentAddress = &root.Address
 	require.NoError(t, writer.CreateEpochsAndInputs(ctx, app.Name, map[*Epoch][]*Input{epoch: {}}, 10))
@@ -131,6 +132,7 @@ func TestTournamentIntervalExistingParentRollsBackLaterFailures(t *testing.T) {
 				map[*Epoch][]*Input{epoch0: {}, epoch1: {}}, 20))
 
 			root := repotest.NewTournamentBuilder(app.ID).Build()
+			root.StartInstant = 9
 			root.Snapshot.AsOfBlock = 50
 			require.NoError(t, r.CreateTournament(t.Context(), app.Name, root))
 			updatedRoot := *root
