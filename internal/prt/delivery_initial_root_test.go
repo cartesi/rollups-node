@@ -49,12 +49,14 @@ func TestDeliveryFirstRootDiscoveredAfterEmptyObserveDoesNotNeedAnotherBlock(t *
 	adapter := &tournamentAdapterMock{}
 	f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil)
 	opts := mock.MatchedBy(resultCallOptsAtBlock(f.facts.Number))
-	adapter.On("Descriptor", opts).Return(TournamentDescriptor{
+	descriptor := TournamentDescriptor{
 		BaseCycle: big.NewInt(0), Kind: model.TournamentKindLeaf, Level: 0,
 		Height:       model.Log2EpochComputationHashLeafCount,
 		Log2Stride:   model.Log2RootTournamentStride,
 		StartInstant: f.facts.Number, Allowance: 300,
-	}, nil).Twice()
+	}
+	adapter.On("Descriptor", opts).Return(descriptor, nil).Twice()
+	adapter.On("BondValue", opts).Return(big.NewInt(1), nil).Once()
 	adapter.On("Standing", opts).Return(TournamentStanding{
 		State: model.TournamentStandingAwaitingClosure, AcceptsJoins: true,
 	}, nil).Twice()
@@ -122,12 +124,14 @@ func TestDeliveryInitialRootIsObservedAtItsSealingBlockWithoutLocalProof(t *test
 				adapter := &tournamentAdapterMock{}
 				f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()
 				opts := mock.MatchedBy(resultCallOptsAtBlock(f.facts.Number))
-				adapter.On("Descriptor", opts).Return(TournamentDescriptor{
+				descriptor := TournamentDescriptor{
 					BaseCycle: big.NewInt(0), Kind: model.TournamentKindLeaf, Level: 0,
 					Height:       model.Log2EpochComputationHashLeafCount,
 					Log2Stride:   model.Log2RootTournamentStride,
 					StartInstant: f.facts.Number, Allowance: 300,
-				}, nil).Once()
+				}
+				adapter.On("Descriptor", opts).Return(descriptor, nil).Once()
+				adapter.On("BondValue", opts).Return(big.NewInt(1), nil).Once()
 				adapter.On("Standing", opts).Return(TournamentStanding{
 					State: model.TournamentStandingAwaitingClosure, AcceptsJoins: true,
 				}, nil).Once()

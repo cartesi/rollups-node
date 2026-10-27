@@ -270,6 +270,7 @@ func TestReadTournament_PinsDescriptorAndStandingReads(t *testing.T) {
 	expectTournamentAuxiliaryReads(adapter, pinned, RootLevel, standing.State)
 	s, repo := newPRTServiceMock()
 
+	adapter.On("BondValue", pinned).Return(big.NewInt(1), nil).Once()
 	tournament, err := s.readTournament(
 		context.Background(), app, epoch, RootLevel, nil, nil, tournamentAddress, adapter, 2, mostRecentBlock,
 	)
@@ -300,7 +301,7 @@ func TestGatherTournamentData_UsesDynamicLastLevel(t *testing.T) {
 			_ = tournament // Known children are scheduled independently.
 
 			batches, err := s.gatherTournamentData(t.Context(), f.app, epoch, test.level, nil, nil,
-				*epoch.TournamentAddress, 4, 100)
+				*epoch.TournamentAddress, 4, 100, nil, nil)
 			require.NoError(t, err)
 			require.Len(t, batches, 1)
 			require.Equal(t, uint64(test.level), batches[0].Tournament.Level)

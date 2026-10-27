@@ -37,7 +37,7 @@ func TestTournamentObservationUsesCommittedCounterBaseline(t *testing.T) {
 		Snapshot: model.TournamentSnapshot{AsOfBlock: 50,
 			BondRecovery: model.TournamentBondRecovery{Disposition: model.BondDispositionTournamentRunning}}}
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), address.Hex()).Return(stored, nil).Once()
-	counts := repository.TournamentEventCounts{CommitmentJoined: 2, MatchCreated: 3, MatchAdvanced: 4,
+	counts := repository.TournamentEventCounts{StandingChanged: 3, CommitmentJoined: 2, MatchCreated: 3, MatchAdvanced: 4,
 		LeafMatchSealed: 1, MatchDeleted: 1, NewInnerTournament: 5}
 	f.repo.eventCounts = map[common.Address]repository.TournamentEventCounts{address: counts}
 	baselineReads := 0
@@ -59,7 +59,7 @@ func TestTournamentObservationUsesCommittedCounterBaseline(t *testing.T) {
 	// No historical-state RPC expectation: the provider need only serve H.
 	adapter.On("StructuralEventCounts", opts).Return(structuralEventCounts(counts), nil).Once()
 	f.emptyParticipants(epoch, address)
-	batches, err := f.s.gatherTournamentData(t.Context(), f.app, epoch, RootLevel, nil, nil, address, 1, 100)
+	batches, err := f.s.gatherTournamentData(t.Context(), f.app, epoch, RootLevel, nil, nil, address, 1, 100, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, 1, baselineReads)
 	require.Len(t, batches, 1)

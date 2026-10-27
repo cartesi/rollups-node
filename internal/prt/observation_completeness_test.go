@@ -61,7 +61,9 @@ func TestIncompleteTournamentEventsRetryTheSameIntervalAndKeepPersistentAlarm(t 
 				BaseCycle: new(big.Int), Kind: root.Kind, StartInstant: root.StartInstant,
 			}, nil).Times(6)
 			adapter.On("Standing", mock.Anything).
-				Return(TournamentStanding{State: model.TournamentStandingAwaitingClosure}, nil).Times(6)
+				Return(TournamentStanding{State: model.TournamentStandingAwaitingClosure, HasCandidate: true,
+					Candidate: *f.epoch.Commitment},
+					nil).Times(6)
 			adapter.On("BondRecovery", mock.Anything).
 				Return(canonicalBondRecovery(model.BondDispositionTournamentRunning, common.Address{}, 0), nil).Times(6)
 			counts := zeroStructuralEventCounts()

@@ -17,7 +17,7 @@ import (
 // participants, then refreshes mutable views at the same pinned block.
 func (s *Service) tournamentEventBatch(
 	ctx context.Context, app *Application, epoch *Epoch, tournament *Tournament,
-	adapter TournamentAdapter, events *TournamentEvents, block uint64,
+	adapter TournamentAdapter, events *TournamentEvents, block uint64, parent *Match,
 ) (*repository.TournamentEventBatch, error) {
 	address := tournament.Address.Hex()
 	commitments, _, err := s.repository.ListCommitments(ctx, app.Name,
@@ -63,12 +63,13 @@ func (s *Service) tournamentEventBatch(
 		created := &Match{ApplicationID: app.ID, EpochIndex: epoch.Index, TournamentAddress: tournament.Address,
 			IDHash: event.MatchIdHash, CommitmentOne: event.One, CommitmentTwo: event.Two, LeftOfTwo: event.LeftOfTwo,
 			BlockNumber: event.Raw.BlockNumber, TxHash: event.Raw.TxHash, LogIndex: uint64(event.Raw.Index),
-			EliminableAt: event.EliminableAt, Winner: WinnerCommitment_NONE, DeletionReason: MatchDeletionReason_NOT_DELETED}
+			ResponderDeadline: event.ResponderDeadline, EliminableAt: event.EliminableAt, Winner: WinnerCommitment_NONE,
+			DeletionReason: MatchDeletionReason_NOT_DELETED}
 		if previous := matchByHash[created.IDHash]; previous != nil {
 			if previous.CommitmentOne != created.CommitmentOne || previous.CommitmentTwo != created.CommitmentTwo ||
 				previous.LeftOfTwo != created.LeftOfTwo || previous.BlockNumber != created.BlockNumber ||
 				previous.TxHash != created.TxHash || previous.LogIndex != created.LogIndex ||
-				previous.EliminableAt != created.EliminableAt {
+				previous.EliminableAt != created.EliminableAt || previous.ResponderDeadline != created.ResponderDeadline {
 				return nil, fmt.Errorf("match %s has conflicting creation events", created.IDHash)
 			}
 		} else {
@@ -77,8 +78,12 @@ func (s *Service) tournamentEventBatch(
 	}
 	for _, event := range events.MatchAdvanced {
 		delete(unchangedDeletedMatches, event.MatchIdHash)
-		if matchByHash[event.MatchIdHash] == nil {
-			return nil, fmt.Errorf("match advance has no creation event for %x", event.MatchIdHash)
+		match := matchByHash[event.MatchIdHash]
+		if match == nil || match.CommitmentOne != event.One || match.CommitmentTwo != event.Two {
+			return nil, fmt.Errorf("match advance does not match its creation pair for %x", event.MatchIdHash)
+		}
+		if event.CurrentHeight >= tournament.Height {
+			return nil, fmt.Errorf("advance current height is outside tournament height")
 		}
 		position, err := Uint256FromBig(event.SegmentStartPosition)
 		if err != nil {
@@ -87,22 +92,42 @@ func (s *Service) tournamentEventBatch(
 		batch.MatchAdvances = append(batch.MatchAdvances, &MatchAdvanced{
 			ApplicationID: app.ID, EpochIndex: epoch.Index, TournamentAddress: tournament.Address,
 			IDHash: event.MatchIdHash, OtherParent: event.OtherParent, LeftNode: event.LeftNode,
-			SegmentStartPosition: position, EliminableAt: event.EliminableAt,
-			BlockNumber: event.Raw.BlockNumber, TxHash: event.Raw.TxHash, LogIndex: uint64(event.Raw.Index),
+			SegmentStartPosition: position, CurrentHeight: event.CurrentHeight, ResponderDeadline: event.ResponderDeadline,
+			EliminableAt: event.EliminableAt,
+			BlockNumber:  event.Raw.BlockNumber, TxHash: event.Raw.TxHash, LogIndex: uint64(event.Raw.Index),
 		})
 	}
 	for _, event := range events.LeafMatchSealed {
 		delete(unchangedDeletedMatches, event.MatchIdHash)
 		match := matchByHash[event.MatchIdHash]
-		if match == nil {
-			return nil, fmt.Errorf("leaf seal has no creation event for %x", event.MatchIdHash)
+		if match == nil || match.CommitmentOne != event.One || match.CommitmentTwo != event.Two {
+			return nil, fmt.Errorf("leaf seal does not match its creation pair for %x", event.MatchIdHash)
 		}
-		seal := &LeafMatchSeal{EliminableAt: event.EliminableAt,
-			BlockNumber: event.Raw.BlockNumber, TxHash: event.Raw.TxHash, LogIndex: uint64(event.Raw.Index)}
+		if tournament.Kind != TournamentKindLeaf {
+			return nil, fmt.Errorf("leaf seal requires a leaf tournament")
+		}
+		position, err := Uint256FromBig(event.DivergencePosition)
+		if err != nil || !divergencePositionWithinHeight(position, tournament.Height) {
+			return nil, fmt.Errorf("seal divergence position is outside tournament height")
+		}
+		seal := &LeafMatchSeal{AgreeState: event.AgreeState, DivergencePosition: position, FinalStateOne: event.FinalStateOne,
+			FinalStateTwo: event.FinalStateTwo, DeadlineOne: event.DeadlineOne, DeadlineTwo: event.DeadlineTwo,
+			EliminableAt: event.EliminableAt,
+			BlockNumber:  event.Raw.BlockNumber, TxHash: event.Raw.TxHash, LogIndex: uint64(event.Raw.Index)}
 		if match.LeafSeal != nil && *match.LeafSeal != *seal {
 			return nil, fmt.Errorf("match %s has conflicting leaf seal events", match.IDHash)
 		}
 		match.LeafSeal = seal
+	}
+	for _, event := range events.NewInnerTournament {
+		delete(unchangedDeletedMatches, event.MatchIdHash)
+		match := matchByHash[event.MatchIdHash]
+		if tournament.Kind != TournamentKindNonLeaf {
+			return nil, fmt.Errorf("child creation requires a non-leaf tournament")
+		}
+		if match == nil || match.CommitmentOne != event.One || match.CommitmentTwo != event.Two {
+			return nil, fmt.Errorf("child creation does not match its creation pair")
+		}
 	}
 	for _, event := range events.MatchDeleted {
 		delete(unchangedDeletedMatches, event.MatchIdHash)
@@ -156,6 +181,22 @@ func (s *Service) tournamentEventBatch(
 			return nil, fmt.Errorf("match %s: %w", match.IDHash, err)
 		}
 		batch.Matches = append(batch.Matches, match)
+	}
+	if len(events.StandingChanged) > 0 && tournament.Level != uint64(RootLevel) && parent == nil {
+		if tournament.ParentTournamentAddress == nil || tournament.ParentMatchIDHash == nil {
+			return nil, fmt.Errorf("inner standing has no parent identity")
+		}
+		parent, err = s.repository.GetMatch(ctx, app.Name, epoch.Index, tournament.ParentTournamentAddress.Hex(),
+			tournament.ParentMatchIDHash.Hex())
+		if err != nil {
+			return nil, err
+		}
+		if parent == nil {
+			return nil, fmt.Errorf("inner standing has no parent match")
+		}
+	}
+	if err := appendTournamentStandingEvents(batch, app, epoch, events, matchByHash, parent); err != nil {
+		return nil, err
 	}
 	// Stable ordering makes the batch deterministic without changing event chronology.
 	slices.SortFunc(batch.Commitments, func(a, b *Commitment) int { return a.Commitment.Cmp(b.Commitment) })
@@ -269,4 +310,13 @@ func projectMatchSnapshot(view ObservedMatchSnapshot, block uint64, deleted bool
 		return MatchSnapshot{}, fmt.Errorf("unknown match phase %s", view.Phase)
 	}
 	return result, nil
+}
+
+const tournamentPositionBits = 256
+
+func divergencePositionWithinHeight(position Uint256, height uint64) bool {
+	if height >= tournamentPositionBits {
+		return true
+	}
+	return position.ToBig().BitLen() <= int(height)
 }

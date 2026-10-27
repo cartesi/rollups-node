@@ -31,6 +31,16 @@ type TournamentDescriptor struct {
 	Allowance    uint64
 }
 
+// TournamentCreation is immutable parent event provenance for a child tournament.
+type TournamentCreation struct {
+	Address                common.Address
+	Descriptor             TournamentDescriptor
+	BondValue              model.Uint256
+	ContestedFinalStateOne *common.Hash
+	ContestedFinalStateTwo *common.Hash
+	Event                  model.TournamentCreationEvent
+}
+
 // TournamentStanding is the current tournament result and timing projection.
 type TournamentStanding struct {
 	State            model.TournamentStandingState

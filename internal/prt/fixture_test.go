@@ -37,6 +37,12 @@ type prtRepositoryMock struct {
 	deploymentDrain      func(context.Context, repository.DeploymentDrainRequest) error
 }
 
+func (m *prtRepositoryMock) GetMatch(ctx context.Context, app string, epoch uint64, tournament, id string) (*model.Match, error) {
+	args := m.Called(ctx, app, epoch, tournament, id)
+	match, _ := args.Get(0).(*model.Match)
+	return match, args.Error(1)
+}
+
 func (m *prtRepositoryMock) GetTournamentEventCounts(
 	_ context.Context, appID int64, epoch uint64, tournament common.Address, through uint64,
 ) (repository.TournamentEventCounts, error) {

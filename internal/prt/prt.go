@@ -22,7 +22,6 @@ import (
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/prtprotection"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
@@ -47,6 +46,7 @@ type prtRepository interface {
 	UpdateEpochWithAcceptedClaim(ctx context.Context, applicationID int64, index uint64, txHash *common.Hash) error
 
 	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)
+	GetMatch(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress, idHash string) (*Match, error)
 	ListTournaments(ctx context.Context, nameOrAddress string, f repository.TournamentFilter,
 		p repository.Pagination, descending bool) ([]*Tournament, uint64, error)
 	GetCommitment(ctx context.Context, nameOrAddress string, epochIndex uint64,
@@ -199,6 +199,17 @@ func (s *Service) readTournament(
 		Kind:                    descriptor.Kind,
 		StartInstant:            descriptor.StartInstant,
 		Allowance:               descriptor.Allowance,
+	}
+	bond, err := adapter.BondValue(callOpts)
+	if err != nil {
+		return nil, fmt.Errorf("reading tournament bond: %w", err)
+	}
+	t.BondValue, err = Uint256FromBig(bond)
+	if err != nil {
+		return nil, fmt.Errorf("tournament %s bond: %w", tournamentAddress, err)
+	}
+	if t.BondValue.ToBig().Sign() == 0 {
+		return nil, fmt.Errorf("tournament %s has zero bond", tournamentAddress)
 	}
 	if err := s.updateTournamentStanding(ctx, app, epoch, level, adapter, t, mostRecentBlock); err != nil {
 		return nil, err
@@ -491,7 +502,7 @@ func (s *Service) reconcileAcceptedEpochs(
 func (s *Service) gatherTournamentData(
 	ctx context.Context, app *Application, epoch *Epoch, level TournamentLevel,
 	parentMatchIDHash *common.Hash, parentTournamentAddress *common.Address,
-	tournamentAddress common.Address, levelCount, mostRecentBlock uint64,
+	tournamentAddress common.Address, levelCount, mostRecentBlock uint64, creation *TournamentCreation, parent *Match,
 ) ([]*repository.TournamentEventBatch, error) {
 	t, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), tournamentAddress.Hex())
 	if err != nil {
@@ -528,6 +539,17 @@ func (s *Service) gatherTournamentData(
 				"level", level, "application", app.Name,
 				"epoch", epoch.Index, "tournament_address", tournamentAddress.String())
 			return nil, err
+		}
+	}
+	if created {
+		if level == RootLevel && t.StartInstant != epoch.LastBlock {
+			return nil, fmt.Errorf("root creation start does not match observed epoch seal block")
+		}
+		if level != RootLevel {
+			if err := applyTournamentCreationEvent(t, creation); err != nil {
+				return nil, err
+			}
+			t.ContestedFinalStateOne, t.ContestedFinalStateTwo = creation.ContestedFinalStateOne, creation.ContestedFinalStateTwo
 		}
 	}
 	if !created {
@@ -591,6 +613,9 @@ func (s *Service) gatherTournamentData(
 		if countErr != nil {
 			return nil, fmt.Errorf("reading committed tournament event counts: %w", countErr)
 		}
+		if err := validateStoredStandingCount(counts); err != nil {
+			return nil, err
+		}
 		previousCounts = structuralEventCounts(counts)
 	}
 	currentCounts, err := adapter.StructuralEventCounts(pinnedCallOpts(ctx, endBlock))
@@ -603,11 +628,11 @@ func (s *Service) gatherTournamentData(
 	if err := validateTournamentFinancialEvents(previousBondDisposition, t.Snapshot.BondRecovery.Disposition, events); err != nil {
 		return nil, fmt.Errorf("tournament %s: %w", tournamentAddress, err)
 	}
-	batch, err := s.tournamentEventBatch(ctx, app, epoch, t, adapter, events, endBlock)
+	batch, err := s.tournamentEventBatch(ctx, app, epoch, t, adapter, events, endBlock, parent)
 	if err != nil {
 		return nil, fmt.Errorf("projecting tournament %s events: %w", tournamentAddress, err)
 	}
-	children, err := s.gatherInnerTournamentData(ctx, app, epoch, t, events, mostRecentBlock)
+	children, err := s.gatherInnerTournamentData(ctx, app, epoch, batch, events, mostRecentBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -630,7 +655,7 @@ func tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
 	snapshot := t.Snapshot
 	if snapshot.FinishedAtBlock == 0 || snapshot.FinishedAtBlock > snapshot.AsOfBlock ||
 		snapshot.AsOfBlock > cursor || snapshot.AsOfBlock > head ||
-		(t.Level != uint64(RootLevel) && t.CreationEvent == nil) {
+		(t.Level != 0 && t.CreationEvent == nil) {
 		return false
 	}
 	switch snapshot.Standing {
@@ -646,10 +671,11 @@ func tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
 }
 
 func (s *Service) gatherInnerTournamentData(
-	ctx context.Context, app *Application, epoch *Epoch, t *Tournament, events *TournamentEvents, head uint64,
+	ctx context.Context, app *Application, epoch *Epoch, batch *repository.TournamentEventBatch, events *TournamentEvents, head uint64,
 ) ([]*repository.TournamentEventBatch, error) {
-	if t.Level+1 >= t.MaxLevel {
-		return nil, nil
+	t := batch.Tournament
+	if len(events.NewInnerTournament) > 0 && (t.Kind != TournamentKindNonLeaf || t.Level+1 >= t.MaxLevel) {
+		return nil, fmt.Errorf("child creation requires a non-leaf tournament")
 	}
 	seen := make(map[common.Address]bool)
 	var batches []*repository.TournamentEventBatch
@@ -658,45 +684,53 @@ func (s *Service) gatherInnerTournamentData(
 			return nil, fmt.Errorf("duplicate child creation for %s", event.ChildTournament)
 		}
 		seen[event.ChildTournament] = true
+		var parent *Match
+		for _, match := range batch.Matches {
+			if match.IDHash == event.MatchIdHash {
+				parent = match
+				break
+			}
+		}
+		if parent == nil {
+			return nil, fmt.Errorf("child creation has no parent match")
+		}
+		creation, err := childTournamentCreation(t, parent, event)
+		if err != nil {
+			return nil, err
+		}
 		stored, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), event.ChildTournament.Hex())
 		if err != nil {
 			return nil, err
 		}
 		if stored != nil {
 			projection := *stored
-			if err = applyTournamentCreationEvent(&projection, event); err != nil {
+			if err = applyTournamentCreationEvent(&projection, creation); err != nil {
+				return nil, err
+			}
+			if projection.ContestedFinalStateOne == nil || projection.ContestedFinalStateTwo == nil ||
+				*projection.ContestedFinalStateOne != *creation.ContestedFinalStateOne ||
+				*projection.ContestedFinalStateTwo != *creation.ContestedFinalStateTwo {
+				return nil, fmt.Errorf("child has conflicting contested states")
+			}
+			if err = validateChildContestedStates(&projection, parent); err != nil {
 				return nil, err
 			}
 			continue
 		}
 		hash := common.Hash(event.MatchIdHash)
 		children, err := s.gatherTournamentData(ctx, app, epoch, TournamentLevel(t.Level+1), &hash, &t.Address,
-			event.ChildTournament, t.MaxLevel, head)
+			event.ChildTournament, t.MaxLevel, head, creation, parent)
 		if err != nil {
 			return nil, err
 		}
 		if len(children) == 0 {
 			return nil, fmt.Errorf("new child tournament %s has no initial observation", event.ChildTournament)
 		}
-		if err = applyTournamentCreationEvent(children[0].Tournament, event); err != nil {
+		child := children[0].Tournament
+		if err = validateChildContestedStates(child, parent); err != nil {
 			return nil, err
 		}
 		batches = append(batches, children...)
 	}
 	return batches, nil
-}
-
-func applyTournamentCreationEvent(child *Tournament, event *itournament.ITournamentNewInnerTournament) error {
-	if child.Address != event.ChildTournament || child.ParentMatchIDHash == nil || *child.ParentMatchIDHash != event.MatchIdHash ||
-		child.StartInstant != event.Raw.BlockNumber {
-		return fmt.Errorf("child tournament %s descriptor does not match its creation event", child.Address)
-	}
-	creation := &TournamentCreationEvent{
-		BlockNumber: event.Raw.BlockNumber, TxHash: event.Raw.TxHash, LogIndex: uint64(event.Raw.Index),
-	}
-	if child.CreationEvent != nil && *child.CreationEvent != *creation {
-		return fmt.Errorf("child tournament %s has conflicting creation events", child.Address)
-	}
-	child.CreationEvent = creation
-	return nil
 }
