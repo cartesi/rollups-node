@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -34,6 +35,7 @@ func replayDaveInputs(ctx context.Context, opts replayOptions, tmp string, input
 		"--template", opts.Template,
 		"--store", opts.Store,
 		"--inputs-manifest", manifest,
+		"--marchid", strconv.FormatUint(model.CartesiMachineMarchID, 10),
 	}
 	return runCommandWithEnv(ctx, opts.Lua, replayDaveLuaEnv(opts), args...)
 }
@@ -121,7 +123,7 @@ func detectCartesiSDKRoot(cartesiMachine string) string {
 	if root := detectCartesiSDKRootFromFile(path); root != "" {
 		return root
 	}
-	for _, root := range []string{"/opt/cartesi-sdk21", "/opt/cartesi"} {
+	for _, root := range cartesiSDKFallbackRoots {
 		if fileExists(filepath.Join(root, "share", "lua", "5.4", "cartesi.lua")) {
 			return root
 		}
@@ -130,6 +132,7 @@ func detectCartesiSDKRoot(cartesiMachine string) string {
 }
 
 var (
+	cartesiSDKFallbackRoots  = []string{"/opt/cartesi"}
 	cartesiMachineLuaPattern = regexp.MustCompile(`["']([^"']*/share/lua/5\.4/cartesi-machine\.lua)["']`)
 	cartesiLuaPathPattern    = regexp.MustCompile(`["']?([^"'\s;]*/share/lua/5\.4)/\?\.lua`)
 )
