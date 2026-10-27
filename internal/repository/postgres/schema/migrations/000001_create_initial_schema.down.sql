@@ -10,6 +10,10 @@ DROP FUNCTION IF EXISTS "enforce_state_hash_immutability";
 
 DROP TABLE IF EXISTS "bond_events";
 
+DROP TRIGGER IF EXISTS "standing_changes_set_updated_at" ON "standing_changes";
+DROP INDEX IF EXISTS "standing_changes_tournament_order_idx";
+DROP TABLE IF EXISTS "standing_changes";
+
 DROP TRIGGER IF EXISTS "match_advances_set_updated_at" ON "match_advances";
 DROP INDEX IF EXISTS "match_advances_block_number_idx";
 DROP TABLE IF EXISTS "match_advances";

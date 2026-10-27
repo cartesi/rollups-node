@@ -775,6 +775,9 @@ CREATE TABLE "tournaments"
     "kind" "TournamentKind" NOT NULL,
     "start_instant" uint64 NOT NULL,
     "allowance" uint64 NOT NULL,
+    "bond_value" uint256 NOT NULL CHECK ("bond_value" > 0),
+    "contested_final_state_one" hash,
+    "contested_final_state_two" hash,
     "creation_block_number" uint64,
     "creation_tx_hash" hash,
     "creation_log_index" uint64,
@@ -806,10 +809,16 @@ CREATE TABLE "tournaments"
         ("level" > 0 AND "parent_tournament_address" IS NOT NULL AND "parent_match_id_hash" IS NOT NULL)
       ),
     CONSTRAINT "tournaments_max_level_gt_level_check" CHECK ("max_level" > "level"),
+    CONSTRAINT "tournaments_creation_block_check" CHECK ("creation_block_number" = "start_instant"),
     CONSTRAINT "tournaments_creation_event_check" CHECK (
       ("level" = 0 AND num_nonnulls("creation_block_number", "creation_tx_hash", "creation_log_index") = 0)
       OR
       ("level" > 0 AND num_nonnulls("creation_block_number", "creation_tx_hash", "creation_log_index") = 3)
+    ),
+    CONSTRAINT "tournaments_nested_dispute_check" CHECK (
+      ("level" = 0 AND num_nonnulls("contested_final_state_one", "contested_final_state_two") = 0)
+      OR
+      ("level" > 0 AND num_nonnulls("contested_final_state_one", "contested_final_state_two") = 2)
     ),
     CONSTRAINT "tournaments_current_winner_check" CHECK (
       ("standing" IN ('ROOT_WINNER', 'INNER_WINNER') AND "candidate" IS NOT NULL
@@ -921,7 +930,14 @@ CREATE TABLE "matches"
     "tx_hash" hash NOT NULL,
     "log_index" uint64 NOT NULL,
     "eliminable_at" uint64 NOT NULL,
+    "responder_deadline" uint64 NOT NULL,
     "seal_eliminable_at" uint64,
+    "seal_agree_state" hash,
+    "seal_divergence_position" uint256,
+    "seal_final_state_one" hash,
+    "seal_final_state_two" hash,
+    "seal_deadline_one" uint64,
+    "seal_deadline_two" uint64,
     "seal_block_number" uint64,
     "seal_tx_hash" hash,
     "seal_log_index" uint64,
@@ -959,9 +975,20 @@ CREATE TABLE "matches"
           AND "deletion_tx_hash" IS NOT NULL AND "deletion_log_index" IS NOT NULL)
     ),
 
+    CONSTRAINT "matches_creation_schedule_check" CHECK ("responder_deadline" <= "eliminable_at"),
     CONSTRAINT "matches_seal_tuple_check" CHECK (
-      num_nonnulls("seal_eliminable_at", "seal_block_number", "seal_tx_hash", "seal_log_index") IN (0, 4)
+      num_nonnulls("seal_eliminable_at", "seal_agree_state", "seal_divergence_position",
+        "seal_final_state_one", "seal_final_state_two", "seal_deadline_one", "seal_deadline_two",
+        "seal_block_number", "seal_tx_hash", "seal_log_index") IN (0, 10)
     ),
+    CONSTRAINT "matches_seal_schedule_check" CHECK ("seal_tx_hash" IS NULL OR
+      "seal_eliminable_at" = GREATEST("seal_deadline_one", "seal_deadline_two")),
+    CONSTRAINT "matches_sealed_view_check" CHECK ("seal_tx_hash" IS NULL OR "phase" <> 'SEALED' OR (
+      "agree_state" IS NOT DISTINCT FROM "seal_agree_state"
+      AND "divergence_position" IS NOT DISTINCT FROM "seal_divergence_position"
+      AND "final_state_one" IS NOT DISTINCT FROM "seal_final_state_one"
+      AND "final_state_two" IS NOT DISTINCT FROM "seal_final_state_two"
+    )),
     CONSTRAINT "matches_event_key" UNIQUE ("application_id", "tx_hash", "log_index"),
     CONSTRAINT "matches_seal_event_key" UNIQUE ("application_id", "seal_tx_hash", "seal_log_index"),
     CONSTRAINT "matches_deletion_event_key" UNIQUE ("application_id", "deletion_tx_hash", "deletion_log_index"),
@@ -1021,6 +1048,8 @@ CREATE TABLE "match_advances"
     "left_node" hash NOT NULL,
     "segment_start_position" uint256 NOT NULL,
     "eliminable_at" uint64 NOT NULL,
+    "current_height" uint64 NOT NULL,
+    "responder_deadline" uint64 NOT NULL,
     "block_number" uint64 NOT NULL,
     "tx_hash" hash NOT NULL,
     "log_index" uint64 NOT NULL,
@@ -1028,6 +1057,11 @@ CREATE TABLE "match_advances"
     "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT "match_advances_pkey"
       PRIMARY KEY ("application_id","tx_hash","log_index"),
+
+    CONSTRAINT "match_advances_height_check" CHECK ("current_height" >= 1),
+    CONSTRAINT "match_advances_schedule_check" CHECK ("responder_deadline" <= "eliminable_at"),
+    CONSTRAINT "match_advances_height_key"
+      UNIQUE ("application_id", "epoch_index", "tournament_address", "id_hash", "current_height"),
 
     CONSTRAINT "match_advances_matches_fkey"
       FOREIGN KEY ("application_id","epoch_index","tournament_address","id_hash")
@@ -1079,6 +1113,42 @@ CREATE INDEX "bond_events_tournament_order_idx"
   ON "bond_events"("application_id", "epoch_index", "tournament_address", "block_number", "log_index", "tx_hash");
 
 CREATE TRIGGER "bond_events_set_updated_at" BEFORE UPDATE ON "bond_events"
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TABLE "standing_changes"
+(
+    "application_id" INT4 NOT NULL,
+    "epoch_index" uint64 NOT NULL,
+    "tournament_address" ethereum_address NOT NULL,
+    "match_count" uint256 NOT NULL,
+    "dangling" hash,
+    "parent_commitment" hash,
+    "result_at" uint64 NOT NULL,
+    "winner_expires_at" uint64 NOT NULL,
+    "block_number" uint64 NOT NULL,
+    "tx_hash" hash NOT NULL,
+    "log_index" uint64 NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT "standing_changes_pkey" PRIMARY KEY ("application_id", "tx_hash", "log_index"),
+    CONSTRAINT "standing_changes_tournament_fkey"
+      FOREIGN KEY ("application_id", "epoch_index", "tournament_address")
+      REFERENCES "tournaments"("application_id", "epoch_index", "address") ON DELETE CASCADE,
+    CONSTRAINT "standing_changes_dangling_fkey"
+      FOREIGN KEY ("application_id", "epoch_index", "tournament_address", "dangling")
+      REFERENCES "commitments"("application_id", "epoch_index", "tournament_address", "commitment") ON DELETE CASCADE,
+    CONSTRAINT "standing_changes_live_matches_check" CHECK ("match_count" = 0 OR
+      ("result_at" = 0 AND "parent_commitment" IS NULL AND "winner_expires_at" = 0)),
+    CONSTRAINT "standing_changes_result_check" CHECK ("match_count" > 0 OR "result_at" > 0),
+    CONSTRAINT "standing_changes_winner_check" CHECK (
+      ("parent_commitment" IS NULL AND "winner_expires_at" = 0)
+      OR ("parent_commitment" IS NOT NULL AND "dangling" IS NOT NULL AND "winner_expires_at" >= "result_at"))
+);
+
+CREATE INDEX "standing_changes_tournament_order_idx"
+  ON "standing_changes"("application_id", "epoch_index", "tournament_address", "block_number", "log_index", "tx_hash");
+
+CREATE TRIGGER "standing_changes_set_updated_at" BEFORE UPDATE ON "standing_changes"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- One row of an input's PRT computation-hash collection, in entries. An
