@@ -249,6 +249,25 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER "application_validate_status_transition" BEFORE UPDATE ON "application"
 FOR EACH ROW EXECUTE FUNCTION validate_application_status_transition();
 
+-- Private deployment restrictions are independent of application health.
+-- Clearing retains the row. This counter fences explicit enable and startup
+-- assessment episodes; an empty restriction never establishes compatibility.
+CREATE TABLE "deployment_admission_state" (
+    "application_id" INT NOT NULL,
+    "reset_generation" BIGINT NOT NULL DEFAULT 0,
+    "confirmed_tier" TEXT,
+    "deployment_reason" TEXT,
+    CONSTRAINT "deployment_admission_state_pkey" PRIMARY KEY ("application_id"),
+    CONSTRAINT "deployment_admission_state_application_fkey"
+        FOREIGN KEY ("application_id") REFERENCES "application"("id") ON DELETE CASCADE,
+    CONSTRAINT "deployment_admission_state_reset_generation_check"
+        CHECK ("reset_generation" >= 0),
+    CONSTRAINT "deployment_admission_state_confirmed_tier_check"
+        CHECK ("confirmed_tier" IN ('generation', 'table')),
+    CONSTRAINT "deployment_admission_state_restriction_pair_check"
+        CHECK (("confirmed_tier" IS NULL) = ("deployment_reason" IS NULL))
+);
+
 CREATE TABLE "execution_parameters" (
     "application_id" INT PRIMARY KEY,
     "snapshot_policy" "SnapshotPolicy" NOT NULL DEFAULT 'NONE',

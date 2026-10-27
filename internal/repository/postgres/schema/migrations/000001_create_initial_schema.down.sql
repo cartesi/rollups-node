@@ -74,6 +74,8 @@ DROP FUNCTION IF EXISTS "enforce_epoch_status_transition";
 DROP TRIGGER IF EXISTS "execution_parameters_set_updated_at" ON "execution_parameters";
 DROP TABLE IF EXISTS "execution_parameters";
 
+DROP TABLE IF EXISTS "deployment_admission_state";
+
 DROP TRIGGER IF EXISTS "application_validate_status_transition" ON "application";
 DROP TRIGGER IF EXISTS "application_set_updated_at" ON "application";
 DROP INDEX IF EXISTS "application_foreclosed_idx";
