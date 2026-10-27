@@ -80,3 +80,10 @@ func SubstrBytea(col postgres.ColumnBytea, from, count int64) postgres.ByteaExpr
 func ByteaLiteral(b []byte) postgres.ByteaExpression {
 	return postgres.RawBytea(fmt.Sprintf(`'\x%x'::bytea`, b))
 }
+
+func setLocalLockTimeout(ctx context.Context, tx pgx.Tx) error {
+	stmt := postgres.SELECT(postgres.Func("set_config", postgres.String("lock_timeout"), postgres.String("2s"), postgres.Bool(true)))
+	query, args := stmt.Sql()
+	_, err := tx.Exec(ctx, query, args...)
+	return err
+}

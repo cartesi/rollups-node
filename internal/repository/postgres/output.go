@@ -4,13 +4,16 @@
 package postgres
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/go-jet/jet/v2/postgres"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -177,7 +180,14 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 	nameOrAddress string,
 	outputs []*model.Output,
 	lastOutputCheckBlock uint64,
-) error {
+) (err error) {
+
+	defer func() {
+		var failure *pgconn.PgError
+		if errors.As(err, &failure) && failure.Code == "55P03" {
+			err = fmt.Errorf("%w: %w", repository.ErrLockTimeout, err)
+		}
+	}()
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
@@ -187,7 +197,14 @@ func (r *PostgresRepository) UpdateOutputsExecution(
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	for _, o := range outputs {
+	if err := setLocalLockTimeout(ctx, tx); err != nil {
+		return fmt.Errorf("setting output execution lock timeout: %w", err)
+	}
+	orderedOutputs := slices.Clone(outputs)
+	slices.SortFunc(orderedOutputs, func(a, b *model.Output) int {
+		return cmp.Compare(a.Index, b.Index)
+	})
+	for _, o := range orderedOutputs {
 		if o.ExecutionTransactionHash == nil {
 			return fmt.Errorf(
 				"output ExecutionTransactionHash must be not nil when updating app %s output %d",

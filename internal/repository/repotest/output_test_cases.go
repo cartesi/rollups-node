@@ -612,6 +612,39 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 		}
 	})
 
+	s.Run("DescendingIndexesUpdatedAtomically", func() {
+		const outputCount = 3
+		const scanBlock = 200
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("o0"), []byte("o1"), []byte("o2")}, nil)
+
+		txHash := UniqueHash()
+		outputs := make([]*Output, outputCount)
+		for i := range uint64(outputCount) {
+			outputs[i] = &Output{
+				InputEpochApplicationID:  seed.App.ID,
+				Index:                    uint64(outputCount) - 1 - i,
+				ExecutionTransactionHash: &txHash,
+			}
+		}
+
+		err := s.Repo.UpdateOutputsExecution(
+			s.Ctx, seed.App.IApplicationAddress.String(), outputs, scanBlock)
+		s.Require().NoError(err)
+
+		// Verify all 3 were updated
+		for i := range uint64(outputCount) {
+			got, err := s.Repo.GetOutput(
+				s.Ctx, seed.App.IApplicationAddress.String(), i)
+			s.Require().NoError(err)
+			s.Require().NotNil(got.ExecutionTransactionHash,
+				"output %d should have execution hash", i)
+			s.Equal(txHash, *got.ExecutionTransactionHash)
+		}
+	})
+
 	s.Run("NilExecutionHashReturnsError", func() {
 		seed := Seed(s.Ctx, s.T(), s.Repo)
 

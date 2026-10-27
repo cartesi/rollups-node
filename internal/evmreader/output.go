@@ -14,6 +14,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/errutil"
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -305,6 +306,11 @@ func (r *Service) readAndUpdateOutputs(
 
 	err = r.repository.UpdateOutputsExecution(
 		ctx, app.application.IApplicationAddress.Hex(), executedOutputs, mostRecentBlockNumber)
+	if errors.Is(err, repository.ErrLockTimeout) {
+		r.Logger.Warn("output execution update waits for a lock; retrying at the next tick",
+			"application", app.application.Name, "address", app.application.IApplicationAddress, "error", err)
+		return true
+	}
 	if err != nil {
 		r.Logger.Error("Error storing output execution statuses",
 			"application", app.application.Name, "address", app.application.IApplicationAddress,
