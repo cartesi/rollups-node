@@ -207,6 +207,7 @@ func TestTournamentJoinReadsPreserveDependencyErrors(t *testing.T) {
 						readErr = cause
 					}
 					adapter.On("Descriptor", mock.Anything).Return(TournamentDescriptor{Height: model.Log2EpochComputationHashLeafCount,
+						Log2Stride:   model.Log2RootTournamentStride,
 						StartInstant: 100, Allowance: 30}, readErr)
 				}
 				if readErr == nil {

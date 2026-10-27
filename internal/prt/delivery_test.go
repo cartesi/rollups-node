@@ -431,6 +431,7 @@ func TestDeliveryJoinHasInclusiveDeadlineAndExactBondGuards(t *testing.T) {
 			adapter := &tournamentAdapterMock{}
 			standing := CommitmentStanding{}
 			descriptor := TournamentDescriptor{Level: 0, Height: model.Log2EpochComputationHashLeafCount,
+				Log2Stride:   model.Log2RootTournamentStride,
 				StartInstant: 100, Allowance: 20}
 			bond := big.NewInt(50)
 			switch caseName {
