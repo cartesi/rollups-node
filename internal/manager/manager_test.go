@@ -1441,6 +1441,12 @@ func (s *MachineManagerSuite) TestTemplateFactoryResultHandling() {
 			if tt.candidate != nil {
 				factory.Instance = tt.candidate
 			}
+			if tt.factoryErr != nil {
+				repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
+					mock.MatchedBy(func(reason *string) bool {
+						return reason != nil && strings.Contains(*reason, tt.factoryErr.Error())
+					})).Return(nil).Once()
+			}
 			manager := newTestMachineManager(
 				repo, slog.New(slog.NewTextHandler(io.Discard, nil)), false, 10,
 				WithInstanceFactory(factory),
@@ -1449,10 +1455,14 @@ func (s *MachineManagerSuite) TestTemplateFactoryResultHandling() {
 			require.NoError(manager.UpdateMachines(context.Background()))
 			require.Equal(1, factory.TemplateCalls)
 			require.False(manager.HasMachine(app.ID))
+			if tt.factoryErr != nil {
+				require.Equal(model.ApplicationStatus_Failed, app.Status)
+			}
 			if tt.candidate != nil {
 				require.Equal(1, tt.candidate.closeCalls)
 				require.Zero(tt.candidate.replayCalls)
 			}
+			repo.AssertExpectations(s.T())
 			manager.Close()
 		})
 	}
@@ -1616,7 +1626,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 		require.True(manager.HasMachine(1))
 	})
 
-	s.Run("TemplateCreationFailureSkipsApp", func() {
+	s.Run("TemplateCreationFailureMarksAppFailed", func() {
 		require := s.Require()
 
 		app := &model.Application{
@@ -1639,12 +1649,17 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 		factory := &MockMachineInstanceFactory{Err: errors.New("machine creation failed")}
+		repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
+			mock.MatchedBy(func(reason *string) bool {
+				return reason != nil && strings.Contains(*reason, "machine creation failed")
+			})).Return(nil).Once()
 		manager := newTestMachineManager(repo, testLogger, false, 500, WithInstanceFactory(factory))
 
 		err := manager.UpdateMachines(context.Background())
-		// UpdateMachines should not return an error; it logs and skips
 		require.NoError(err)
 		require.False(manager.HasMachine(1))
+		require.Equal(model.ApplicationStatus_Failed, app.Status)
+		repo.AssertExpectations(s.T())
 	})
 
 	s.Run("SynchronizeFailureClosesAndSkipsApp", func() {

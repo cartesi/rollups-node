@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
+	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/prtprotection"
 	"github.com/cartesi/rollups-node/internal/replay"
@@ -236,22 +237,22 @@ func (m *MachineManager) tryLoadTemplateInstance(
 	ctx context.Context,
 	app *model.Application,
 	logger *slog.Logger,
-) MachineInstance {
+) (MachineInstance, error) {
 	candidate, err := m.instanceFactory.NewFromTemplate(ctx, app, m.logger, m.checkTemplateHash)
 	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			logger.Debug("NewFromTemplate canceled during shutdown", "error", err)
-		} else {
-			logger.Error("Failed to create machine instance", "error", err)
-		}
 		closeMachineCandidate(logger, candidate, "Failed to close partial template machine")
-		return nil
+		if ctx.Err() == context.Canceled && errutil.IsOnlyCancellation(err) {
+			logger.Debug("NewFromTemplate canceled during shutdown", "error", err)
+			return nil, nil
+		}
+		logger.Error("Failed to create machine instance", "error", err)
+		return nil, err
 	}
 	if candidate == nil {
 		logger.Error("Template factory returned no machine instance")
-		return nil
+		return nil, nil
 	}
-	return candidate
+	return candidate, nil
 }
 
 func replayContradictionReason(err error) string {
@@ -353,9 +354,19 @@ func (m *MachineManager) UpdateMachines(ctx context.Context) error {
 		// snapshot is absent, stale, inaccessible, or invalid.
 		instance := m.tryLoadSnapshotInstance(ctx, app, appLogger)
 		if instance == nil {
-			instance = m.tryLoadTemplateInstance(ctx, app, appLogger)
+			instance, err = m.tryLoadTemplateInstance(ctx, app, appLogger)
+			if err != nil {
+				reason := fmt.Sprintf("failed to create machine instance: %v", err)
+				m.FenceApplicationFailure(app, reason)
+				m.ReportProtectionStop(ctx, app, err)
+				fenced[app.ID] = struct{}{}
+				persistenceErr = errors.Join(persistenceErr, m.persistApplicationFailure(ctx, app.ID))
+			}
 		}
 		if instance == nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return errors.Join(persistenceErr, ctxErr)
+			}
 			continue
 		}
 
@@ -422,9 +433,8 @@ func excludeFencedApplications(
 }
 
 // FenceApplicationFailure immediately fences app and queues the exact
-// normalized FAILED reason for a later durability retry. Callers use this only
-// after their initial status write failed; this method does not write the
-// repository itself.
+// normalized FAILED reason until durability is confirmed. This method does not
+// write the repository itself.
 func (m *MachineManager) FenceApplicationFailure(app *model.Application, reason string) {
 	reason = appstatus.NormalizeReason(reason)
 	pending := &pendingApplicationFailure{
