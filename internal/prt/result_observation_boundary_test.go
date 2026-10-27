@@ -206,7 +206,7 @@ func TestAcceptanceWaitsForTournamentObservation(t *testing.T) {
 	client.On("TransactionReceipt", mock.Anything, raw.TxHash).Return(receipt, nil).Twice()
 	client.On("HeaderByNumber", mock.Anything, receipt.BlockNumber).Return(header, nil).Once()
 	s.client = client
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock()
 	consensus.On("ParseEpochSealed", raw).Return(&idaveconsensus.IDaveConsensusEpochSealed{
 		EpochNumber: big.NewInt(1), InitialMachineStateHash: *epoch.MachineHash,
 		OutputsMerkleRoot: *epoch.TxBufferDataBlock, Raw: raw,

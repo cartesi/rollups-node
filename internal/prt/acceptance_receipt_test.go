@@ -50,7 +50,7 @@ func newAcceptanceReceiptFixture(t *testing.T) *acceptanceReceiptFixture {
 	}}
 	repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).Return(root, nil)
 	f := &acceptanceReceiptFixture{service: s, repo: repo, client: client,
-		consensus: &daveConsensusAdapterMock{}, app: app, epoch: epoch, root: root, header: header, receipt: receipt, log: raw}
+		consensus: newCompatibleDaveConsensusAdapterMock(), app: app, epoch: epoch, root: root, header: header, receipt: receipt, log: raw}
 	t.Cleanup(func() {
 		repo.AssertExpectations(t)
 		client.AssertExpectations(t)

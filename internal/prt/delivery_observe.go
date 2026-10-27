@@ -104,12 +104,14 @@ func (s *Service) observe(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-func (s *Service) observeApplication(ctx context.Context, app *model.Application, facts txsender.BlockRef) error {
+func (s *Service) observeApplication(ctx context.Context, app *model.Application, facts txsender.BlockRef) (resultErr error) {
 	if !app.Enabled {
 		s.clearTournamentObservationFailure(app.ID)
 		delete(s.protectionNotices, app.ID)
 		return nil
 	}
+	var deploymentErr error
+	defer func() { resultErr = errors.Join(resultErr, deploymentErr) }()
 	s.warnZeroStagingPeriod(app)
 	epochs, _, epochErr := getTournamentObservationEpochs(ctx, s.repository, app.Name)
 	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
@@ -122,6 +124,10 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 		}
 	}
 	s.observeProtection(ctx, app, epochs, consensus, facts, errors.Join(epochErr, err))
+	var deployment deploymentSnapshot
+	if err == nil {
+		deployment, deploymentErr = s.observeDeployment(ctx, app, consensus, facts)
+	}
 	if epochErr != nil || err != nil {
 		return errors.Join(epochErr, err)
 	}
@@ -158,7 +164,10 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 			break
 		}
 	}
-	observeErr := errors.Join(eligibilityErr, s.observeTournamentState(ctx, app, epochs, consensus, facts))
+	observeErr := eligibilityErr
+	if deployment.Alpha6Shape {
+		observeErr = errors.Join(observeErr, s.observeTournamentState(ctx, app, epochs, consensus, facts))
+	}
 	if ctx.Err() != nil {
 		return errors.Join(observeErr, ctx.Err())
 	}

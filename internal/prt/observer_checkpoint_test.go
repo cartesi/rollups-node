@@ -37,7 +37,7 @@ func newObserverCheckpointFixture(t *testing.T) *observerCheckpointFixture {
 	t.Helper()
 	s, repo := newPRTServiceMock()
 	f := &observerCheckpointFixture{t: t, s: s, repo: repo, factory: &adapterFactoryMock{},
-		consensus: &daveConsensusAdapterMock{}, client: &ethClientMock{}, app: prtRevertTestApp()}
+		consensus: newCompatibleDaveConsensusAdapterMock(), client: &ethClientMock{}, app: prtRevertTestApp()}
 	f.app.LastTournamentCheckBlock = 50
 	f.app.LastEpochCheckBlock = 100
 	s.adapterFactory, s.client = f.factory, f.client

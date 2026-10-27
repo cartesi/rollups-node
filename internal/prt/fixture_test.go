@@ -412,9 +412,14 @@ func (m *adapterFactoryMock) CreateDaveConsensusAdapter(addr common.Address) (Da
 
 type daveConsensusAdapterMock struct {
 	mock.Mock
+	deploymentRead func(context.Context, txsender.BlockRef) (DeploymentEvidence, error)
 }
 
 var _ DaveConsensusAdapter = (*daveConsensusAdapterMock)(nil)
+
+func (m *daveConsensusAdapterMock) ReadDeployment(ctx context.Context, head txsender.BlockRef) (DeploymentEvidence, error) {
+	return m.deploymentRead(ctx, head)
+}
 
 func (m *daveConsensusAdapterMock) EpochSealedAt(
 	ctx context.Context, blockHash common.Hash, epoch uint64,

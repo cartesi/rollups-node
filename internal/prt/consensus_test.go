@@ -62,7 +62,7 @@ func TestDaveMachineValidityProofUsesContractOrderAndOwnsSiblings(t *testing.T) 
 func TestReadDaveConsensusSnapshotUsesOnePinnedCallOptions(t *testing.T) {
 	epoch := resultTestEpoch(model.EpochStatus_ClaimStaged)
 	snapshot := resultTestSnapshot(epoch, true)
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock()
 	var first *bind.CallOpts
 	checkOpts := func(args mock.Arguments) {
 		opts := args.Get(0).(*bind.CallOpts)
@@ -307,7 +307,7 @@ func TestCheckEpochsAcceptsComputedOrStagedEpochFromExactEpochSealedEvent(t *tes
 				mock.MatchedBy(func(hash *common.Hash) bool { return hash != nil && *hash == acceptTx })).
 				Return(nil).Once()
 
-			consensus := &daveConsensusAdapterMock{}
+			consensus := newCompatibleDaveConsensusAdapterMock()
 			consensus.On("ParseEpochSealed", *staleLog).Return(staleEvent, nil).Once()
 			consensus.On("ParseEpochSealed", *exactLog).Return(exactEvent, nil).Once()
 			factory := &adapterFactoryMock{}
@@ -369,7 +369,7 @@ func TestCheckEpochsValidatesAcceptanceReceiptAgainstPinnedHead(t *testing.T) {
 			repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
 				Return(&model.Tournament{ApplicationID: app.ID, EpochIndex: epoch.Index, Address: *epoch.TournamentAddress,
 					Snapshot: model.TournamentSnapshot{FinishedAtBlock: 9, AsOfBlock: 20}}, nil).Once()
-			consensus := &daveConsensusAdapterMock{}
+			consensus := newCompatibleDaveConsensusAdapterMock()
 			factory := &adapterFactoryMock{}
 			factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Once()
 			client := &ethClientMock{}
@@ -408,7 +408,7 @@ func TestValidateApplicationDefersActionsForAcceptanceAfterPinnedHead(t *testing
 	repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
 		Return(&model.Tournament{ApplicationID: app.ID, EpochIndex: epoch.Index, Address: *epoch.TournamentAddress,
 			Snapshot: model.TournamentSnapshot{FinishedAtBlock: 9, AsOfBlock: 20}}, nil).Once()
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock()
 	view := resultTestSnapshot(epoch, true)
 	consensus.On("GetCurrentSealedEpoch", mock.Anything).Return(view.sealed, nil).Once()
 	consensus.On("CanStageTournamentResult", mock.Anything).Return(view.stage, nil).Once()

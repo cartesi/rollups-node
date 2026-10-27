@@ -22,7 +22,7 @@ func addDeliveryJoinCandidate(f *deliveryFixture, id int64, allowance uint64) *m
 	f.backend.apps = f.repo.apps
 	f.repo.On("GetEpoch", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index).Return(&epoch, nil)
 	f.repo.publishRoot(&app, &epoch, app.LastTournamentCheckBlock)
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock()
 	view := resultTestSnapshot(&epoch, false)
 	view.stage.IsFinished = false
 	consensus.On("GetCurrentSealedEpoch", mock.Anything).Return(view.sealed, nil)

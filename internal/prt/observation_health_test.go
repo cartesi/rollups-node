@@ -150,7 +150,7 @@ func TestTournamentObservationHealthKeepsHealthyApplicationsRunning(t *testing.T
 	healthy.IConsensusAddress = common.HexToAddress("0x998")
 	f.repo.apps = append(f.repo.apps, &healthy)
 	ready := resultTestSnapshot(f.epoch, false)
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock(healthy.IConsensusAddress)
 	consensus.On("GetCurrentSealedEpoch", mock.Anything).Return(ready.sealed, nil)
 	consensus.On("CanStageTournamentResult", mock.Anything).Return(ready.stage, nil)
 	consensus.On("CanAcceptStagedTournamentResult", mock.Anything).Return(ready.accept, nil)

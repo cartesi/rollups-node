@@ -24,7 +24,7 @@ func addSecondStageApplication(f *deliveryFixture) *model.Application {
 	f.repo.On("GetEpoch", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index).Return(&epoch, nil)
 	f.repo.publishRoot(&app, &epoch, app.LastTournamentCheckBlock)
 	view := resultTestSnapshot(&epoch, false)
-	adapter := &daveConsensusAdapterMock{}
+	adapter := newCompatibleDaveConsensusAdapterMock()
 	adapter.On("GetCurrentSealedEpoch", mock.Anything).Return(view.sealed, nil)
 	adapter.On("CanStageTournamentResult", mock.Anything).Return(view.stage, nil)
 	adapter.On("CanAcceptStagedTournamentResult", mock.Anything).Return(view.accept, nil)
