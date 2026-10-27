@@ -105,4 +105,5 @@ for index, input_path in ipairs(read_input_paths(opts.inputs_manifest)) do
     advance_one(machine, input_path, index - 1)
 end
 
+machine:get_root_hash()
 machine:store(opts.store)
