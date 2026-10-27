@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/go-jet/jet/v2/postgres"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -20,6 +21,68 @@ var (
 	delegateCallVoucherSelector = []byte{0x10, 0x32, 0x1e, 0x8b}
 	voucherSelector             = []byte{0x23, 0x7a, 0x81, 0x6f}
 )
+
+func (r *PostgresRepository) GetEpochOutputRange(
+	ctx context.Context, appID int64, epochIndex uint64,
+) (repository.EpochOutputRange, error) {
+	stmt := table.Output.SELECT(
+		postgres.COUNT(postgres.STAR),
+		postgres.COALESCE(postgres.MIN(table.Output.Index), postgres.Int64(0)),
+		postgres.COALESCE(postgres.MAX(table.Output.Index), postgres.Int64(0)),
+	).FROM(table.Output.INNER_JOIN(table.Input,
+		table.Output.InputEpochApplicationID.EQ(table.Input.EpochApplicationID).
+			AND(table.Output.InputIndex.EQ(table.Input.Index)),
+	)).WHERE(postgres.AND(
+		table.Output.InputEpochApplicationID.EQ(postgres.Int64(appID)),
+		table.Input.EpochIndex.EQ(uint64Expr(epochIndex)),
+		table.Input.Status.EQ(postgres.NewEnumValue(model.InputCompletionStatus_Accepted.String())),
+	))
+	query, args := stmt.Sql()
+	var result repository.EpochOutputRange
+	err := r.db.QueryRow(ctx, query, args...).Scan(&result.Count, &result.First, &result.Last)
+	return result, err
+}
+
+type outputQueryer interface {
+	Query(ctx context.Context, query string, args ...any) (pgx.Rows, error)
+}
+
+func (r *PostgresRepository) ScanOutputs(
+	ctx context.Context, appID int64, first, last uint64, fn repository.OutputScanFunc,
+) error {
+	return scanOutputs(ctx, r.db, appID, first, last, fn)
+}
+
+func scanOutputs(
+	ctx context.Context, queryer outputQueryer, appID int64, first, last uint64, fn repository.OutputScanFunc,
+) error {
+	span := last - first
+	if first > last || span >= repository.MaxOutputRangeRows {
+		return fmt.Errorf("output scan range must contain between 1 and %d indexes", repository.MaxOutputRangeRows)
+	}
+	stmt := table.Output.SELECT(postgres.CAST(table.Output.Index).AS_BIGINT(), table.Output.RawData).
+		WHERE(postgres.AND(
+			table.Output.InputEpochApplicationID.EQ(postgres.Int64(appID)),
+			table.Output.Index.BETWEEN(uint64Expr(first), uint64Expr(last)),
+		)).ORDER_BY(table.Output.Index.ASC()).LIMIT(int64(span) + 1)
+	query, args := stmt.Sql()
+	rows, err := queryer.Query(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var index uint64
+		var rawData []byte
+		if err := rows.Scan(&index, &rawData); err != nil {
+			return err
+		}
+		if err := fn(index, rawData); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
 
 func outputExecutionCondition(executed bool) postgres.BoolExpression {
 	if executed {

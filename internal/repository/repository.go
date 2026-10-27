@@ -274,7 +274,24 @@ type InputRepository interface {
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
 }
 
+const MaxOutputRangeRows uint64 = 65_536
+
+// EpochOutputRange describes one epoch's accepted outputs in one database snapshot.
+type EpochOutputRange struct {
+	Count uint64
+	First uint64
+	Last  uint64
+}
+
+// OutputScanFunc handles one output. rawData is valid only during the call;
+// fn must not keep it after returning.
+type OutputScanFunc func(index uint64, rawData []byte) error
+
 type OutputRepository interface {
+	GetEpochOutputRange(ctx context.Context, appID int64, epochIndex uint64) (EpochOutputRange, error)
+	// ScanOutputs streams both inclusive bounds in ascending index order.
+	// The range must contain between 1 and MaxOutputRangeRows indexes.
+	ScanOutputs(ctx context.Context, appID int64, first, last uint64, fn OutputScanFunc) error
 	GetOutput(ctx context.Context, nameOrAddress string, outputIndex uint64) (*Output, error)
 	UpdateOutputsExecution(ctx context.Context, nameOrAddress string, executedOutputs []*Output, blockNumber uint64) error
 	ListOutputs(ctx context.Context, nameOrAddress string, f OutputFilter, p Pagination, descending bool) ([]*Output, uint64, error)

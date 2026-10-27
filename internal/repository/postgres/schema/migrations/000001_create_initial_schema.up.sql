@@ -612,6 +612,18 @@ WHERE "execution_transaction_hash" IS NOT NULL;
 CREATE TRIGGER "output_set_updated_at" BEFORE UPDATE ON "output"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- A later data migration that must update these columns disables this trigger in its own transaction.
+CREATE FUNCTION enforce_output_immutability()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'output identity or raw data is immutable' USING ERRCODE = 'restrict_violation';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER "output_immutability_check"
+BEFORE UPDATE OF "input_epoch_application_id", "input_index", "index", "raw_data" ON "output"
+FOR EACH ROW EXECUTE FUNCTION enforce_output_immutability();
+
 -- Withdrawal rows are append-only for the lifetime of an application: they are
 -- inserted as the evmreader scans Withdrawal events and are never updated or
 -- deleted (except by ON DELETE CASCADE when the whole application is removed).
