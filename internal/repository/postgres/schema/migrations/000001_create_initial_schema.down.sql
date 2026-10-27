@@ -42,12 +42,14 @@ DROP INDEX IF EXISTS "withdrawal_block_number_idx";
 DROP TABLE IF EXISTS "withdrawal";
 
 DROP TRIGGER IF EXISTS "output_set_updated_at" ON "output";
+DROP TRIGGER IF EXISTS "output_immutability_check" ON "output";
 DROP INDEX IF EXISTS "output_input_index_idx";
 DROP INDEX IF EXISTS "output_pending_voucher_idx";
 DROP INDEX IF EXISTS "output_executed_idx";
 DROP INDEX IF EXISTS "output_raw_data_address_idx";
 DROP INDEX IF EXISTS "output_raw_data_type_idx";
 DROP TABLE IF EXISTS "output";
+DROP FUNCTION IF EXISTS "enforce_output_immutability";
 
 DROP TRIGGER IF EXISTS "input_set_updated_at" ON "input";
 DROP TRIGGER IF EXISTS "input_completion_immutability_check" ON "input";
