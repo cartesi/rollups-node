@@ -17,12 +17,11 @@ import (
 
 func TestCanonicalCollectionChecksFinalEntry(t *testing.T) {
 	root := common.HexToHash("0x1234")
-	final := root
+	final := model.FinalStateEntry(root)
 	require.NoError(t, validateCanonicalInputHashCollection(final, root))
-	wrong := common.HexToHash("0x5678")
-	err := validateCanonicalInputHashCollection(wrong, root)
+	err := validateCanonicalInputHashCollection(root, root)
 	require.ErrorContains(t, err, final.Hex())
-	require.ErrorContains(t, err, wrong.Hex())
+	require.ErrorContains(t, err, root.Hex())
 	require.ErrorContains(t, err, "deterministic")
 }
 

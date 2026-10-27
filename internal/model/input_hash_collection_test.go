@@ -19,13 +19,13 @@ func TestInputHashCollectionDimensions(t *testing.T) {
 	require.Equal(t, uint64(1)<<24, MaxAdvanceStatesPerEpoch)
 	require.Equal(t, uint64(24), Log2InputHashCollectionCapacity)
 	require.Equal(t, uint64(1)<<24, InputHashCollectionCapacity)
-	require.Equal(t, uint64(48), Log2EpochComputationHashLeafCount)
+	require.Equal(t, uint64(54), Log2EpochComputationHashLeafCount)
 	require.Equal(t, uint64(20), Log2MaxUarchCyclesPerMCycle)
-	require.Equal(t, uint64(44), Log2RootTournamentStride)
-	require.Equal(t, uint64(24), Log2MCycleComputationHashPeriod)
+	require.Equal(t, uint64(38), Log2RootTournamentStride)
+	require.Equal(t, uint64(18), Log2MCycleComputationHashPeriod)
 	require.Equal(t, uint64(24), Log2MCyclesPerStateHashEntry)
-	require.Equal(t, uint64(0), Log2StateHashesPerEntry)
-	require.Equal(t, uint64(24), Log2InputComputationHashLeafCount)
+	require.Equal(t, uint64(6), Log2StateHashesPerEntry)
+	require.Equal(t, uint64(30), Log2InputComputationHashLeafCount)
 }
 
 func TestValidateInputHashCollectionSpan(t *testing.T) {
@@ -111,7 +111,7 @@ func denseTerminalEntries(periodic [][32]byte, final [32]byte, width int) (raw, 
 
 func TestCanonicalInputHashCollectionMatchesDenseSamples(t *testing.T) {
 	final := [32]byte{0xff}
-	for _, geometry := range [][2]uint64{{24, 0}} {
+	for _, geometry := range [][2]uint64{{18, 6}} {
 		period, width := uint64(1)<<geometry[0], 1<<geometry[1]
 		sampleCounts := []uint64{0, 1, 63, 64, 65, 127, 128, 191}
 		deltas := make([]uint64, 1, 1+3*len(sampleCounts))
@@ -142,45 +142,56 @@ func TestCanonicalInputHashCollectionMatchesDenseSamples(t *testing.T) {
 
 func TestCanonicalInputHashCollectionFoldsFinalOnlyEntries(t *testing.T) {
 	final, sampled := [32]byte{0xff}, [32]byte{0x11}
-	const period = uint64(1) << 24
+	const period = uint64(1) << 18
 	for _, test := range []struct {
-		name      string
-		delta     uint64
-		raw, kept [][32]byte
+		name  string
+		delta uint64
+		raw   [][32]byte
+		kept  [][32]byte
 	}{
-		{name: "immediate fixed point", raw: [][32]byte{final}},
-		{name: "periodic sample", delta: period + 1, raw: [][32]byte{sampled, final}, kept: [][32]byte{sampled}},
-		{name: "periodic entry equals final", delta: period + 1, raw: [][32]byte{final, final}, kept: [][32]byte{final}},
+		{name: "immediate fixed point", raw: [][32]byte{final, final}},
+		{name: "full periodic bundle", delta: 64*period + 1,
+			raw: [][32]byte{sampled, final, final}, kept: [][32]byte{sampled}},
+		{name: "periodic entry equals final", delta: period + 1,
+			raw: [][32]byte{final, final}, kept: [][32]byte{final}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			kept, padding, gotFinal, err := CanonicalInputHashCollection(test.raw, test.delta)
 			require.NoError(t, err)
 			require.Equal(t, test.kept, append([][32]byte(nil), kept...))
-			require.Equal(t, (uint64(1)<<24)-uint64(len(test.kept)), padding)
+			require.Equal(t, InputHashCollectionCapacity-uint64(len(test.kept)), padding)
 			require.Equal(t, final, gotFinal)
 		})
 	}
-	for _, raw := range [][][32]byte{nil, {final, final}, {final, final, final}} {
+	_, _, _, err := CanonicalInputHashCollection([][32]byte{sampled, final}, 0)
+	require.ErrorContains(t, err, "discarded state hash entry differs")
+	_, _, _, err = CanonicalInputHashCollection([][32]byte{sampled, sampled, final}, 64*period+1)
+	require.ErrorContains(t, err, "discarded state hash entry differs")
+	for _, raw := range [][][32]byte{nil, {final}, {final, final, final}} {
 		_, _, _, err := CanonicalInputHashCollection(raw, 0)
-		require.ErrorContains(t, err, "state hash entries, expected 1")
+		require.ErrorContains(t, err, "state hash entries, expected 2")
 	}
 }
 
 func TestCanonicalInputHashCollectionWindowCounts(t *testing.T) {
-	const totalSamples = uint64(1) << 24
-	for _, removed := range []uint64{128, 127, 65, 64, 63, 1} {
-		t.Run(fmt.Sprintf("samples=%d", totalSamples-removed), func(t *testing.T) {
-			delta := ((totalSamples - removed) << 24) + 1
+	const totalSamples = uint64(1) << 30
+	for _, test := range []struct {
+		removed, padding, extra uint64
+	}{
+		{128, 2, 0}, {127, 1, 0}, {65, 1, 0}, {64, 1, 1}, {63, 0, 1}, {1, 0, 1},
+	} {
+		t.Run(fmt.Sprintf("samples=%d", totalSamples-test.removed), func(t *testing.T) {
+			delta := ((totalSamples - test.removed) << 18) + 1
 			raw, kept, padding, err := canonicalInputHashCollectionCounts(delta)
 			require.NoError(t, err)
-			require.Equal(t, totalSamples-removed+1, raw)
-			require.Equal(t, totalSamples-removed, kept)
-			require.Equal(t, removed, padding)
+			require.Equal(t, InputHashCollectionCapacity+test.extra, raw)
+			require.Equal(t, InputHashCollectionCapacity-test.padding, kept)
+			require.Equal(t, test.padding, padding)
 		})
 	}
 	raw, kept, padding, err := canonicalInputHashCollectionCounts(MaxExecutionCycleSpan)
 	require.NoError(t, err)
-	require.Equal(t, uint64(1)<<24, raw)
-	require.Equal(t, (uint64(1)<<24)-1, kept)
-	require.Equal(t, uint64(1), padding)
+	require.Equal(t, InputHashCollectionCapacity+1, raw)
+	require.Equal(t, InputHashCollectionCapacity, kept)
+	require.Zero(t, padding)
 }

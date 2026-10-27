@@ -20,6 +20,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -150,7 +151,14 @@ func expectedPagedCommitment(t *testing.T, r *stateHashPageRepository) (common.H
 	const entryHeight = uint32(48)
 	root := merkletest.Root(runs, entryHeight)
 	_, upper := merkletest.LastProof(runs, entryHeight)
-	return root, &merkle.Proof{Pos: new(big.Int).SetUint64((uint64(1) << 48) - 1), Node: r.final, Siblings: upper}
+	siblings := make([]common.Hash, 0, 54)
+	hash := r.final
+	for range 6 {
+		siblings = append(siblings, hash)
+		hash = crypto.Keccak256Hash(hash[:], hash[:])
+	}
+	siblings = append(siblings, upper...)
+	return root, &merkle.Proof{Pos: new(big.Int).SetUint64((uint64(1) << 54) - 1), Node: r.final, Siblings: siblings}
 }
 
 func TestBuildCommitmentPagesMatchFullBuilder(t *testing.T) {

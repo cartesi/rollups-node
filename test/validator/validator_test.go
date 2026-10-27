@@ -594,7 +594,13 @@ func (s *ValidatorRepositoryIntegrationSuite) TestPagedDaveCommitments() {
 			})
 			expected[index] = merkletest.Root(runs, 48)
 			_, upper := merkletest.LastProof(runs, 48)
+			hash := final
+			for range 6 {
+				expectedProofs[index] = append(expectedProofs[index], hash)
+				hash = crypto.Keccak256Hash(hash[:], hash[:])
+			}
 			expectedProofs[index] = append(expectedProofs[index], upper...)
+
 		}
 		_, err = s.validator.Tick(s.ctx)
 		s.Require().NoError(err)
