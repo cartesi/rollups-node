@@ -15,6 +15,8 @@ import (
 )
 
 var (
+	// ErrLockTimeout means a database lock wait exceeded its transaction-local bound.
+	ErrLockTimeout        = errors.New("database lock wait timed out")
 	ErrNotFound           = errors.New("not found")
 	ErrNoUpdate           = errors.New("update did not take effect")
 	ErrApplicationEnabled = errors.New("application must be disabled before removal")
