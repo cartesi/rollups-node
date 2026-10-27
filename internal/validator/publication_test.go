@@ -55,8 +55,7 @@ func TestClaimPublicationOutcome(t *testing.T) {
 				if i > 0 && !wantContinued {
 					break
 				}
-				repo.On("ListOutputs", mock.Anything, appAddress, repository.OutputFilter{EpochIndex: &epoch.Index},
-					repository.Pagination{}, false).Return([]*Output{}, uint64(0), nil).Once()
+				expectEpochOutputs(repo, app, epoch, []*Output{})
 				repo.On("GetLastInput", mock.Anything, appAddress, epoch.Index).Return((*Input)(nil), nil).Once()
 				storeErr := test.storeErr
 				if i > 0 {

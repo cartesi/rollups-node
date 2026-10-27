@@ -782,7 +782,7 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofs() {
 			OutputHashesSiblings:    proof,
 		}
 
-		err = s.Repo.StoreClaimAndProofs(s.Ctx, seed.Epoch, []*Output{out})
+		err = s.Repo.StoreClaimAndProofs(s.Ctx, seed.Epoch, WriteProofs(out))
 		s.Require().NoError(err)
 
 		gotEpoch, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
@@ -1193,7 +1193,7 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofsRollback() {
 		}
 
 		err = s.Repo.StoreClaimAndProofs(
-			s.Ctx, seed.Epoch, []*Output{nonExistentOutput})
+			s.Ctx, seed.Epoch, WriteProofs(nonExistentOutput))
 		s.Require().Error(err)
 
 		// Verify the epoch status was rolled back — still InputsProcessed

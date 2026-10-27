@@ -747,68 +747,24 @@ func updateEpochClaim(
 	return nil
 }
 
-func updateOutputs(
-	ctx context.Context,
-	tx pgx.Tx,
-	outputs []*model.Output,
+func (r *PostgresRepository) StoreClaimAndProofs(
+	ctx context.Context, epoch *model.Epoch, write repository.ClaimProofWriteFunc,
 ) error {
-	if len(outputs) == 0 {
-		return nil
-	}
-
-	batch := &pgx.Batch{}
-	for _, output := range outputs {
-		updStmt := table.Output.
-			UPDATE(
-				table.Output.Hash,
-				table.Output.OutputHashesSiblings,
-			).
-			SET(
-				hashToBytes(output.Hash),
-				encodeSiblings(output.OutputHashesSiblings),
-			).
-			WHERE(
-				table.Output.InputEpochApplicationID.EQ(postgres.Int64(output.InputEpochApplicationID)).
-					AND(table.Output.Index.EQ(uint64Expr(output.Index))),
-			)
-		sqlStr, args := updStmt.Sql()
-		batch.Queue(sqlStr, args...)
-	}
-
-	br := tx.SendBatch(ctx, batch)
-
-	for _, output := range outputs {
-		cmd, err := br.Exec()
-		if err != nil {
-			br.Close()
-			return fmt.Errorf("failed to insert proof for output '%d': %w", output.Index, err)
-		}
-		if cmd.RowsAffected() == 0 {
-			br.Close()
-			return fmt.Errorf("failed to insert proof for output '%d'. No rows affected", output.Index)
-		}
-	}
-	return br.Close()
-}
-
-func (r *PostgresRepository) StoreClaimAndProofs(ctx context.Context, epoch *model.Epoch, outputs []*model.Output) error {
-
-	tx, err := r.db.Begin(ctx)
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
 		return fmt.Errorf("SetEpochClaimAndInsertProofsTransaction failed: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	err = updateEpochClaim(ctx, tx, epoch)
-	if err != nil {
+	if err := updateEpochClaim(ctx, tx, epoch); err != nil {
 		return err
 	}
-
-	err = updateOutputs(ctx, tx, outputs)
-	if err != nil {
-		return err
+	if write != nil {
+		writer := &claimProofWriter{tx: tx, appID: epoch.ApplicationID}
+		if err := write(ctx, writer); err != nil {
+			return err
+		}
 	}
-
 	return tx.Commit(ctx)
 }
 

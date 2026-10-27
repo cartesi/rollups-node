@@ -7,17 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"slices"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
 var (
-	zero          = big.NewInt(0)
-	one           = big.NewInt(1)
-	overflowValue = new(big.Int).Lsh(one, 256)
-	overflowMask  = new(big.Int).Sub(overflowValue, one)
+	zero = big.NewInt(0)
+	one  = big.NewInt(1)
 )
 
 var (
@@ -160,38 +157,6 @@ func (tree *Tree) GetRootHash() common.Hash {
 	return tree.RootHash
 }
 
-func (tree *Tree) FindChildByHash(hash common.Hash) (*Tree, error) {
-	if tree.RootHash == hash {
-		return tree, nil
-	}
-	if inner := tree.Subtrees; inner != nil {
-		lhs, rhs, err := inner.Children()
-		if err != nil {
-			return nil, err
-		}
-
-		child, err := lhs.FindChildByHash(hash)
-		if err != nil {
-			return nil, err
-		}
-		if child != nil {
-			return child, nil
-		}
-
-		// For iterated nodes lhs == rhs, so the right-hand search is redundant.
-		if lhs != rhs {
-			child, err = rhs.FindChildByHash(hash)
-			if err != nil {
-				return nil, err
-			}
-			if child != nil {
-				return child, nil
-			}
-		}
-	}
-	return nil, nil // not found
-}
-
 func (tree *Tree) Join(other *Tree) *Tree {
 	return &Tree{
 		RootHash: crypto.Keccak256Hash(tree.RootHash[:], other.RootHash[:]),
@@ -290,192 +255,3 @@ func (tree *Tree) ProveLeafRec(index *big.Int) (*Proof, error) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-// Node: common-rs/merkle/src/tree_builder.rs
-type Node struct {
-	Tree             *Tree
-	AccumulatedCount *big.Int
-}
-
-// Builder retains every append, so its memory grows with the number of appends.
-// Use StreamingBuilder for epoch-sized trees.
-type Builder struct {
-	Trees []Node
-}
-
-func (b *Builder) Height() (uint32, bool) {
-	n := len(b.Trees)
-	if n == 0 {
-		return 0, false
-	}
-	return b.Trees[n-1].Tree.Height, true
-}
-
-func (b *Builder) Count() (*big.Int, bool) {
-	n := len(b.Trees)
-	if n == 0 {
-		return nil, false
-	}
-	return b.Trees[n-1].AccumulatedCount, true
-}
-
-func (b *Builder) CanBuild() bool {
-	n := len(b.Trees)
-	if n == 0 {
-		return false
-	}
-	return isPow2(b.Trees[n-1].AccumulatedCount)
-}
-
-func (b *Builder) Append(leaf *Tree) error {
-	return b.AppendRepeated(leaf, big.NewInt(1))
-}
-
-func (b *Builder) AppendRepeatedUint64(leaf *Tree, reps uint64) error {
-	return b.AppendRepeated(leaf, new(big.Int).SetUint64(reps))
-}
-
-func (b *Builder) AppendRepeated(leaf *Tree, reps *big.Int) error {
-	if leaf == nil || reps == nil {
-		return fmt.Errorf("invalid parameter: %w", ErrBadInput)
-	}
-	if reps.Cmp(zero) <= 0 {
-		return fmt.Errorf("invalid repetitions: %v: %w", reps, ErrBadInput)
-	}
-
-	accumulatedCount, err := b.calculateAccumulatedCount(reps)
-	if err != nil {
-		return err
-	}
-
-	if height, ok := b.Height(); ok {
-		if height != leaf.Height {
-			return fmt.Errorf("mismatched tree sizes, height: %v and leaf height: %v: %w", height, leaf.Height, ErrBadInput)
-		}
-	}
-	b.Trees = append(b.Trees, Node{
-		Tree:             leaf,
-		AccumulatedCount: accumulatedCount,
-	})
-	return nil
-}
-
-func (b *Builder) Build() (*Tree, error) {
-	if count, ok := b.Count(); ok {
-		if !isCountPow2(count) {
-			return nil, fmt.Errorf("builder has %v leafs, which is not a power of two: %w", count, ErrBadInput)
-		}
-		log2Size := countTrailingZeroes(count)
-		return buildMerkle(b.Trees, log2Size, big.NewInt(0)), nil
-	} else {
-		return nil, fmt.Errorf("empty merkle builder: %w", ErrBadInput)
-	}
-}
-
-func (b *Builder) calculateAccumulatedCount(reps *big.Int) (*big.Int, error) {
-	n := len(b.Trees)
-	if n != 0 {
-		accumulatedCount := new(big.Int).And(
-			new(big.Int).Add(reps, b.Trees[n-1].AccumulatedCount),
-			overflowMask,
-		)
-		if reps.Cmp(accumulatedCount) >= 0 {
-			return nil, fmt.Errorf("merkle tree overflow: %w", ErrBadInput)
-		}
-		return accumulatedCount, nil
-	} else {
-		return reps, nil
-	}
-}
-
-func buildMerkle(trees []Node, log2Size uint, stride *big.Int) *Tree {
-	size := new(big.Int).And(
-		new(big.Int).Lsh(one, log2Size),
-		overflowMask,
-	)
-
-	firstTime := new(big.Int).Add(new(big.Int).Mul(stride, size), one)
-	lastTime := new(big.Int).Mul(new(big.Int).Add(stride, one), size)
-
-	firstCell := findCellContaining(trees, firstTime)
-	lastCell := findCellContaining(trees, lastTime)
-
-	if firstCell == lastCell {
-		tree := trees[firstCell].Tree
-		iterated := tree.Iterated(uint64(log2Size))
-		return iterated
-	}
-
-	left := buildMerkle(trees[firstCell:(lastCell+1)],
-		log2Size-1,
-		new(big.Int).Lsh(stride, 1),
-	)
-
-	right := buildMerkle(trees[firstCell:(lastCell+1)],
-		log2Size-1,
-		new(big.Int).Add(new(big.Int).Lsh(stride, 1), one),
-	)
-
-	return left.Join(right)
-}
-
-func findCellContaining(trees []Node, elem *big.Int) uint {
-	left := uint(0)
-	right := uint(len(trees) - 1)
-
-	for left < right {
-		needle := left + (right-left)/2
-
-		x := new(big.Int).And(
-			new(big.Int).Sub(trees[needle].AccumulatedCount, one),
-			overflowMask,
-		)
-		y := new(big.Int).And(
-			new(big.Int).Sub(elem, one),
-			overflowMask,
-		)
-		if x.Cmp(y) < 0 {
-			left = needle + 1
-		} else {
-			right = needle
-		}
-	}
-	return left
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-func isPow2(x *big.Int) bool {
-	if x.Sign() <= 0 {
-		return false
-	}
-
-	// x & (x-1) == 0
-	return new(big.Int).And(
-		x,
-		new(big.Int).Sub(
-			x,
-			one,
-		),
-	).Cmp(zero) == 0
-}
-
-func isCountPow2(x *big.Int) bool {
-	return x.Cmp(big.NewInt(0)) == 0 || isPow2(x)
-}
-
-func countTrailingZeroes(x *big.Int) uint {
-	count := uint(0)
-
-	// each byte from least to most significant
-brk:
-	for _, b := range slices.Backward(x.Bytes()) {
-		for i := range 8 {
-			if b>>i&1 != 0 {
-				break brk
-			}
-			count++
-		}
-	}
-	return count
-}

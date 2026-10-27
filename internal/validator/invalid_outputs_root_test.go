@@ -153,7 +153,6 @@ func expectRootValidationReads(
 	epochs := []*model.Epoch{epoch, {ApplicationID: app.ID, Index: 1, VirtualIndex: 1}}
 	repo.On("ListEpochs", mock.Anything, appAddress, mock.Anything, repository.Pagination{}, false).
 		Return(epochs, uint64(len(epochs)), nil).Once()
-	repo.On("ListOutputs", mock.Anything, appAddress, repository.OutputFilter{EpochIndex: &epoch.Index},
-		repository.Pagination{}, false).Return(outputs, uint64(len(outputs)), nil).Once()
+	expectEpochOutputs(repo, app, epoch, outputs)
 	repo.On("GetLastInput", mock.Anything, appAddress, epoch.Index).Return(input, nil).Once()
 }

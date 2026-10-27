@@ -79,7 +79,7 @@ func TestStoreClaimAndProofsDoesNotLockApplicationAcrossProofBatch(t *testing.T)
 				SELECT pg_advisory_lock(3890004)`)
 			require.NoError(t, err)
 			started = true
-			go func() { result <- repo.StoreClaimAndProofs(ctx, epoch, []*model.Output{output}) }()
+			go func() { result <- repo.StoreClaimAndProofs(ctx, epoch, repotest.WriteProofs(output)) }()
 			require.Eventually(t, func() bool {
 				var waiting bool
 				err := control.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_locks

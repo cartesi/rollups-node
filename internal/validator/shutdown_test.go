@@ -18,6 +18,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/service"
 )
 
@@ -127,12 +128,12 @@ func validatorShutdownFixture(
 	epoch := &model.Epoch{ApplicationID: app.ID, Status: model.EpochStatus_InputsProcessed,
 		MachineHash: new(common.HexToHash("0x123")), TxBufferDataBlock: &s.pristineRootHash}
 	epochs.Return([]*model.Epoch{epoch}, uint64(1), nil)
-	outputs := repo.On("ListOutputs", ctx, app.IApplicationAddress.Hex(), mock.Anything, mock.Anything, false).Once()
+	outputs := repo.On("GetEpochOutputRange", ctx, app.ID, epoch.Index).Once()
 	if operation == "outputs" {
-		outputs.Run(hook).Return([]*model.Output(nil), uint64(0), cause)
+		outputs.Run(hook).Return(repository.EpochOutputRange{}, cause)
 		return s, logs
 	}
-	outputs.Return([]*model.Output(nil), uint64(0), nil)
+	outputs.Return(repository.EpochOutputRange{}, nil)
 	repo.On("GetLastInput", ctx, app.IApplicationAddress.Hex(), epoch.Index).
 		Return(&model.Input{MachineHash: epoch.MachineHash, TxBufferDataBlock: epoch.TxBufferDataBlock}, nil).Once()
 	repo.On("StoreClaimAndProofs", ctx, epoch, mock.Anything).Run(hook).Return(cause).Once()
