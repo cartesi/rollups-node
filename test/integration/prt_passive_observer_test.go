@@ -18,6 +18,7 @@ import (
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
+	"github.com/cartesi/rollups-node/pkg/contracts/imultileveltournamentfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	jsonrpcclient "github.com/cartesi/rollups-node/pkg/jsonrpc/client"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -29,17 +30,18 @@ import (
 )
 
 const (
-	passiveObserverTimeout = 10 * time.Minute
-	passiveObserverPoll    = 250 * time.Millisecond
-	passiveActorOneIndex   = 12
-	passiveActorTwoIndex   = 13
-	passiveLeafJoinDelay   = 64
+	passiveObserverTimeout       = 10 * time.Minute
+	passiveObserverPoll          = 250 * time.Millisecond
+	passiveActorOneIndex         = 12
+	passiveActorTwoIndex         = 13
+	passiveLeafJoinDelay         = 64
+	passiveLeafKind        uint8 = 0 // ITournament.TournamentKind.LEAF
 )
 
 // TestPrtPassiveDisputeObserver uses external actors, not node dispute logic.
 // One actor submits exactly the node's empty-epoch commitment; the other changes
 // only its final leaf. Both use valid membership proofs through the official
-// three levels. Actor A wins by timeout; no VM step witness is fabricated.
+// canonical levels. Actor A wins by timeout; no VM step witness is fabricated.
 // The node must expose all phases, both when its local commitment wins and when
 // it loses. Only the matching winner is staged with a real machine-state proof.
 func TestPrtPassiveDisputeObserver(t *testing.T) {
@@ -76,16 +78,18 @@ func runPassiveDisputeObserver(t *testing.T, localWins bool) {
 	logs.SetExpectedLogs(t, prtBlockOutOfRangeAllowlist)
 	t.Cleanup(func() { logs.CheckLogs(t) })
 	fixture := newPassiveDisputeFixture(ctx, t, client, localWins)
+	var protectionLogs []ExpectedLog
 	if !localWins {
-		reason := regexp.QuoteMeta(fmt.Sprintf("Epoch 0 has inconsistent commitment between off-chain (%s) and on-chain (%s)",
-			*fixture.epoch.Commitment, fixture.layers[0].trees[0].root()))
+		cause := fmt.Sprintf("Epoch 0 has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
+			*fixture.epoch.MachineHash, fixture.layers[0].trees[0].final[0])
+		reason := regexp.QuoteMeta(cause)
 		logs.SetExpectedLogs(t,
 			prtBlockOutOfRangeAllowlist,
 			ExpectedLog{
 				Pattern: regexp.MustCompile("marking application as diverged.*application=" + regexp.QuoteMeta(fixture.appName) +
 					".*" + reason),
 				Level: LevelError, Required: true,
-				Reason: "the external timeout winner differs from this application's locally computed commitment",
+				Reason: "the external timeout winner has a different final machine state",
 			},
 			ExpectedLog{
 				Pattern: regexp.MustCompile("Tick.*service=prt.*observing PRT application " +
@@ -94,8 +98,18 @@ func runPassiveDisputeObserver(t *testing.T, localWins bool) {
 				Reason: "the PRT service reports this application's expected divergence transition to the service loop",
 			},
 		)
+		root := fixture.layers[0]
+		closeBlock := root.descriptor.StartInstant + root.descriptor.Allowance
+		require.GreaterOrEqual(t, closeBlock, root.descriptor.StartInstant)
+		for _, source := range []string{prtStoredClockSource, prtPinnedClockSource} {
+			protectionLogs = append(protectionLogs, prtProtectionStopLog(fixture.appName, fixture.appAddress,
+				0, root.address, closeBlock, cause, source))
+		}
 	}
 	fixture.run()
+	if !localWins {
+		requirePrtProtectionLogs(ctx, t, &logs, protectionLogs...)
+	}
 }
 
 type passiveDisputeFixture struct {
@@ -109,6 +123,7 @@ type passiveDisputeFixture struct {
 	localWins  bool
 	epoch      *Epoch
 	consensus  *idaveconsensus.IDaveConsensus
+	levelCount uint64
 	actors     [2]*bind.TransactOpts
 	layers     []*passiveDisputeLayer
 	receipts   []*types.Receipt
@@ -161,6 +176,13 @@ func newPassiveDisputeFixture(ctx context.Context, t *testing.T, client *ethclie
 	f.appAddress = app.IApplicationAddress
 	f.consensus, err = idaveconsensus.NewIDaveConsensus(app.IConsensusAddress, client)
 	f.r.NoError(err)
+	factoryAddress, err := f.consensus.GetTournamentFactory(&bind.CallOpts{Context: ctx})
+	f.r.NoError(err)
+	tournamentFactory, err := imultileveltournamentfactory.NewIMultiLevelTournamentFactory(factoryAddress, client)
+	f.r.NoError(err)
+	f.levelCount, err = tournamentFactory.TournamentLevelCount(&bind.CallOpts{Context: ctx})
+	f.r.NoError(err)
+	f.r.Equal(TournamentLevelCount, f.levelCount)
 	f.newLayer(*f.epoch.TournamentAddress)
 	localActor := 0
 	if !localWins {
@@ -172,7 +194,7 @@ func newPassiveDisputeFixture(ctx context.Context, t *testing.T, client *ethclie
 }
 
 func (f *passiveDisputeFixture) run() {
-	for level := 0; level < 3; level++ {
+	for level := uint64(0); level < f.levelCount; level++ {
 		layer := f.layers[level]
 		f.joinPair(layer)
 		f.assertCurrent(layer, MatchPhaseBisecting)
@@ -219,13 +241,13 @@ func (f *passiveDisputeFixture) newLayer(address common.Address) {
 	f.r.NoError(err)
 	descriptor, err := contract.TournamentDescriptor(&bind.CallOpts{Context: f.ctx})
 	f.r.NoError(err)
-	heights := []uint64{48, 17, 27}
-	strides := []uint64{44, 27, 0}
-	level := len(f.layers)
-	f.r.Less(level, len(heights))
-	f.r.Equal(uint64(level), descriptor.Level)
-	f.r.Equal(heights[level], descriptor.Height)
-	f.r.Equal(strides[level], descriptor.Log2Stride)
+	level := uint64(len(f.layers))
+	f.r.Less(level, f.levelCount)
+	stride, height, err := TournamentLevelGeometry(level)
+	f.r.NoError(err)
+	f.r.Equal(level, descriptor.Level)
+	f.r.Equal(height, descriptor.Height)
+	f.r.Equal(stride, descriptor.Log2Stride)
 	f.r.Greater(descriptor.Allowance, descriptor.Height+passiveLeafJoinDelay,
 		"official allowance must leave time for the complete fixture")
 	state := *f.epoch.MachineHash

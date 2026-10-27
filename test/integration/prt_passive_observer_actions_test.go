@@ -16,7 +16,7 @@ import (
 
 func (f *passiveDisputeFixture) joinPair(layer *passiveDisputeLayer) {
 	for side, tree := range layer.trees {
-		if side == 1 && layer.descriptor.Level == 2 {
+		if side == 1 && layer.descriptor.Kind == passiveLeafKind {
 			// A late join receives less allowance. Preserve this deliberate
 			// gap through the leaf race, so only B expires at its deadline.
 			f.r.NoError(anvilMine(f.ctx, passiveLeafJoinDelay))
@@ -63,7 +63,7 @@ func (f *passiveDisputeFixture) seal(layer *passiveDisputeLayer) common.Address 
 	f.r.NoError(err)
 	agree, proof, err := tree.proof(tree.leafCount() - 2)
 	f.r.NoError(err)
-	if layer.descriptor.Level == 2 {
+	if layer.descriptor.Kind == passiveLeafKind {
 		tx, err := layer.contract.SealLeafMatch(f.actors[responder], layer.matchID, left, right, agree, proof)
 		f.record(tx, err)
 		return common.Address{}
@@ -94,7 +94,7 @@ func (f *passiveDisputeFixture) winLeafByTimeout() {
 	f.r.True(one.ClockRunning)
 	f.r.True(two.ClockRunning)
 	f.r.Greater(one.ClockDeadline, two.ClockDeadline+uint64(len(f.layers)),
-		"the winner must retain time to propagate through both parent tournaments")
+		"the winner must retain time to propagate through its parent tournaments")
 	f.mineTo(two.ClockDeadline)
 	timeout, err := layer.contract.ClassifyMatchTimeout(&bind.CallOpts{Context: f.ctx}, layer.matchID)
 	f.r.NoError(err)

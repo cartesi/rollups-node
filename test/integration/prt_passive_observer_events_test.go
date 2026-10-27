@@ -38,7 +38,13 @@ func (f *passiveDisputeFixture) assertAllEvents() {
 				TxHash: event.TxHash.Hex(), LogIndex: hexutil.EncodeUint64(event.LogIndex)}, &single))
 			f.r.Equal(event, single.Data)
 		}
+		standing := f.listStandingChanges(layer)
+		standingByLog := make(map[string]*StandingChanged, len(standing))
+		for _, event := range standing {
+			standingByLog[passiveEventIdentity(event.TxHash, event.LogIndex)] = event
+		}
 		match := f.observedMatch(layer)
+		f.assertStoredFacts(layer, match, advances, standing)
 		for _, receipt := range f.receipts {
 			for _, raw := range receipt.Logs {
 				if raw.Address != layer.address {
@@ -58,6 +64,7 @@ func (f *passiveDisputeFixture) assertAllEvents() {
 					f.r.Equal(common.Hash(event.One), match.CommitmentOne)
 					f.r.Equal(common.Hash(event.Two), match.CommitmentTwo)
 					f.r.Equal(common.Hash(event.LeftOfTwo), match.LeftOfTwo)
+					f.r.Equal(event.ResponderDeadline, match.ResponderDeadline)
 					f.r.Equal(event.EliminableAt, match.EliminableAt)
 					f.assertLogIdentity(raw, match.BlockNumber, match.TxHash, match.LogIndex)
 				case "MatchAdvanced":
@@ -70,6 +77,8 @@ func (f *passiveDisputeFixture) assertAllEvents() {
 					f.r.Equal(common.Hash(event.OtherParent), row.OtherParent)
 					f.r.Equal(common.Hash(event.LeftNode), row.LeftNode)
 					f.r.Zero(event.SegmentStartPosition.Cmp(row.SegmentStartPosition.ToBig()))
+					f.r.Equal(event.CurrentHeight, row.CurrentHeight)
+					f.r.Equal(event.ResponderDeadline, row.ResponderDeadline)
 					f.r.Equal(event.EliminableAt, row.EliminableAt)
 					f.assertLogIdentity(raw, row.BlockNumber, row.TxHash, row.LogIndex)
 					delete(advanceByLog, key)
@@ -77,6 +86,12 @@ func (f *passiveDisputeFixture) assertAllEvents() {
 					event, err := layer.contract.ParseLeafMatchSealed(*raw)
 					f.r.NoError(err)
 					f.r.NotNil(match.LeafSeal)
+					f.r.Equal(common.Hash(event.AgreeState), match.LeafSeal.AgreeState)
+					f.r.Zero(event.DivergencePosition.Cmp(match.LeafSeal.DivergencePosition.ToBig()))
+					f.r.Equal(common.Hash(event.FinalStateOne), match.LeafSeal.FinalStateOne)
+					f.r.Equal(common.Hash(event.FinalStateTwo), match.LeafSeal.FinalStateTwo)
+					f.r.Equal(event.DeadlineOne, match.LeafSeal.DeadlineOne)
+					f.r.Equal(event.DeadlineTwo, match.LeafSeal.DeadlineTwo)
 					f.r.Equal(event.EliminableAt, match.LeafSeal.EliminableAt)
 					f.assertLogIdentity(raw, match.LeafSeal.BlockNumber, match.LeafSeal.TxHash, match.LeafSeal.LogIndex)
 				case "MatchDeleted":
@@ -90,6 +105,10 @@ func (f *passiveDisputeFixture) assertAllEvents() {
 					f.assertLogIdentity(raw, match.DeletionBlockNumber, *match.DeletionTxHash, *match.DeletionLogIndex)
 				case "NewInnerTournament":
 					f.assertChildCreationEvent(layer, raw)
+				case "StandingChanged":
+					key := passiveEventIdentity(raw.TxHash, uint64(raw.Index))
+					f.assertStandingChangedEvent(layer, raw, standingByLog[key])
+					delete(standingByLog, key)
 				case passiveRefundEvent, "BondRecovered":
 					key := passiveEventIdentity(raw.TxHash, uint64(raw.Index))
 					f.assertBondEvent(layer, definition.Name, raw, bondByLog[key])
@@ -101,11 +120,13 @@ func (f *passiveDisputeFixture) assertAllEvents() {
 		}
 		f.r.Empty(advanceByLog, "every API advance must come from a receipt log")
 		f.r.Empty(bondByLog, "every API bond event must come from a receipt log")
+		f.r.Empty(standingByLog, "every API standing change must come from a receipt log")
 	}
 	f.r.Equal(map[string]int{
-		"CommitmentJoined": 6, "MatchCreated": 3, "MatchAdvanced": 89, "LeafMatchSealed": 1,
-		"MatchDeleted": 3, "NewInnerTournament": 2, passiveRefundEvent: 95, "BondRecovered": 1,
-	}, seen, "the live fixture must exercise all eight public tournament event types")
+		"CommitmentJoined": 4, "MatchCreated": 2, "MatchAdvanced": 90, "LeafMatchSealed": 1,
+		"MatchDeleted": 2, "NewInnerTournament": 1, passiveRefundEvent: 94, "BondRecovered": 1,
+		"StandingChanged": 6,
+	}, seen, "the live fixture must exercise all nine public tournament event types")
 }
 
 func (f *passiveDisputeFixture) assertLogIdentity(raw *types.Log, block uint64, hash common.Hash, index uint64) {
@@ -139,6 +160,18 @@ func (f *passiveDisputeFixture) assertChildCreationEvent(layer *passiveDisputeLa
 	f.r.Equal(&layer.address, child.ParentTournamentAddress)
 	f.r.NotNil(child.ParentMatchIDHash)
 	f.r.Equal(common.Hash(event.MatchIdHash), *child.ParentMatchIDHash)
+	f.r.NotNil(child.ContestedFinalStateOne)
+	f.r.NotNil(child.ContestedFinalStateTwo)
+	f.r.Equal(common.Hash(event.ContestedFinalStateOne), *child.ContestedFinalStateOne)
+	f.r.Equal(common.Hash(event.ContestedFinalStateTwo), *child.ContestedFinalStateTwo)
+	f.r.Zero(event.BondValue.Cmp(child.BondValue.ToBig()))
+	f.r.Equal(event.Descriptor.InitialHash, [32]byte(child.InitialHash))
+	f.r.Zero(event.Descriptor.BaseCycle.Cmp(child.BaseCycle.ToBig()))
+	f.r.Equal(event.Descriptor.Log2Stride, child.Log2Step)
+	f.r.Equal(event.Descriptor.Height, child.Height)
+	f.r.Equal(event.Descriptor.Level, child.Level)
+	f.r.Equal(event.Descriptor.StartInstant, child.StartInstant)
+	f.r.Equal(event.Descriptor.Allowance, child.Allowance)
 	f.assertLogIdentity(raw, child.CreationEvent.BlockNumber, child.CreationEvent.TxHash, child.CreationEvent.LogIndex)
 }
 

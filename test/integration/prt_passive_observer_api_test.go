@@ -54,6 +54,10 @@ func (f *passiveDisputeFixture) assertCurrent(layer *passiveDisputeLayer, expect
 	f.r.Equal(layer.descriptor.Height, tournament.Height)
 	f.r.Equal(layer.descriptor.Log2Stride, tournament.Log2Step)
 	f.r.Equal(layer.descriptor.StartInstant, tournament.StartInstant)
+	f.r.Equal(layer.descriptor.Level, tournament.Level)
+	bond, err := layer.contract.BondValue(opts)
+	f.r.NoError(err)
+	f.r.Zero(bond.Cmp(tournament.BondValue.ToBig()))
 	f.r.Equal(layer.descriptor.Allowance, tournament.Allowance)
 	f.r.Equal(common.Hash(layer.descriptor.InitialHash), tournament.InitialHash)
 	f.r.Zero(layer.descriptor.BaseCycle.Cmp(tournament.BaseCycle.ToBig()))
@@ -63,6 +67,10 @@ func (f *passiveDisputeFixture) assertCurrent(layer *passiveDisputeLayer, expect
 		f.r.NotNil(tournament.Snapshot.InnerResult)
 	} else {
 		f.r.Nil(tournament.CreationEvent)
+		f.r.Nil(tournament.ContestedFinalStateOne)
+		f.r.Nil(tournament.ContestedFinalStateTwo)
+		f.r.Zero(tournament.Level)
+		f.r.Equal(f.epoch.LastBlock, tournament.StartInstant)
 		f.r.Nil(tournament.Snapshot.InnerResult)
 	}
 	match := f.observedMatch(layer)
@@ -118,7 +126,7 @@ func (f *passiveDisputeFixture) assertCurrent(layer *passiveDisputeLayer, expect
 		f.r.Greater(sealed.DivergenceCycle.ToBig().BitLen(), 64)
 		f.r.Equal(common.Hash(view.Value.FinalStateOne), sealed.FinalStateOne)
 		f.r.Equal(common.Hash(view.Value.FinalStateTwo), sealed.FinalStateTwo)
-		if layer.descriptor.Level == 2 {
+		if layer.descriptor.Kind == passiveLeafKind {
 			f.r.NotNil(match.LeafSeal)
 		} else {
 			f.r.Nil(match.LeafSeal)
@@ -129,7 +137,7 @@ func (f *passiveDisputeFixture) assertCurrent(layer *passiveDisputeLayer, expect
 		f.r.NotNil(match.DeletionTxHash)
 		f.r.NotNil(match.DeletionLogIndex)
 		f.r.Equal(WinnerCommitment_ONE, match.Winner)
-		if layer.descriptor.Level == 2 {
+		if layer.descriptor.Kind == passiveLeafKind {
 			f.r.Equal(MatchDeletionReason_TIMEOUT, match.DeletionReason)
 			f.r.NotNil(match.LeafSeal, "deletion must preserve the immutable leaf seal")
 		} else {
@@ -261,7 +269,7 @@ func (f *passiveDisputeFixture) assertLocalDivergence() {
 	}), "mark a losing local commitment as diverged after publishing the winner")
 	f.r.True(response.Data.Enabled, "passive observation must continue while the application is diverged")
 	f.r.NotNil(response.Data.Reason)
-	f.r.Contains(*response.Data.Reason, "inconsistent commitment")
+	f.r.Contains(*response.Data.Reason, "inconsistent machine hash")
 	epoch, err := readEpoch(f.ctx, f.appName, 0)
 	f.r.NoError(err)
 	f.r.Equal(EpochStatus_ClaimComputed, epoch.Status)
