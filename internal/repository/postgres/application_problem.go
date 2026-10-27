@@ -54,6 +54,10 @@ func (r *PostgresRepository) GetEpochCompletionState(
 		return nil, err
 	}
 	defer rollbackDeliveryTx(tx)
+	return readEpochCompletion(ctx, tx, nameOrAddress, index)
+}
+
+func readEpochCompletion(ctx context.Context, tx pgx.Tx, nameOrAddress string, index uint64) (*repository.EpochCompletionState, error) {
 	app, problem, err := getApplication(ctx, tx, nameOrAddress)
 	if err != nil || app == nil {
 		return nil, err

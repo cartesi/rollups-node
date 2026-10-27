@@ -155,7 +155,9 @@ type ApplicationRepository interface {
 	GetProcessedInputCount(ctx context.Context, nameOrAddress string) (uint64, error)
 	UpdateApplication(ctx context.Context, app *Application) error
 	UpdateApplicationEnabled(ctx context.Context, appID int64, enabled bool) error
-	EnableApplicationAndClearFailed(ctx context.Context, appID int64) error
+	// EnableApplicationAndResetDeployment atomically enables and resets deployment admission.
+	// clearFailed requires observed FAILED status and operator recovery consent.
+	EnableApplicationAndResetDeployment(ctx context.Context, appID int64, clearFailed bool) error
 	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 	// UpdateApplicationForeclosure records the one-shot Foreclosure() event
 	// and advances the foreclosure scan cursor in
@@ -509,6 +511,7 @@ type RejectEpochAndDivergeResult struct {
 }
 
 type Repository interface {
+	DeploymentRepository
 	DeliveryRepository
 	ReplayRepository
 	ApplicationRepository

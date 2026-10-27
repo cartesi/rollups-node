@@ -88,7 +88,7 @@ func (s *ApplicationSuite) TestInvalidOutputsRootStatus() {
 		reason := diagnosis
 		s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, model.ApplicationStatus_InvalidOutputsRoot, &reason))
 		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
-		s.Require().NoError(s.Repo.EnableApplicationAndClearFailed(s.Ctx, app.ID))
+		s.Require().NoError(s.Repo.EnableApplicationAndResetDeployment(s.Ctx, app.ID, true))
 		stored, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
 		s.True(stored.Enabled)
