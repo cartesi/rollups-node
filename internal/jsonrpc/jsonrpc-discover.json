@@ -1714,8 +1714,12 @@
 					"description": "Filter bond events by a specific epoch index (hex encoded).",
 					"schema": {
 						"oneOf": [
-							{"$ref": "#/components/schemas/UnsignedInteger"},
-							{"type": "null"}
+							{
+								"$ref": "#/components/schemas/UnsignedInteger"
+							},
+							{
+								"type": "null"
+							}
 						]
 					},
 					"required": false
@@ -1725,8 +1729,12 @@
 					"description": "Filter bond events by tournament address (hex encoded).",
 					"schema": {
 						"oneOf": [
-							{"$ref": "#/components/schemas/EthereumAddress"},
-							{"type": "null"}
+							{
+								"$ref": "#/components/schemas/EthereumAddress"
+							},
+							{
+								"type": "null"
+							}
 						]
 					},
 					"required": false
@@ -1831,6 +1839,163 @@
 				},
 				{
 					"$ref": "#/components/errors/BondEventNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
+				}
+			]
+		},
+		{
+			"name": "cartesi_listStandingChanges",
+			"summary": "List tournament standing changes",
+			"description": "Returns stored StandingChanged history for one application, epoch, and tournament. Records are ordered by block number, block-global log index, then transaction hash; descending reverses all three keys. Use descending true and limit one for the latest indexed event. Result and expiry instants are prospective. Ingestion supplies tournament provenance; this method does not authenticate arbitrary contracts.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "Epoch index of the tournament, hex encoded. Zero is valid.",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": true
+				},
+				{
+					"name": "tournament_address",
+					"description": "Tournament address within this epoch.",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "limit",
+					"description": "Maximum page size. Omitted or zero selects 50; values above 10000 are capped at 10000.",
+					"schema": {
+						"type": "integer",
+						"minimum": 0,
+						"default": 50
+					},
+					"required": false
+				},
+				{
+					"name": "offset",
+					"description": "Number of scoped events to skip.",
+					"schema": {
+						"type": "integer",
+						"minimum": 0,
+						"maximum": 9223372036854775807,
+						"default": 0
+					},
+					"required": false
+				},
+				{
+					"name": "descending",
+					"description": "Reverse block number, block-global log index, and transaction hash ordering.",
+					"schema": {
+						"type": "boolean",
+						"default": false
+					},
+					"required": false
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/StandingChangedListResult"
+				}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/InternalError"
+				},
+				{
+					"$ref": "#/components/errors/TimeoutError"
+				},
+				{
+					"$ref": "#/components/errors/ResponseSizeLimitExceeded"
+				}
+			]
+		},
+		{
+			"name": "cartesi_getStandingChange",
+			"summary": "Get a tournament standing change",
+			"description": "Returns one stored StandingChanged event by application, epoch, tournament, transaction hash, and block-global log index.",
+			"params": [
+				{
+					"name": "application",
+					"description": "The application's name or hex encoded address.",
+					"schema": {
+						"$ref": "#/components/schemas/NameOrAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "epoch_index",
+					"description": "Epoch index of the tournament, hex encoded. Zero is valid.",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": true
+				},
+				{
+					"name": "tournament_address",
+					"description": "Tournament address within this epoch.",
+					"schema": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"required": true
+				},
+				{
+					"name": "tx_hash",
+					"description": "Transaction hash of the event.",
+					"schema": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"required": true
+				},
+				{
+					"name": "log_index",
+					"description": "Block-global log index of the event, hex encoded. Zero is valid.",
+					"schema": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"required": true
+				}
+			],
+			"result": {
+				"name": "result",
+				"schema": {
+					"$ref": "#/components/schemas/StandingChangedGetResult"
+				}
+			},
+			"errors": [
+				{
+					"$ref": "#/components/errors/InvalidParams"
+				},
+				{
+					"$ref": "#/components/errors/ApplicationNotFound"
+				},
+				{
+					"$ref": "#/components/errors/StandingChangedNotFound"
 				},
 				{
 					"$ref": "#/components/errors/InternalError"
@@ -2969,16 +3134,35 @@
 					},
 					"creation_event": {
 						"oneOf": [
+							{"$ref": "#/components/schemas/TournamentCreationEvent"},
+							{"type": "null"}
+						]
+					},
+					"snapshot": {
+						"$ref": "#/components/schemas/TournamentSnapshot"
+					},
+					"bond_value": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"contested_final_state_one": {
+						"oneOf": [
 							{
-								"$ref": "#/components/schemas/TournamentCreationEvent"
+								"$ref": "#/components/schemas/Hash"
 							},
 							{
 								"type": "null"
 							}
 						]
 					},
-					"snapshot": {
-						"$ref": "#/components/schemas/TournamentSnapshot"
+					"contested_final_state_two": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
 					}
 				},
 				"description": "Immutable tournament descriptor and parent relation, with a current snapshot read at a stated block. Local epoch acceptance or application failure does not make contract state immutable.",
@@ -2999,7 +3183,10 @@
 					"start_instant",
 					"allowance",
 					"creation_event",
-					"snapshot"
+					"snapshot",
+					"bond_value",
+					"contested_final_state_one",
+					"contested_final_state_two"
 				]
 			},
 			"TournamentListResult": {
@@ -3183,6 +3370,10 @@
 					},
 					"snapshot": {
 						"$ref": "#/components/schemas/MatchSnapshot"
+					},
+					"responder_deadline": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Immutable MatchCreated responder deadline. A later advance or seal supersedes this schedule; child creation ends its use."
 					}
 				},
 				"required": [
@@ -3204,7 +3395,8 @@
 					"eliminable_at",
 					"leaf_seal",
 					"deletion_log_index",
-					"snapshot"
+					"snapshot",
+					"responder_deadline"
 				]
 			},
 			"MatchListResult": {
@@ -3270,6 +3462,13 @@
 					"eliminable_at": {
 						"$ref": "#/components/schemas/UnsignedInteger",
 						"description": "Immutable both-sides elimination deadline reported by this advance."
+					},
+					"current_height": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"responder_deadline": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Post-advance responder deadline. At current_height one, this is the seal deadline."
 					}
 				},
 				"required": [
@@ -3284,7 +3483,9 @@
 					"updated_at",
 					"log_index",
 					"segment_start_position",
-					"eliminable_at"
+					"eliminable_at",
+					"current_height",
+					"responder_deadline"
 				]
 			},
 			"MatchAdvancedListResult": {
@@ -3384,7 +3585,7 @@
 			},
 			"TournamentCreationEvent": {
 				"type": "object",
-				"description": "Immutable NewInnerTournament event, emitted by the parent tournament. A root has no such event.",
+				"description": "Immutable NewInnerTournament creation log from the parent for a child. Root tournaments have a null creation_event.",
 				"properties": {
 					"block_number": {
 						"$ref": "#/components/schemas/UnsignedInteger"
@@ -3419,14 +3620,39 @@
 					"log_index": {
 						"$ref": "#/components/schemas/UnsignedInteger",
 						"description": "Block-global log index. Zero is valid."
+					},
+					"agree_state": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"divergence_position": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"final_state_one": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"final_state_two": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"deadline_one": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"deadline_two": {
+						"$ref": "#/components/schemas/UnsignedInteger"
 					}
 				},
 				"required": [
 					"eliminable_at",
 					"block_number",
 					"tx_hash",
-					"log_index"
-				]
+					"log_index",
+					"agree_state",
+					"divergence_position",
+					"final_state_one",
+					"final_state_two",
+					"deadline_one",
+					"deadline_two"
+				],
+				"description": "Durable LeafMatchSealed divergence record. It remains present after deletion even when snapshot.sealed becomes null. The two final states and deadlines are independent."
 			},
 			"TournamentInnerResult": {
 				"type": "object",
@@ -3446,7 +3672,7 @@
 					},
 					"paused_allowance": {
 						"$ref": "#/components/schemas/UnsignedInteger",
-						"description": "Remaining carryover allowance in blocks at as_of_block."
+						"description": "The child winner remaining paused allowance before the parent refill, after deduction of elapsed time since the child result."
 					}
 				},
 				"required": [
@@ -3966,6 +4192,112 @@
 				"required": [
 					"data"
 				]
+			},
+			"StandingChangedListResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"type": "array",
+						"items": {
+							"$ref": "#/components/schemas/StandingChanged"
+						}
+					},
+					"pagination": {
+						"$ref": "#/components/schemas/Pagination"
+					}
+				},
+				"required": [
+					"data",
+					"pagination"
+				]
+			},
+			"StandingChangedGetResult": {
+				"type": "object",
+				"properties": {
+					"data": {
+						"$ref": "#/components/schemas/StandingChanged"
+					}
+				},
+				"required": [
+					"data"
+				]
+			},
+			"StandingChanged": {
+				"type": "object",
+				"description": "Immutable StandingChanged event for one authenticated tournament. Read the latest event in log order; result and expiry instants are prospective.",
+				"properties": {
+					"epoch_index": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tournament_address": {
+						"$ref": "#/components/schemas/EthereumAddress"
+					},
+					"match_count": {
+						"$ref": "#/components/schemas/Uint256"
+					},
+					"dangling": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"description": "Unpaired commitment, or null when absent. A present zero hash remains a value."
+					},
+					"parent_commitment": {
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"description": "Contested parent commitment defended by an inner dangling winner, or null when absent."
+					},
+					"result_at": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Prospective first inclusive finish instant with no live matches; zero otherwise. This event does not assert that the tournament has already finished."
+					},
+					"winner_expires_at": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Prospective first inclusive expiry instant for an inner dangling winner with no live matches; zero otherwise."
+					},
+					"block_number": {
+						"$ref": "#/components/schemas/UnsignedInteger"
+					},
+					"tx_hash": {
+						"$ref": "#/components/schemas/Hash"
+					},
+					"log_index": {
+						"$ref": "#/components/schemas/UnsignedInteger",
+						"description": "Block-global log index. Zero is valid."
+					},
+					"created_at": {
+						"type": "string",
+						"format": "date-time"
+					},
+					"updated_at": {
+						"type": "string",
+						"format": "date-time"
+					}
+				},
+				"required": [
+					"epoch_index",
+					"tournament_address",
+					"match_count",
+					"dangling",
+					"parent_commitment",
+					"result_at",
+					"winner_expires_at",
+					"block_number",
+					"tx_hash",
+					"log_index",
+					"created_at",
+					"updated_at"
+				]
 			}
 		},
 		"errors": {
@@ -4036,6 +4368,10 @@
 			"NodeConfigNotFound": {
 				"code": -31001,
 				"message": "EVM Reader config not found"
+			},
+			"StandingChangedNotFound": {
+				"code": -31001,
+				"message": "Standing change not found"
 			}
 		}
 	}

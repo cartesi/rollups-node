@@ -115,23 +115,26 @@ var jsonrpcHandlers = dispatchTable{
 	"cartesi_getMatchAdvance":                 handleGetMatchAdvance,
 	"cartesi_listBondEvents":                  handleListBondEvents,
 	"cartesi_getBondEvent":                    handleGetBondEvent,
+	"cartesi_listStandingChanges":             handleListStandingChanges,
+	"cartesi_getStandingChange":               handleGetStandingChange,
 	"cartesi_getNodeInfo":                     handleGetNodeInfo,
 	"cartesi_getChainId":                      handleGetChainID,
 	"cartesi_getNodeVersion":                  handleGetNodeVersion,
 }
 
 var listParamsTypes = map[string]reflect.Type{
-	"cartesi_listApplications":  reflect.TypeOf(api.ListApplicationsParams{}),
-	"cartesi_listEpochs":        reflect.TypeOf(api.ListEpochsParams{}),
-	"cartesi_listInputs":        reflect.TypeOf(api.ListInputsParams{}),
-	"cartesi_listOutputs":       reflect.TypeOf(api.ListOutputsParams{}),
-	"cartesi_listReports":       reflect.TypeOf(api.ListReportsParams{}),
-	"cartesi_listWithdrawals":   reflect.TypeOf(api.ListWithdrawalsParams{}),
-	"cartesi_listTournaments":   reflect.TypeOf(api.ListTournamentsParams{}),
-	"cartesi_listCommitments":   reflect.TypeOf(api.ListCommitmentsParams{}),
-	"cartesi_listMatches":       reflect.TypeOf(api.ListMatchesParams{}),
-	"cartesi_listMatchAdvances": reflect.TypeOf(api.ListMatchAdvancesParams{}),
-	"cartesi_listBondEvents":    reflect.TypeOf(api.ListBondEventsParams{}),
+	"cartesi_listApplications":    reflect.TypeOf(api.ListApplicationsParams{}),
+	"cartesi_listEpochs":          reflect.TypeOf(api.ListEpochsParams{}),
+	"cartesi_listInputs":          reflect.TypeOf(api.ListInputsParams{}),
+	"cartesi_listOutputs":         reflect.TypeOf(api.ListOutputsParams{}),
+	"cartesi_listReports":         reflect.TypeOf(api.ListReportsParams{}),
+	"cartesi_listWithdrawals":     reflect.TypeOf(api.ListWithdrawalsParams{}),
+	"cartesi_listTournaments":     reflect.TypeOf(api.ListTournamentsParams{}),
+	"cartesi_listCommitments":     reflect.TypeOf(api.ListCommitmentsParams{}),
+	"cartesi_listMatches":         reflect.TypeOf(api.ListMatchesParams{}),
+	"cartesi_listMatchAdvances":   reflect.TypeOf(api.ListMatchAdvancesParams{}),
+	"cartesi_listBondEvents":      reflect.TypeOf(api.ListBondEventsParams{}),
+	"cartesi_listStandingChanges": reflect.TypeOf(api.ListStandingChangesParams{}),
 }
 
 func truncatedMethod(method string) string {
@@ -1638,13 +1641,21 @@ func handleGetMatchAdvance(s *Service, r *http.Request, req RPCRequest) (any, er
 	return api.SingleResponse[*model.MatchAdvanced]{Data: matchAdvanced}, nil
 }
 
-func parseMatchScope(epoch, tournament, id string) (uint64, error) {
+func parseTournamentScope(epoch, tournament string) (uint64, error) {
 	epochIndex, err := config.ToIndexFromString(epoch)
 	if err != nil {
 		return 0, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid epoch index: %v", err))
 	}
 	if _, err := config.ToAddressFromString(tournament); err != nil {
 		return 0, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid tournament address: %v", err))
+	}
+	return epochIndex, nil
+}
+
+func parseMatchScope(epoch, tournament, id string) (uint64, error) {
+	epochIndex, err := parseTournamentScope(epoch, tournament)
+	if err != nil {
+		return 0, err
 	}
 	if _, err := config.ToHashFromString(id); err != nil {
 		return 0, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid ID hash: %v", err))
@@ -1750,6 +1761,93 @@ func handleGetBondEvent(s *Service, r *http.Request, req RPCRequest) (any, error
 		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Bond event not found")
 	}
 	return api.SingleResponse[*model.BondEvent]{Data: event}, nil
+}
+
+func handleListStandingChanges(s *Service, r *http.Request, req RPCRequest) (any, error) {
+	var params api.ListStandingChangesParams
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+	if params.Offset > math.MaxInt64 {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid offset")
+	}
+
+	// Use default values if not provided
+	if params.Limit <= 0 {
+		params.Limit = LIST_ITEM_DEFAULT
+	}
+
+	if params.Limit > LIST_ITEM_LIMIT {
+		params.Limit = LIST_ITEM_LIMIT
+	}
+
+	// Validate application parameter
+	if err := validateNameOrAddress(params.Application); err != nil {
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, fmt.Sprintf("Invalid application identifier: %v", err))
+	}
+
+	epochIndex, err := parseTournamentScope(params.EpochIndex, params.TournamentAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	pagination := repository.Pagination{
+		Limit:  params.Limit,
+		Offset: params.Offset,
+	}
+	standingChanges, total, err := s.repository.ListStandingChanges(r.Context(), params.Application,
+		epochIndex, params.TournamentAddress, pagination, params.Descending)
+	if err != nil {
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve standing changes from repository", err)
+	}
+	if len(standingChanges) == 0 {
+		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
+			return nil, err
+		}
+	}
+	if standingChanges == nil {
+		standingChanges = []*model.StandingChanged{}
+	}
+
+	return api.ListResponse[*model.StandingChanged]{
+		Data: standingChanges,
+		Pagination: api.Pagination{
+			TotalCount: total,
+			Limit:      params.Limit,
+			Offset:     params.Offset,
+		},
+	}, nil
+}
+
+func handleGetStandingChange(s *Service, r *http.Request, req RPCRequest) (any, error) {
+	var params api.GetStandingChangeParams
+	if err := api.UnmarshalParams(req.Params, &params); err != nil {
+		s.requestLogger(r.Context()).Debug("Invalid parameters", "err", err)
+		return nil, newRPCError(JSONRPC_INVALID_PARAMS, "Invalid parameters")
+	}
+
+	txHash, logIndex, err := parseTournamentEventIdentity(params.Application, params.TxHash, params.LogIndex)
+	if err != nil {
+		return nil, err
+	}
+	epochIndex, err := parseTournamentScope(params.EpochIndex, params.TournamentAddress)
+	if err != nil {
+		return nil, err
+	}
+	standingChange, err := s.repository.GetStandingChange(r.Context(), params.Application,
+		epochIndex, params.TournamentAddress, txHash, logIndex)
+	if err != nil {
+		return nil, s.repositoryError(r.Context(), "Unable to retrieve standing change from repository", err)
+	}
+	if standingChange == nil {
+		if err := s.applicationAbsentOrError(r, params.Application); err != nil {
+			return nil, err
+		}
+		return nil, newRPCError(JSONRPC_RESOURCE_NOT_FOUND, "Standing change not found")
+	}
+
+	return api.SingleResponse[*model.StandingChanged]{Data: standingChange}, nil
 }
 
 func handleGetNodeInfo(s *Service, r *http.Request, _ RPCRequest) (any, error) {

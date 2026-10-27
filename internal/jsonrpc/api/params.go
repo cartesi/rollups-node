@@ -226,6 +226,25 @@ type GetBondEventParams struct {
 	LogIndex    string `json:"log_index"`
 }
 
+// ListStandingChangesParams selects standing history within one tournament.
+type ListStandingChangesParams struct {
+	Application       string `json:"application"`
+	EpochIndex        string `json:"epoch_index"`
+	TournamentAddress string `json:"tournament_address"`
+	Limit             uint64 `json:"limit"`
+	Offset            uint64 `json:"offset"`
+	Descending        bool   `json:"descending,omitempty"`
+}
+
+// GetStandingChangeParams identifies a scoped event by transaction and block log index.
+type GetStandingChangeParams struct {
+	Application       string `json:"application"`
+	EpochIndex        string `json:"epoch_index"`
+	TournamentAddress string `json:"tournament_address"`
+	TxHash            string `json:"tx_hash"`
+	LogIndex          string `json:"log_index"`
+}
+
 // ListWithdrawalsParams aligns with the OpenRPC specification
 type ListWithdrawalsParams struct {
 	Application  string  `json:"application"`
