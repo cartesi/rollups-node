@@ -48,9 +48,7 @@ func TestValidatorInvalidRootProtectionStartsAtCommittedCutoff(t *testing.T) {
 				repository.EpochFilter{Status: []model.EpochStatus{model.EpochStatus_InputsProcessed}},
 				repository.Pagination{}, false).
 				Return([]*model.Epoch{epoch}, uint64(1), nil).Once()
-			repo.On("ListOutputs", mock.Anything, app.IApplicationAddress.Hex(),
-				repository.OutputFilter{EpochIndex: &epoch.Index}, repository.Pagination{}, false).
-				Return([]*model.Output(nil), uint64(0), nil).Once()
+			expectEpochOutputs(repo, app, epoch, nil)
 			repo.On("GetLastInput", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index).
 				Return(&model.Input{MachineHash: epoch.MachineHash, TxBufferDataBlock: epoch.TxBufferDataBlock}, nil).Once()
 			var storeErr error

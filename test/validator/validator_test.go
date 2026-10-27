@@ -18,6 +18,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/internal/repository/repotest"
 	"github.com/cartesi/rollups-node/internal/validator"
 	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
@@ -97,7 +98,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TearDownSuite() {
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
-	pristineRootHash, _, err := merkle.CreateProofs(nil, merkle.TREE_DEPTH)
+	pristineRootHash, _, err := merkletest.CreateProofs(nil, merkle.TREE_DEPTH)
 	s.Nil(err)
 
 	s.Run("WhenThereAreNoOutputsAndNoPreviousEpoch", func() {
@@ -163,7 +164,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPristineClaim() {
 }
 
 func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
-	pristineRootHash, _, err := merkle.CreateProofs(nil, merkle.TREE_DEPTH)
+	pristineRootHash, _, err := merkletest.CreateProofs(nil, merkle.TREE_DEPTH)
 	s.Nil(err)
 
 	s.Run("WhenThereAreNoOutputsAndThereIsAPreviousEpoch", func() {
@@ -241,7 +242,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		s.Require().Nil(err)
 
 		firstEpoch.TxBufferDataBlock = &firstEpochClaim
-		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, []*model.Output{})
+		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, nil)
 		s.Require().Nil(err)
 
 		// Store the input advance result
@@ -317,7 +318,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 
 		// calculate the expected claim and proofs
 		expectedOutputHash := crypto.Keccak256Hash(outputRawData)
-		expectedClaim, expectedProofs, err := merkle.CreateProofs(
+		expectedClaim, expectedProofs, err := merkletest.CreateProofs(
 			[]common.Hash{expectedOutputHash},
 			MAX_OUTPUT_TREE_HEIGHT,
 		)
@@ -408,7 +409,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		}
 
 		// calculate first epoch claim
-		firstEpochClaim, firstEpochProofs, err := merkle.CreateProofs(
+		firstEpochClaim, firstEpochProofs, err := merkletest.CreateProofs(
 			[]common.Hash{firstOutputHash},
 			MAX_OUTPUT_TREE_HEIGHT,
 		)
@@ -428,7 +429,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		// update epoch with its claim and insert it in the db
 		firstEpoch.TxBufferDataBlock = &firstEpochClaim
 		firstOutput.OutputHashesSiblings = firstEpochProofs
-		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, []*model.Output{&firstOutput})
+		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, repotest.WriteProofs(&firstOutput))
 		s.Require().Nil(err)
 
 		// setup second epoch
@@ -458,7 +459,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 		// calculate the expected claim
 		secondOutputData := []byte("output2")
 		secondOutputHash := crypto.Keccak256Hash(secondOutputData)
-		expectedEpochClaim, expectedProofs, err := merkle.CreateProofs(
+		expectedEpochClaim, expectedProofs, err := merkletest.CreateProofs(
 			[]common.Hash{firstOutputHash, secondOutputHash},
 			MAX_OUTPUT_TREE_HEIGHT,
 		)

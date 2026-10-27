@@ -4,8 +4,6 @@
 package merkle
 
 import (
-	"fmt"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -20,7 +18,7 @@ func dupArray(in []common.Hash) []common.Hash {
 	return out
 }
 
-// CreatePreContextFromProof creates the pre context used on a ComputeSiblingsMatrix call.
+// CreatePreContextFromProof creates the pre context for cumulative output proofs.
 func CreatePreContextFromProof(
 	index uint64,
 	hash common.Hash,
@@ -41,194 +39,11 @@ func CreatePreContextFromProof(
 	return preContext
 }
 
-// CreatePostContext creates the post context used on a ComputeSiblingsMatrix call.
+// CreatePostContext creates the post context for cumulative output proofs.
 func CreatePostContext() []common.Hash {
 	pristine := make([]common.Hash, TREE_DEPTH+1)
 	for i := 1; i <= TREE_DEPTH; i++ {
 		pristine[i] = crypto.Keccak256Hash(pristine[i-1][:], pristine[i-1][:])
 	}
 	return pristine
-}
-
-// CreateRootHashFromProof computes the root hash from a proof
-func ComputeRootHashFromProof(
-	index uint64,
-	hash common.Hash,
-	siblings []common.Hash,
-) common.Hash {
-	for level := 0; level < TREE_DEPTH; level++ {
-		if (index>>level)&1 == 0 {
-			hash = crypto.Keccak256Hash(hash[:], siblings[level][:])
-		} else {
-			hash = crypto.Keccak256Hash(siblings[level][:], hash[:])
-		}
-	}
-	return hash
-}
-
-// Array of `hashes` in the range [`begin`, `end`); with an element `before`
-// and another `after`.
-//
-//	begin-1   begin     end     end+1
-//	   ▼        ▼        ▼       ▼
-//	   ┌────────┬────────┬───────┐
-//	   │ before │ hashes │ after │
-//	   └────────┴────────┴───────┘
-type arrayChunk struct {
-	hashes []common.Hash
-	before *common.Hash
-	after  *common.Hash
-	begin  uint64
-	end    uint64
-}
-
-// get retrieves the value at a index from arrayChunk
-func (me *arrayChunk) get(index uint64) *common.Hash {
-	if index < me.begin {
-		return me.before
-	}
-	if index >= me.end {
-		return me.after
-	}
-	return &me.hashes[index-me.begin]
-}
-
-// ComputeSiblingsMatrix computes the siblings of all outputs hashes from the same epoch.
-// Its memory grows with the outputs; epoch-sized sets use OutputsTree's two passes.
-// The arguments are:
-// - `pre` context array. Can be created with CreatePreContextFromProof.
-// - `outputHashes` is a packed array with the hashes of outputs. First element index is outputsBegin.
-// - `post` context array. Can be created with CreatePostContext and cached.
-// - `outputsBegin` is the index of the first element of `outputHashes` since genesis.
-//
-// The result array contains the siblings of all outputs. Use a a stride of TREE_DEPTH to retrieve the values of each output.
-//
-//	siblings := merkle.ComputeSiblingsMatrix(pre, outputHashes, post, index)
-//	for i := range outputHashes {
-//		begin := merkle.TREE_DEPTH * i
-//		end := merkle.TREE_DEPTH * (i + 1)
-//		outputSibling := siblings[begin:end]
-//		...
-//	}
-func ComputeSiblingsMatrix(
-	pre []common.Hash,
-	outputHashes []common.Hash,
-	post []common.Hash,
-	outputsBegin uint64,
-) ([]common.Hash, error) {
-	if outputHashes == nil || len(outputHashes) == 0 {
-		return nil, fmt.Errorf("incorrect outputHashes in call ComputeSiblingsMatrix.")
-	}
-	if pre == nil || len(pre) == 0 {
-		return nil, fmt.Errorf("incorrect pre context in call ComputeSiblingsMatrix.")
-	}
-	if post == nil || len(post) == 0 {
-		return nil, fmt.Errorf("incorrect post context in call ComputeSiblingsMatrix.")
-	}
-
-	hashes := dupArray(outputHashes) // preserve input
-	siblings := make([]common.Hash, len(hashes)*TREE_DEPTH)
-	childrenBegin := outputsBegin
-	childrenEnd := outputsBegin + uint64(len(hashes))
-	for level := 0; level < TREE_DEPTH; level++ {
-		children := arrayChunk{
-			hashes: hashes,
-			before: &pre[level],
-			after:  &post[level],
-			begin:  childrenBegin,
-			end:    childrenEnd,
-		}
-
-		// store siblings
-		for i := 0; i < len(hashes); i++ {
-			sibling := ((outputsBegin + uint64(i)) >> level) ^ 1
-			siblings[i*TREE_DEPTH+level] = *children.get(sibling)
-		}
-
-		// compute parent hashes in place
-		parentsBegin := (childrenBegin) / 2
-		parentsEnd := (childrenEnd + 1) / 2
-		for parentIndex := parentsBegin; parentIndex < parentsEnd; parentIndex++ {
-			parent := &hashes[parentIndex-parentsBegin]
-			left := children.get(2 * parentIndex)
-			right := children.get(2*parentIndex + 1)
-			*parent = crypto.Keccak256Hash(left[:], right[:])
-		}
-		childrenBegin = parentsBegin
-		childrenEnd = parentsEnd
-	}
-	return siblings, nil
-}
-
-// CreateProofs creates proofs for all the leaves of a binary Merkle tree
-// with the given height. It returns the root hash and the siblings matrix
-// encoded as an array, in bottom-up order.
-//
-// If the number of leaves exceeds the capacity for the given height,
-// an error is returned.
-func CreateProofs(leaves []common.Hash, height uint) (common.Hash, []common.Hash, error) {
-	pristineNode := common.Hash{}
-
-	currentLevel := dupArray(leaves)
-	leafCount := uint(len(currentLevel))
-	siblings := make([]common.Hash, leafCount*height)
-
-	// for each level in the tree, starting from the leaves
-	for levelIdx := uint(0); levelIdx < height; levelIdx++ {
-		// for each leaf
-		for leafIdx := uint(0); leafIdx < leafCount; leafIdx++ {
-			// calculate its sibling at the current level
-
-			// Each pair of siblings shares the same parent. For any given parent with index i,
-			// the index of its left node is 2*i, and the index of its right node is 2*i+1.
-			// Since their indices differ only by the LSB, by flipping the LSB with ^1,
-			// we calculate the index of one another. In order to get the index of a parent,
-			// you remove the LSB with >>1. For an ancestor of height difference h,
-			// you remove the h LSBs with >>h.
-			siblingIdx := (leafIdx >> levelIdx) ^ 1
-			siblings[leafIdx*height+levelIdx] = *at(currentLevel, siblingIdx, &pristineNode)
-		}
-		// calculate the next level
-		currentLevel = parentLevel(currentLevel, &pristineNode)
-		// update the pristine node for the next level
-		pristineNode = crypto.Keccak256Hash(pristineNode[:], pristineNode[:])
-	}
-
-	// in the end, current level is the root level
-	if len(currentLevel) > 1 {
-		err := fmt.Errorf("too many leaves [%d] for height [%d]", leafCount, height)
-		return common.Hash{}, nil, err
-	}
-
-	return *at(currentLevel, 0, &pristineNode), siblings, nil
-}
-
-// parentLevel calculates the next level in a binary Merkle tree.
-//
-// For each pair of nodes in the current level, it computes their parent node
-// using the Keccak256 hashing algorithm. If level has an odd number of nodes,
-// a pristine node will be used to complete the pair.
-//
-// The parent nodes are stored in the first half of the original level slice.
-//
-// The function returns the parent level by re-slicing the original level slice.
-func parentLevel(level []common.Hash, pristineNode *common.Hash) []common.Hash {
-	// for each pair of nodes in level
-	for idx := 0; idx < len(level); idx += 2 {
-		leftChild := level[idx][:]
-		rightChild := at(level, uint(idx+1), pristineNode)[:]
-		// compute the parent node in-place
-		level[idx/2] = crypto.Keccak256Hash(leftChild, rightChild)
-	}
-	// return the parent level by re-slicing level
-	return level[:(len(level)+1)/2]
-}
-
-// at returns a pointer to the item located at index or the default value.
-func at(array []common.Hash, index uint, defaultValue *common.Hash) *common.Hash {
-	if index < uint(len(array)) {
-		return &array[index]
-	} else {
-		return defaultValue
-	}
 }

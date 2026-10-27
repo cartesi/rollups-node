@@ -414,7 +414,7 @@ type TournamentEventBatch struct {
 
 type BulkOperationsRepository interface {
 	StoreAdvanceResult(ctx context.Context, appID int64, result *AdvanceResult) error
-	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
+	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, write ClaimProofWriteFunc) error
 }
 
 type NodeConfigReader interface {
