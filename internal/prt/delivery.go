@@ -441,10 +441,12 @@ func (s *delivery) joinCall(
 	if descriptor.Allowance <= math.MaxUint64-descriptor.StartInstant {
 		deadline = descriptor.StartInstant + descriptor.Allowance
 	}
-	if descriptor.Level != 0 || descriptor.Height != model.Log2EpochComputationHashLeafCount {
+	if descriptor.Level != 0 || descriptor.Height != model.Log2EpochComputationHashLeafCount ||
+		descriptor.Log2Stride != model.Log2RootTournamentStride {
 		return plannedAction{}, &joinRefusal{epoch: epoch.Index, tournament: target, deadline: deadline,
-			reason: fmt.Sprintf("unsupported root geometry: level=%d height=%d; expected level=0 height=%d",
-				descriptor.Level, descriptor.Height, model.Log2EpochComputationHashLeafCount)}
+			reason: fmt.Sprintf("unsupported root geometry: level=%d height=%d stride=%d; expected level=0 height=%d stride=%d",
+				descriptor.Level, descriptor.Height, descriptor.Log2Stride,
+				model.Log2EpochComputationHashLeafCount, model.Log2RootTournamentStride)}
 	}
 	if descriptor.StartInstant > snap.Number || descriptor.Allowance > math.MaxUint64-descriptor.StartInstant {
 		return plannedAction{}, &joinRefusal{epoch: epoch.Index, tournament: target,

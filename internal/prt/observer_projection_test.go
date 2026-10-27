@@ -249,8 +249,18 @@ func TestRootWinnerMismatchDoesNotChangeLocalHealthDuringObservation(t *testing.
 }
 
 func TestJoinChecksSupportedRootGeometry(t *testing.T) {
-	for _, height := range []uint64{model.Log2EpochComputationHashLeafCount, 7} {
-		t.Run(new(big.Int).SetUint64(height).String(), func(t *testing.T) {
+	for _, test := range []struct {
+		name                  string
+		level, height, stride uint64
+		allowed               bool
+		observed              string
+	}{
+		{name: "supported", level: 0, height: 54, stride: 38, allowed: true},
+		{name: "level", level: 1, height: 54, stride: 38, observed: "level=1 height=54 stride=38"},
+		{name: "height", level: 0, height: 53, stride: 38, observed: "level=0 height=53 stride=38"},
+		{name: "stride", level: 0, height: 54, stride: 44, observed: "level=0 height=54 stride=44"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			f := newDeliveryFixture(t)
 			view := resultTestSnapshot(f.epoch, false)
 			view.stage.IsFinished = false
@@ -262,21 +272,23 @@ func TestJoinChecksSupportedRootGeometry(t *testing.T) {
 			opts := mock.MatchedBy(resultCallOptsAtBlock(f.block.Number))
 			adapter.On("CommitmentStanding", opts, [32]byte(*f.epoch.Commitment)).Return(CommitmentStanding{}, nil).Once()
 			adapter.On("Descriptor", opts).Return(TournamentDescriptor{
-				Height: height, StartInstant: 100, Allowance: 20,
+				Level: test.level, Height: test.height, Log2Stride: test.stride, StartInstant: 100, Allowance: 20,
 			}, nil).Once()
-			if height == model.Log2EpochComputationHashLeafCount {
-				adapter.On("Standing", opts).Return(TournamentStanding{AcceptsJoins: true}, nil).Once()
-				adapter.On("BondValue", opts).Return(big.NewInt(0), nil).Once()
-			}
+			adapter.On("Standing", opts).Return(TournamentStanding{AcceptsJoins: true}, nil).Maybe()
+			adapter.On("BondValue", opts).Return(big.NewInt(0), nil).Maybe()
 			call, err := f.d.planAction(t.Context(), f.app, joinTournament, f.block, observerFacts(100))
-			if height == model.Log2EpochComputationHashLeafCount {
+			if test.allowed {
 				require.NoError(t, err)
 				require.NotNil(t, call)
 				require.Equal(t, joinTournament, call.Key.Kind)
 			} else {
 				require.ErrorIs(t, err, txsender.ErrIneligible)
+				require.ErrorContains(t, err, test.observed)
+				require.ErrorContains(t, err, "expected level=0 height=54 stride=38")
 				require.Nil(t, call)
 				require.Empty(t, f.backend.published)
+				adapter.AssertNotCalled(t, "Standing", mock.Anything)
+				adapter.AssertNotCalled(t, "BondValue", mock.Anything)
 			}
 			assertPRTPlanDidNotWrite(t, f)
 			adapter.AssertExpectations(t)

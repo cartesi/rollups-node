@@ -37,7 +37,9 @@ func deliveryJoinAdapter(f *deliveryFixture, epoch *model.Epoch, allowance uint6
 	adapter := &tournamentAdapterMock{}
 	adapter.On("CommitmentStanding", mock.Anything, [32]byte(*epoch.Commitment)).Return(CommitmentStanding{}, nil)
 	adapter.On("Descriptor", mock.Anything).Return(TournamentDescriptor{
-		Level: 0, Height: model.Log2EpochComputationHashLeafCount, StartInstant: 100, Allowance: allowance,
+		Level: 0, Height: model.Log2EpochComputationHashLeafCount,
+		Log2Stride:   model.Log2RootTournamentStride,
+		StartInstant: 100, Allowance: allowance,
 	}, nil)
 	adapter.On("Standing", mock.Anything).Return(TournamentStanding{AcceptsJoins: true}, nil)
 	adapter.On("BondValue", mock.Anything).Return(big.NewInt(50), nil)
