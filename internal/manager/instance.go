@@ -714,6 +714,7 @@ func createMachineRuntimeCommon(
 	// Create machine configuration
 	config := machine.DefaultConfig(machinePath)
 	config.ExecutionParameters = app.ExecutionParameters
+	config.RequirePrtMachineIdentity = app.IsDaveConsensus()
 
 	// Create the machine
 	if loader == nil {
