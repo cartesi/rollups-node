@@ -30,7 +30,7 @@ const (
 
 	// Log2RootTournamentStride is ArbitrationConstants.log2step(0), the root
 	// tournament sampling period expressed in uarch cycles.
-	Log2RootTournamentStride uint64 = 44
+	Log2RootTournamentStride uint64 = 38
 
 	// Log2MCycleComputationHashPeriod is the sampling period in mcycles.
 	Log2MCycleComputationHashPeriod uint64 = Log2RootTournamentStride - Log2MaxUarchCyclesPerMCycle
@@ -81,10 +81,9 @@ func canonicalInputHashCollectionCounts(deltaMCycles uint64) (
 	if deltaMCycles != 0 {
 		periodicSamples = (deltaMCycles - 1) >> Log2MCycleComputationHashPeriod
 	}
-	rawCount = (periodicSamples >> Log2StateHashesPerEntry) + 1
-	if Log2StateHashesPerEntry > 0 {
-		rawCount++
-	}
+	// Count the final sample bundle and its additional final-state-only entry.
+	const finalSampleAndStateEntries = 2
+	rawCount = (periodicSamples >> Log2StateHashesPerEntry) + finalSampleAndStateEntries
 	keptCount = periodicSamples >> Log2StateHashesPerEntry
 	if periodicSamples&((uint64(1)<<Log2StateHashesPerEntry)-1) != 0 {
 		keptCount++
