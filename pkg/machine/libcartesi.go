@@ -24,6 +24,8 @@ type RemoteMachineInterface interface {
 	GetInitialConfig() (string, error)
 	Run(mcycleEnd uint64) (emulator.BreakReason, error)
 	GetRootHash() (emulator.Hash, error)
+	GetNodeHash(address uint64, log2Size int32) (emulator.Hash, error)
+	GetUarchPristineHash() (emulator.Hash, error)
 	GetProof(address uint64, log2TargetSize, log2RootSize int32) (string, error)
 	ReadReg(reg emulator.RegID) (uint64, error)
 	SendCmioResponse(reason uint16, data []byte, revertRootHash *emulator.Hash) error
@@ -230,6 +232,25 @@ func (e *LibCartesiBackend) HashFunction(timeout time.Duration) (string, error) 
 		return "", fmt.Errorf("failed to decode initial configuration: %w", err)
 	}
 	return initial.HashTree.HashFunction, nil
+}
+
+func (e *LibCartesiBackend) MachineIdentity(timeout time.Duration) (Identity, error) {
+	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
+		return Identity{}, fmt.Errorf("failed to set operation timeout: %w", err)
+	}
+	marchID, err := e.inner.ReadReg(emulator.REG_MARCHID)
+	if err != nil {
+		return Identity{}, fmt.Errorf("failed to read loaded machine marchid: %w", err)
+	}
+	uarch, err := e.inner.GetNodeHash(emulator.UarchStateStartAddress, emulator.UarchStateLog2Size)
+	if err != nil {
+		return Identity{}, fmt.Errorf("failed to read loaded uarch state hash: %w", err)
+	}
+	pristine, err := e.inner.GetUarchPristineHash()
+	if err != nil {
+		return Identity{}, fmt.Errorf("failed to read server pristine uarch hash: %w", err)
+	}
+	return Identity{MarchID: marchID, UarchStateHash: uarch, UarchPristineStateHash: pristine}, nil
 }
 
 func (e *LibCartesiBackend) Run(mcycleEnd uint64, timeout time.Duration) (BreakReason, error) {

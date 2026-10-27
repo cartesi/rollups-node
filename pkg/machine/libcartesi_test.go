@@ -788,6 +788,16 @@ func (m *MockRemoteMachine) GetRootHash() (emulator.Hash, error) {
 	return args.Get(0).(Hash), args.Error(1)
 }
 
+func (m *MockRemoteMachine) GetNodeHash(address uint64, log2Size int32) (emulator.Hash, error) {
+	args := m.Called(address, log2Size)
+	return args.Get(0).(emulator.Hash), args.Error(1)
+}
+
+func (m *MockRemoteMachine) GetUarchPristineHash() (emulator.Hash, error) {
+	args := m.Called()
+	return args.Get(0).(emulator.Hash), args.Error(1)
+}
+
 func (m *MockRemoteMachine) GetProof(address uint64, log2TargetSize, log2RootSize int32) (string, error) {
 	args := m.Called(address, log2TargetSize, log2RootSize)
 	return args.Get(0).(string), args.Error(1)

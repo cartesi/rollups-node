@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/cartesi/rollups-node/internal/model"
 )
 
@@ -183,11 +185,12 @@ type Machine interface {
 
 // MachineConfig contains configuration for a machine instance
 type MachineConfig struct { //nolint:revive // Keep the established public API name.
-	Address             string                    // Address to connect to the machine backend
-	Path                string                    // Path to the machine's directory
-	ExecutionParameters model.ExecutionParameters // Execution parameters for the machine
-	RuntimeConfig       *string
-	BackendFactoryFn    BackendFactory // Optional factory for custom backend creation
+	Address                   string                    // Address to connect to the machine backend
+	Path                      string                    // Path to the machine's directory
+	ExecutionParameters       model.ExecutionParameters // Execution parameters for the machine
+	RuntimeConfig             *string
+	RequirePrtMachineIdentity bool
+	BackendFactoryFn          BackendFactory // Optional factory for custom backend creation
 }
 
 // DefaultConfig returns a default machine configuration
@@ -216,7 +219,9 @@ func DefaultBackendFactory(address string, timeout time.Duration) (Backend, stri
 	return NewLibCartesiBackend(address, timeout)
 }
 
-// Load loads a machine from a snapshot or template path
+// Load loads a machine from a snapshot or template path.
+// Direct callers using the default backend must first validate SDK architecture
+// and computation-hash limits with the exported validators.
 func Load(ctx context.Context, logger *slog.Logger, config *MachineConfig) (Machine, error) {
 	if logger == nil {
 		return nil, errors.New("logger must not be nil")
@@ -284,6 +289,28 @@ func Load(ctx context.Context, logger *slog.Logger, config *MachineConfig) (Mach
 	if hashFunction != "keccak256" {
 		err = fmt.Errorf("machine hash function %q, expected keccak256: %w", hashFunction, ErrUnsupportedHashFunction)
 		return nil, errors.Join(err, machine.Close())
+	}
+
+	if config.RequirePrtMachineIdentity {
+		if err := checkContext(ctx); err != nil {
+			return nil, errors.Join(err, machine.Close())
+		}
+		identity, err := machine.backend.MachineIdentity(machine.params.FastDeadline)
+		if err != nil {
+			err = fmt.Errorf("could not read loaded machine identity: %w", err)
+			return nil, errors.Join(ErrMachineInternal, err, machine.Close())
+		}
+		if err := checkContext(ctx); err != nil {
+			return nil, errors.Join(err, machine.Close())
+		}
+		err = errors.Join(
+			model.CheckMarchID("loaded machine", identity.MarchID),
+			model.CheckUarchPristineStateHash("loaded machine uarch state", common.Hash(identity.UarchStateHash)),
+			model.CheckUarchPristineStateHash("machine server", common.Hash(identity.UarchPristineStateHash)),
+		)
+		if err != nil {
+			return nil, errors.Join(err, machine.Close())
+		}
 	}
 
 	// Ensures that the machine is at a manual yield.
