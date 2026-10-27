@@ -216,8 +216,11 @@ func (s *SameBlockInputsSuite) TestMultipleInputsOneTransactionAuthority() {
 
 // TestMaximumInputsOneBlockAuthority stresses the reader's in-memory input
 // batch with the largest Spambox call that fits the block gas budget. It checks
-// ingestion and process survival under the configured virtual-memory limit,
-// without sampling memory usage or waiting for machine execution.
+// ingestion and process survival under the configured virtual-memory limit.
+// It samples service RSS every 10 ms and requires peak growth <= 256 MiB,
+// overridable with CARTESI_TEST_INPUT_STRESS_MAX_RSS_GROWTH_BYTES (positive).
+// This measures the managed service processes, not child machines, and does
+// not wait for machine execution. Shorter memory spikes may escape sampling.
 // A normal block may not exhaust memory. CARTESI_TEST_INPUT_STRESS_GAS_LIMIT
 // can raise Anvil's block limit for an OOM
 // reproduction, together with CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES. RPC gas caps
@@ -228,6 +231,10 @@ func (s *SameBlockInputsSuite) TestMaximumInputsOneBlockAuthority() {
 	if sharedNode == nil {
 		s.T().Skip("memory stress test requires a test-managed node")
 	}
+	maxRSSGrowth, err := strconv.ParseUint(envOrDefault(
+		"CARTESI_TEST_INPUT_STRESS_MAX_RSS_GROWTH_BYTES", "268435456"), 10, 64)
+	r.NoError(err, "parse stress RSS growth limit")
+	r.Positive(maxRSSGrowth, "stress RSS growth limit must be positive")
 	s.appName = uniqueAppName("maximum-inputs-one-block-authority")
 	root, err := repositoryRoot()
 	r.NoError(err, "resolve repository root")
@@ -330,6 +337,17 @@ func (s *SameBlockInputsSuite) TestMaximumInputsOneBlockAuthority() {
 	opts.GasLimit = gasLimit
 	tx, err := spambox.Transact(opts, "spam", appAddr, new(big.Int).SetUint64(count))
 	r.NoError(err, "submit maximum-input transaction")
+	stopMemory, err := monitorNodeRSS(sharedNode)
+	r.NoError(err, "start node RSS measurement before making stress inputs visible")
+	defer func() {
+		memory := stopMemory()
+		growth := memory.peak - memory.baseline
+		s.T().Logf("stress service RSS: baseline=%d peak=%d growth=%d limit=%d samples=%d interval=10ms inputs=%d block_gas_limit=%d",
+			memory.baseline, memory.peak, growth, maxRSSGrowth, memory.samples, count, gasLimit)
+		s.Assert().NoError(memory.err, "RSS measurement must remain available throughout ingestion")
+		s.Assert().Greater(memory.samples, uint64(1), "RSS measurement must cover ingestion")
+		s.Assert().LessOrEqual(growth, maxRSSGrowth, "sampled peak service RSS growth exceeds stress limit")
+	}()
 	// Mining makes the inputs visible to the reader. After confirming the
 	// receipt, poll ingestion progress and check whether the node has exited.
 	r.NoError(anvilMine(s.ctx, 1), "mine stress transaction in one block")
