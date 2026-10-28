@@ -17,6 +17,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/enum"
 	"github.com/cartesi/rollups-node/internal/repository/postgres/db/rollupsdb/public/table"
 )
 
@@ -658,6 +659,14 @@ func (r *PostgresRepository) StoreAdvanceResult(
 		return err
 	}
 
+	if kind, terminal := res.Status.TerminalApplicationStatus(); terminal {
+		if err := recordApplicationProblem(ctx, tx, appID, model.ApplicationProblem{
+			EpochIndex: res.EpochIndex, Kind: kind, InputIndex: new(res.InputIndex),
+		}); err != nil {
+			return err
+		}
+	}
+
 	err = updateApp(ctx, tx, appID, res.InputIndex, res.Status)
 	if err != nil {
 		return err
@@ -699,12 +708,19 @@ func updateEpochClaim(
 			encodeSiblings(e.CommitmentProof),
 			postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()),
 		).
+		FROM(table.Application).
 		WHERE(
-			whereCriteria.AND(table.Epoch.Status.EQ(
-				postgres.NewEnumValue(model.EpochStatus_InputsProcessed.String()),
-			)),
+			whereCriteria.AND(table.Epoch.Status.EQ(enum.EpochStatus.InputsProcessed)).
+				AND(table.Application.ID.EQ(table.Epoch.ApplicationID)).
+				AND(table.Application.Status.IN(
+					append([]postgres.Expression{enum.ApplicationStatus.Ok}, executionStopStatusExpressions...)...)).
+				AND(table.Application.ProblemEpochIndex.IS_NULL().AND(table.Application.Status.EQ(enum.ApplicationStatus.Ok)).
+					OR(table.Epoch.Index.LT(table.Application.ProblemEpochIndex))),
 		)
 
+	// The application predicates use this statement's snapshot, without holding
+	// its row across the proof batch. A concurrent stop can commit before this
+	// transaction; publication decisions recheck the current status and cut.
 	sqlStr, args := updStmt.Sql()
 	cmd, err := tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
@@ -712,8 +728,21 @@ func updateEpochClaim(
 	}
 	if cmd.RowsAffected() != 1 {
 		statusQuery := table.Epoch.SELECT(table.Epoch.Status).WHERE(whereCriteria)
-		return fmt.Errorf("failed to update application %d epoch %d: %w", e.ApplicationID, e.Index,
-			classifyEpochPublicationMiss(ctx, tx, statusQuery))
+		query, statusArgs := statusQuery.Sql()
+		var status model.EpochStatus
+		if err := tx.QueryRow(ctx, query, statusArgs...).Scan(&status); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return repository.ErrNoUpdate
+			}
+			return fmt.Errorf("reading epoch status after rejected claim: %w", err)
+		}
+		if status == model.EpochStatus_ClaimForeclosed {
+			return repository.ErrEpochForeclosed
+		}
+		if status == model.EpochStatus_InputsProcessed {
+			return repository.ErrApplicationNotRunnable
+		}
+		return repository.ErrNoUpdate
 	}
 	return nil
 }

@@ -728,3 +728,30 @@ func TestCheckConsensusForAddressChangeCachesTickResult(t *testing.T) {
 	err = m.checkConsensusForAddressChange(ctx, app, tickBlock)
 	require.NoError(t, err)
 }
+
+func TestComputedClaimIncompleteProofEscalatesExecutionStop(t *testing.T) {
+	for _, status := range []model.ApplicationStatus{model.ApplicationStatus_GuestException,
+		model.ApplicationStatus_MachineHalted, model.ApplicationStatus_McycleOverflow,
+		model.ApplicationStatus_UnexpectedYield, model.ApplicationStatus_InvalidOutputsRoot} {
+		t.Run(status.String(), func(t *testing.T) {
+			s, repo, blockchain := newServiceMock(t)
+			app := makeApplication()
+			app.Status, app.Reason = status, new("later epoch stopped")
+			epoch := makeComputedEpoch(app, 3)
+			epoch.HtifTohostProof = nil
+			block := big.NewInt(40)
+			expectPreSubmitPath(blockchain, app, epoch, block)
+			repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Corrupted,
+				mock.MatchedBy(func(reason *string) bool {
+					return reason != nil && strings.Contains(*reason, "persisted machine state proof is incomplete")
+				})).Return(nil).Once()
+
+			_, err := s.submitClaimsAndUpdateDatabase(t.Context(), makeEpochMap(epoch), makeApplicationMap(app), block)
+
+			require.ErrorContains(t, err, "persisted machine state proof is incomplete")
+			require.Equal(t, model.ApplicationStatus_Corrupted, app.Status)
+			repo.AssertExpectations(t)
+			blockchain.AssertExpectations(t)
+		})
+	}
+}

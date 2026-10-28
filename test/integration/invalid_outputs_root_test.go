@@ -121,7 +121,7 @@ func (s *TerminalMachineStatesSuite) requireInvalidOutputsRoot(ctx context.Conte
 		epochIndex, common.Hash{}.Hex(), merkle.CreatePostContext()[merkle.TREE_DEPTH].Hex())
 	r.Equal(&reason, app.Reason)
 	s.SetExpectedLogs(s.T(), ExpectedLog{
-		Pattern: regexp.MustCompile(`marking application with invalid outputs root \(terminal\).*application=` +
+		Pattern: regexp.MustCompile(`Invalid outputs root recorded.*application=` +
 			regexp.QuoteMeta(s.appName)),
 		Level: LevelError, Required: true,
 		Reason: "the validator records the tested application's failed root rule",

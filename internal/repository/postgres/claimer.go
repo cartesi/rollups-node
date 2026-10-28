@@ -188,6 +188,8 @@ func (r *PostgresRepository) UpdateEpochWithAcceptedClaim(
 // no longer submit, and the PRT drain terminalizes a pre-foreclosure epoch the
 // tournament never accepted. Earlier non-terminal states are allowed because an
 // epoch that overlaps the foreclosure block may never reach a computable claim.
+// Existing CLAIM_* observations remain reconcilable under every health status;
+// earlier states retain the drain guards and pending-validation protection.
 func (r *PostgresRepository) UpdateEpochWithForeclosedClaim(
 	ctx context.Context,
 	applicationID int64,
@@ -205,7 +207,15 @@ func (r *PostgresRepository) UpdateEpochWithForeclosedClaim(
 				AND(table.Epoch.Index.EQ(uint64Expr(index))).
 				AND(table.Epoch.Status.IN(nonTerminalEpochStatusExpressions...)).
 				AND(table.Application.ID.EQ(table.Epoch.ApplicationID)).
-				AND(table.Application.ForecloseBlock.GT(uint64Expr(0))),
+				AND(table.Application.ForecloseBlock.GT(uint64Expr(0))).
+				AND(table.Epoch.Status.IN(enum.EpochStatus.ClaimComputed, enum.EpochStatus.ClaimSubmitted, enum.EpochStatus.ClaimStaged).
+					OR(table.Application.Enabled.EQ(postgres.Bool(true)).
+						AND(table.Application.Status.IN(
+							append([]postgres.Expression{enum.ApplicationStatus.Ok}, executionStopStatusExpressions...)...)).
+						AND(table.Epoch.Status.NOT_EQ(enum.EpochStatus.InputsProcessed).
+							OR(table.Epoch.LastBlock.GT_EQ(table.Application.ForecloseBlock)).
+							OR(table.Application.Status.IN(executionStopStatusExpressions...).
+								AND(table.Epoch.Index.GT_EQ(table.Application.ProblemEpochIndex)))))),
 		)
 
 	sqlStr, args := updStmt.Sql()
@@ -225,11 +235,10 @@ func (r *PostgresRepository) UpdateEpochWithForeclosedClaim(
 // recorded, a different staged or accepted claim for the same epoch would
 // violate the contract's single-staged claim invariant.
 //
-// Unlike an executed-output byte mismatch, losing consensus does not prove the
-// node's stored history is corrupt. An existing terminal machine outcome is
-// therefore preserved while the epoch rejection is still attempted. For a
-// non-terminal application, the DIVERGED halt runs even when the epoch reject
-// matched no row. The returned flags identify the writes that committed.
+// Losing consensus does not prove local storage corruption. Record DIVERGED
+// even under an execution/root stop so earlier publication cannot reopen; keep
+// the first integrity diagnosis. The halt does not depend on an epoch rejection
+// matching a row. The returned flags identify the writes that committed.
 func (r *PostgresRepository) RejectEpochAndSetApplicationDiverged(
 	ctx context.Context,
 	applicationID int64,
@@ -290,10 +299,9 @@ func (r *PostgresRepository) RejectEpochAndSetApplicationDiverged(
 	}
 	result.EpochRejected = rejectCmd.RowsAffected() == 1
 
-	// Preserve an already-terminal cause. The best-effort epoch rejection still
-	// commits, but a later claim observation must not overwrite a stronger or
-	// earlier durable terminal status.
-	if !applicationStatus.IsTerminal() {
+	// Preserve the first integrity stop. A genuine mismatch under ET/IOR must
+	// become durable so the next tick cannot reopen earlier publication.
+	if applicationStatus != model.ApplicationStatus_Diverged && applicationStatus != model.ApplicationStatus_Corrupted {
 		appStmt := table.Application.
 			UPDATE(
 				table.Application.Status,
@@ -452,12 +460,12 @@ func (r *PostgresRepository) selectClaimsPage(
 		ConsensusTypes: []model.Consensus{model.Consensus_Authority, model.Consensus_Quorum}}
 	// Rotate over applications with work in this source. Observers keep every
 	// health status; publisher cursors exclude applications that cannot send.
-	next, err := r.nextClaimApplication(ctx, cursor.AfterApplicationID, status, cursor.HealthyOnly)
+	next, err := r.nextClaimApplication(ctx, cursor.AfterApplicationID, status, cursor.PublishableOnly)
 	if err != nil {
 		return repository.ClaimPage{}, err
 	}
 	if next == 0 && cursor.AfterApplicationID != 0 {
-		next, err = r.nextClaimApplication(ctx, 0, status, cursor.HealthyOnly)
+		next, err = r.nextClaimApplication(ctx, 0, status, cursor.PublishableOnly)
 		if err != nil {
 			return repository.ClaimPage{}, err
 		}
@@ -477,7 +485,7 @@ func (r *PostgresRepository) selectClaimsPage(
 		return page, err
 	}
 	defer rollbackDeliveryTx(tx)
-	oldest, err := claimWindowRows(ctx, tx, app.ID, status, nil, 1)
+	oldest, err := claimWindowRows(ctx, tx, app.ID, status, nil, 1, cursor.PublishableOnly)
 	if err != nil {
 		return page, err
 	}
@@ -489,7 +497,7 @@ func (r *PostgresRepository) selectClaimsPage(
 	if saved, ok := cursor.Epochs[app.ID]; ok && saved > after {
 		after = saved
 	}
-	later, err := claimWindowRows(ctx, tx, app.ID, status, &after, int64(limit))
+	later, err := claimWindowRows(ctx, tx, app.ID, status, &after, int64(limit), cursor.PublishableOnly)
 	if err != nil {
 		return repository.ClaimPage{}, err
 	}
@@ -504,19 +512,21 @@ func (r *PostgresRepository) selectClaimsPage(
 }
 
 func (r *PostgresRepository) nextClaimApplication(
-	ctx context.Context, after int64, status model.EpochStatus, healthyOnly bool,
+	ctx context.Context, after int64, status model.EpochStatus, publishableOnly bool,
 ) (int64, error) {
-	pending := table.Epoch.SELECT(table.Epoch.ApplicationID).WHERE(table.Epoch.ApplicationID.EQ(table.Application.ID).
-		AND(table.Epoch.Status.EQ(postgres.NewEnumValue(status.String()))))
+	pendingConditions := []postgres.BoolExpression{
+		table.Epoch.ApplicationID.EQ(table.Application.ID),
+		table.Epoch.Status.EQ(postgres.NewEnumValue(status.String())),
+	}
+	if publishableOnly {
+		pendingConditions = append(pendingConditions, claimPublicationCondition())
+	}
+	pending := table.Epoch.SELECT(table.Epoch.ApplicationID).WHERE(postgres.AND(pendingConditions...))
 	conditions := []postgres.BoolExpression{
 		table.Application.Enabled.EQ(postgres.Bool(true)),
 		table.Application.ConsensusType.IN(enum.Consensus.Authority, enum.Consensus.Quorum),
 		table.Application.ID.GT(postgres.Int64(after)),
 		postgres.EXISTS(pending),
-	}
-	if healthyOnly {
-		conditions = append(conditions, table.Application.Status.EQ(enum.ApplicationStatus.Ok),
-			table.Application.ForecloseBlock.EQ(uint64Expr(0)))
 	}
 	stmt := table.Application.SELECT(table.Application.ID).WHERE(postgres.AND(conditions...)).
 		ORDER_BY(table.Application.ID.ASC()).LIMIT(1)
@@ -530,13 +540,29 @@ func (r *PostgresRepository) nextClaimApplication(
 	return id, nil
 }
 
+// Discovery must not spend publisher turns on FAILED/DC, foreclosure, or a
+// suffix with no permitted epoch. The domain rechecks the coherent source
+// before signing and again before POST.
+func claimPublicationCondition() postgres.BoolExpression {
+	return table.Application.Status.IN(enum.ApplicationStatus.Ok, enum.ApplicationStatus.GuestException,
+		enum.ApplicationStatus.MachineHalted, enum.ApplicationStatus.McycleOverflow,
+		enum.ApplicationStatus.UnexpectedYield, enum.ApplicationStatus.InvalidOutputsRoot).
+		AND(table.Application.ForecloseBlock.EQ(uint64Expr(0))).
+		AND(table.Application.ProblemEpochIndex.IS_NULL().AND(table.Application.Status.EQ(enum.ApplicationStatus.Ok)).
+			OR(table.Epoch.Index.LT(table.Application.ProblemEpochIndex)))
+}
+
 func claimWindowRows(
-	ctx context.Context, tx pgx.Tx, appID int64, status model.EpochStatus, after *uint64, limit int64,
+	ctx context.Context, tx pgx.Tx, appID int64, status model.EpochStatus, after *uint64, limit int64, publishableOnly bool,
 ) ([]*model.Epoch, error) {
 	conditions := []postgres.BoolExpression{table.Epoch.ApplicationID.EQ(postgres.Int64(appID)),
 		table.Epoch.Status.EQ(postgres.NewEnumValue(status.String()))}
 	if after != nil {
 		conditions = append(conditions, table.Epoch.Index.GT(uint64Expr(*after)))
+	}
+	if publishableOnly {
+		conditions = append(conditions, postgres.EXISTS(table.Application.SELECT(table.Application.ID).
+			WHERE(table.Application.ID.EQ(table.Epoch.ApplicationID).AND(claimPublicationCondition()))))
 	}
 	stmt := table.Epoch.SELECT(table.Epoch.ApplicationID, table.Epoch.Index, table.Epoch.FirstBlock, table.Epoch.LastBlock,
 		table.Epoch.MachineHash, table.Epoch.TxBufferDataBlock, table.Epoch.TxBufferProof,

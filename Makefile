@@ -675,9 +675,9 @@ check-license: ## Verify license headers on Go source files
 # gets its own CI runner and the full per-job `go test -timeout 55m`
 # (run-integration-tests.sh) budget; `restart` (multi-suite, ~25-min setup
 # contexts) is the first to watch if a shard ever approaches that ceiling.
-# Discovery (integration-test-shard-check) lists tests with a plain Go
-# toolchain, so the integration package must stay free of the Cartesi CGo
-# dependency for the check to build on the CI setup runner.
+# Discovery (integration-test-shard-check) parses Go-selected test files with
+# a plain Go toolchain; native fixture dependencies are not built on the
+# CI setup runner.
 INTEGRATION_SHARDS := basic quorum prt replay restart withdrawal awskms
 
 INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMachineStates|MultiApp|EchoAuthorityStaging|IntegrationCLI|IntegrationLogScanner|TransactionFeeReplacement)$$

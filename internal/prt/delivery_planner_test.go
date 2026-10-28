@@ -381,6 +381,7 @@ func TestPRTMissingEpochEvidenceWaitsRatherThanCancelling(t *testing.T) {
 	f.repo.On("GetEpoch", mock.Anything, f.app.IApplicationAddress.Hex(), f.epoch.Index).Return((*model.Epoch)(nil), nil)
 	eligibility, err := f.d.Recheck(t.Context(), f.block, call.Key)
 	require.ErrorIs(t, err, txsender.ErrInconclusive)
+	require.True(t, txsender.WaitOnly(err))
 	require.Equal(t, txsender.ProtocolWait, eligibility)
 	require.False(t, f.d.publicationStopped())
 }

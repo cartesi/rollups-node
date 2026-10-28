@@ -108,7 +108,7 @@ func validatorShutdownFixture(
 	require.NoError(t, service.InitTickServiceTemplate(&s.TickServiceTemplate, &service.TickServiceConfigs{
 		BaseConfigs: service.BaseConfigs{Name: "validator", Logger: slog.New(slog.NewTextHandler(logs, nil))},
 	}, s))
-	app := &model.Application{ID: 1, Name: "validator-app", Status: model.ApplicationStatus_OK}
+	app := &model.Application{ID: 1, Name: "validator-app", Enabled: true, Status: model.ApplicationStatus_OK}
 	t.Cleanup(func() {
 		repo.AssertExpectations(t)
 		require.Equal(t, model.ApplicationStatus_OK, app.Status)
@@ -124,7 +124,7 @@ func validatorShutdownFixture(
 		epochs.Run(hook).Return([]*model.Epoch(nil), uint64(0), cause)
 		return s, logs
 	}
-	epoch := &model.Epoch{Status: model.EpochStatus_InputsProcessed,
+	epoch := &model.Epoch{ApplicationID: app.ID, Status: model.EpochStatus_InputsProcessed,
 		MachineHash: new(common.HexToHash("0x123")), TxBufferDataBlock: &s.pristineRootHash}
 	epochs.Return([]*model.Epoch{epoch}, uint64(1), nil)
 	outputs := repo.On("ListOutputs", ctx, app.IApplicationAddress.Hex(), mock.Anything, mock.Anything, false).Once()

@@ -274,8 +274,13 @@ func wrapInputLogIdentityConflict(err error) error {
 	return err
 }
 
-func (r *PostgresRepository) GetEpoch(
+func (r *PostgresRepository) GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*model.Epoch, error) {
+	return getEpoch(ctx, r.db, nameOrAddress, index)
+}
+
+func getEpoch(
 	ctx context.Context,
+	queryer rowQueryer,
 	nameOrAddress string,
 	index uint64,
 ) (*model.Epoch, error) {
@@ -321,7 +326,7 @@ func (r *PostgresRepository) GetEpoch(
 		)
 
 	sqlStr, args := stmt.Sql()
-	row := r.db.QueryRow(ctx, sqlStr, args...)
+	row := queryer.QueryRow(ctx, sqlStr, args...)
 
 	var ep model.Epoch
 	err := row.Scan(
@@ -360,7 +365,10 @@ func (r *PostgresRepository) GetEpoch(
 // HasUndrainedEpochsBeforeBlock returns true while any input belonging to
 // appID has block_number <= blockBound and is still status='NONE' (i.e. not
 // yet advanced by the machine). PRT uses this to keep its post-foreclosure
-// drain pending until all pre-foreclosure inputs have been advanced.
+// drain pending until all executable pre-foreclosure inputs have been advanced.
+// Under ET/IOR, NONE inputs at or beyond processed_inputs are unreachable. The
+// execution cursor, rather than the possibly earlier publication cutoff, defines
+// that suffix. A NONE below the cursor still blocks the drain defensively.
 //
 // The check is input-level rather than epoch-level for two reasons:
 //
@@ -396,12 +404,14 @@ func (r *PostgresRepository) HasUndrainedEpochsBeforeBlock(
 			table.Input.INNER_JOIN(table.Epoch,
 				table.Input.EpochApplicationID.EQ(table.Epoch.ApplicationID).
 					AND(table.Input.EpochIndex.EQ(table.Epoch.Index)),
-			),
+			).INNER_JOIN(table.Application, table.Application.ID.EQ(table.Input.EpochApplicationID)),
 		).
 		WHERE(
 			table.Input.EpochApplicationID.EQ(postgres.Int(appID)).
 				AND(table.Input.BlockNumber.LT_EQ(uint64Expr(blockBound))).
 				AND(table.Input.Status.EQ(enum.InputCompletionStatus.None)).
+				AND(table.Application.Status.NOT_IN(executionStopStatusExpressions...).
+					OR(table.Input.Index.LT(table.Application.ProcessedInputs))).
 				AND(table.Epoch.Status.IN(nonTerminalEpochStatusExpressions...)),
 		).
 		LIMIT(1)
@@ -418,7 +428,9 @@ func (r *PostgresRepository) HasUndrainedEpochsBeforeBlock(
 // ForecloseUnacceptedEpochsAtOrAfterBlock makes local Authority/Quorum epoch
 // rows terminal when their claim cannot be accepted because the application was
 // foreclosed before or at the epoch's last block. It leaves earlier epochs alone
-// so the claimer can still reconcile claims accepted before foreclosure.
+// so the claimer can still reconcile claims accepted before foreclosure. With
+// ET/IOR, epochs at or beyond the typed cutoff also have no valid local claim
+// path. Earlier pending validation and accepted claims remain untouched.
 func (r *PostgresRepository) ForecloseUnacceptedEpochsAtOrAfterBlock(
 	ctx context.Context,
 	appID int64,
@@ -434,10 +446,15 @@ func (r *PostgresRepository) ForecloseUnacceptedEpochsAtOrAfterBlock(
 		WHERE(
 			table.Epoch.ApplicationID.EQ(postgres.Int64(appID)).
 				AND(table.Epoch.FirstBlock.LT_EQ(uint64Expr(blockBound))).
-				AND(table.Epoch.LastBlock.GT_EQ(uint64Expr(blockBound))).
+				AND(table.Epoch.LastBlock.GT_EQ(uint64Expr(blockBound)).OR(
+					table.Application.Status.IN(executionStopStatusExpressions...).
+						AND(table.Epoch.Index.GT_EQ(table.Application.ProblemEpochIndex)))).
 				AND(table.Epoch.Status.IN(nonTerminalEpochStatusExpressions...)).
 				AND(table.Application.ID.EQ(table.Epoch.ApplicationID)).
 				AND(table.Application.ForecloseBlock.GT(uint64Expr(0))).
+				AND(table.Application.Enabled.EQ(postgres.Bool(true))).
+				AND(table.Application.Status.IN(
+					append([]postgres.Expression{enum.ApplicationStatus.Ok}, executionStopStatusExpressions...)...)).
 				AND(table.Application.ConsensusType.NOT_EQ(enum.Consensus.Prt)),
 		)
 

@@ -60,7 +60,7 @@ func TestEpochPublicationLosesToForeclosureWithoutWrites(t *testing.T) {
 			// The publisher holds this snapshot before PRT wins the terminal transition.
 			stale, err := repo.GetEpoch(t.Context(), app.Name, epoch.Index)
 			require.NoError(t, err)
-			require.NoError(t, repo.UpdateApplicationForeclosure(t.Context(), app.ID, 100, repotest.UniqueHash(), 100))
+			require.NoError(t, repo.UpdateApplicationForeclosure(t.Context(), app.ID, epoch.LastBlock, repotest.UniqueHash(), 100))
 			require.NoError(t, repo.UpdateEpochWithForeclosedClaim(t.Context(), app.ID, epoch.Index))
 			before, err := repo.GetEpoch(t.Context(), app.Name, epoch.Index)
 			require.NoError(t, err)

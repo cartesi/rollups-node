@@ -40,6 +40,7 @@ type prtRepository interface {
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter,
 		p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
+	GetEpochCompletionState(ctx context.Context, nameOrAddress string, index uint64) (*repository.EpochCompletionState, error)
 	GetLastNonOpenEpochIndex(ctx context.Context, nameOrAddress string) (*uint64, error)
 	UpdateEpochReconciledStaged(ctx context.Context, applicationID int64, index uint64, stagedAtBlock uint64) error
 	UpdateEpochStagingBlock(ctx context.Context, applicationID int64, index, expectedOldBlock, newBlock uint64) error
@@ -390,6 +391,14 @@ func (s *Service) reconcileAcceptedEpochs(
 		if epoch.Status != EpochStatus_ClaimComputed && epoch.Status != EpochStatus_ClaimStaged {
 			continue
 		}
+		var err error
+		epoch, err = s.observerCompletionEpoch(ctx, app, epoch)
+		if err != nil {
+			return true, err
+		}
+		if epoch == nil {
+			continue
+		}
 		if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
 			epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
 			return true, s.setApplicationCorrupted(ctx, app,
@@ -401,6 +410,9 @@ func (s *Service) reconcileAcceptedEpochs(
 		tournament, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex())
 		if err != nil {
 			return true, fmt.Errorf("loading epoch %d observed tournament: %w", epoch.Index, err)
+		}
+		if app.IsForeclosed() && epoch.LastBlock < app.ForecloseBlock && !rootObservationCovers(tournament, mostRecentBlock) {
+			return true, nil
 		}
 		if tournament == nil || tournament.Snapshot.FinishedAtBlock == 0 ||
 			tournament.Snapshot.FinishedAtBlock > tournament.Snapshot.AsOfBlock ||

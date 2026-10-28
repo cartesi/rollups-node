@@ -810,7 +810,7 @@ func (s *ClaimerSuite) TestRejectEpochAndSetApplicationDiverged() {
 		ApplicationStatus_Corrupted,
 		ApplicationStatus_InvalidOutputsRoot,
 	} {
-		s.Run("Preserves"+terminalStatus.String()+"WhileRejectingEpoch", func() {
+		s.Run("IntegrityFindingAfter/"+terminalStatus.String(), func() {
 			app := s.createAppWithClaimComputedEpoch()
 			originalReason := "earlier terminal cause"
 			s.Require().NoError(s.Repo.UpdateApplicationStatus(
@@ -820,7 +820,7 @@ func (s *ClaimerSuite) TestRejectEpochAndSetApplicationDiverged() {
 				s.Ctx, app.ID, 0, "later claim disagreement")
 			s.Require().NoError(err)
 			s.True(result.EpochRejected)
-			s.False(result.ApplicationDiverged)
+			s.Equal(terminalStatus != ApplicationStatus_Corrupted, result.ApplicationDiverged)
 
 			gotEpoch, err := s.Repo.GetEpoch(
 				s.Ctx, app.IApplicationAddress.String(), 0)
@@ -830,9 +830,14 @@ func (s *ClaimerSuite) TestRejectEpochAndSetApplicationDiverged() {
 			gotApp, err := s.Repo.GetApplication(
 				s.Ctx, app.IApplicationAddress.String())
 			s.Require().NoError(err)
-			s.Equal(terminalStatus, gotApp.Status)
 			s.Require().NotNil(gotApp.Reason)
-			s.Equal(originalReason, *gotApp.Reason)
+			if terminalStatus == ApplicationStatus_Corrupted {
+				s.Equal(terminalStatus, gotApp.Status)
+				s.Equal(originalReason, *gotApp.Reason)
+			} else {
+				s.Equal(ApplicationStatus_Diverged, gotApp.Status)
+				s.Equal("later claim disagreement", *gotApp.Reason)
+			}
 		})
 	}
 

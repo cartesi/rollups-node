@@ -262,13 +262,20 @@ func (r *Service) readAndUpdateOutputs(
 					return false // persistence failed; retry this event next tick
 				}
 			case app.application.Status.IsExecutionTerminal():
+				// This verdict assumes the mismatch refutes a valid local root.
+				// An earlier IOR may still be undiscovered, or may already have
+				// tightened the cutoff while status remains ET. OutputExecuted
+				// does not identify the accepted cumulative root used as proof;
+				// a sound source-aware verdict needs the separate output reform.
 				_ = r.setApplicationCorrupted(ctx, app.application, reasonFmt, args...)
 				if app.application.Status != ApplicationStatus_Corrupted {
 					return false // persistence failed; retry this event next tick
 				}
 			case app.application.Status == ApplicationStatus_InvalidOutputsRoot:
-				// Preserve the root-validation diagnosis. The local/chain output
-				// disagreement does not establish that local storage is corrupt.
+				// A later accepted cumulative root can prove different bytes at
+				// an earlier output index. The event does not identify that root,
+				// so this mismatch cannot refute the accepted root of that earlier
+				// epoch. Per-epoch root comparisons retain their integrity checks.
 				r.Logger.Error("Output mismatch; preserving terminal application status",
 					"application", app.application.Name,
 					"address", app.application.IApplicationAddress,

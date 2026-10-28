@@ -159,11 +159,12 @@ func (f *observerCheckpointFixture) expectResultBoundaryWindow(epoch *model.Epoc
 	adapter.On("CommitmentStanding", opts, [32]byte(commitment.Commitment)).
 		Return(CommitmentStanding{Joined: true, FinalState: commitment.FinalStateHash, ClockAllowance: 80}, nil).Once()
 	statusBeforePublication := epoch.Status
+	applicationStatusBeforePublication := f.app.Status
 	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, head).
 		Run(func(args mock.Arguments) {
 			batches := args.Get(2).([]*repository.TournamentEventBatch)
 			require.Len(f.t, batches, 1)
-			require.Equal(f.t, model.ApplicationStatus_OK, f.app.Status)
+			require.Equal(f.t, applicationStatusBeforePublication, f.app.Status)
 			require.Equal(f.t, statusBeforePublication, epoch.Status)
 			*tournament = *batches[0].Tournament
 		}).Return(nil).Once()

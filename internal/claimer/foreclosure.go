@@ -43,8 +43,11 @@ func (s *Service) listEnabledForeclosedNonPRTApps(ctx context.Context) (map[int6
 
 func foreclosedClaimDrainApplicationsFilter() repository.ApplicationFilter {
 	return repository.ApplicationFilter{
-		Enabled:             new(true),
-		Statuses:            []model.ApplicationStatus{model.ApplicationStatus_OK},
+		Enabled: new(true),
+		Statuses: []model.ApplicationStatus{
+			model.ApplicationStatus_OK, model.ApplicationStatus_GuestException, model.ApplicationStatus_MachineHalted,
+			model.ApplicationStatus_McycleOverflow, model.ApplicationStatus_UnexpectedYield, model.ApplicationStatus_InvalidOutputsRoot,
+		},
 		ConsensusTypes:      []model.Consensus{model.Consensus_Authority, model.Consensus_Quorum},
 		ForeclosureRecorded: new(true),
 	}
@@ -57,9 +60,9 @@ func foreclosedClaimDrainApplicationsFilter() repository.ApplicationFilter {
 //
 // A foreclosed application is identified by foreclose_block, not by status: a
 // healthy foreclosed app is enabled with status=OK and foreclose_block set, and
-// is drained here. Any non-OK app is excluded by the selecting filter. FAILED
-// requires repair before the operator clears it and resumes the drain. Terminal
-// health statuses remain blocked. EVM reader still observes enabled apps
+// is drained here. Execution stops also drain their unreachable suffix while
+// earlier valid epochs retain their normal reconciliation. FAILED and DC remain
+// excluded by the selecting filter. EVM reader still observes enabled apps
 // (drive-prove, withdrawals), regardless of their health.
 //
 // This function does not send transactions. Submit and accept code already skip
@@ -176,6 +179,11 @@ func (s *Service) forecloseClaim(
 	if err := requireObservedBlock(observedBlock, app.ForecloseBlock); err != nil {
 		return err
 	}
+	if err := s.repository.UpdateEpochWithForeclosedClaim(
+		ctx, app.ID, epoch.Index); err != nil {
+		return fmt.Errorf("marking epoch %d (%d) CLAIM_FORECLOSED: %w",
+			epoch.Index, epoch.VirtualIndex, err)
+	}
 	s.Logger.Info("Claim made terminal by application foreclosure",
 		"application", app.Name,
 		"address", app.IApplicationAddress.String(),
@@ -185,12 +193,6 @@ func (s *Service) forecloseClaim(
 		"foreclose_block", app.ForecloseBlock,
 		"site", site,
 	)
-
-	if err := s.repository.UpdateEpochWithForeclosedClaim(
-		ctx, app.ID, epoch.Index); err != nil {
-		return fmt.Errorf("marking epoch %d (%d) CLAIM_FORECLOSED: %w",
-			epoch.Index, epoch.VirtualIndex, err)
-	}
 	epoch.Status = model.EpochStatus_ClaimForeclosed
 	return nil
 }

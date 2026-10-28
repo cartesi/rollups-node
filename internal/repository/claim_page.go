@@ -23,9 +23,9 @@ type ClaimPage struct {
 type ClaimCursor struct {
 	AfterApplicationID int64
 	Epochs             map[int64]uint64
-	// HealthyOnly excludes stopped or foreclosed applications before publisher
-	// pagination. Observers leave it false to reconcile every enabled status.
-	HealthyOnly bool
+	// PublishableOnly limits publisher pagination to eligible epoch prefixes.
+	// Observers leave it false to reconcile every enabled status.
+	PublishableOnly bool
 }
 
 func (c *ClaimCursor) Advance(work ClaimWork, page ClaimPage) {

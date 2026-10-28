@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+const dummyApplicationName = "dummy-application-name"
+
 type ValidatorSuite struct {
 	suite.Suite
 }
@@ -59,11 +61,11 @@ func (s *ValidatorSuite) SetupSubTest() {
 	service.InitServiceTemplate(&validator.BaseTemplate, serviceArgs)
 	dummyTxBufferDataBlock := common.HexToHash("0x0a162946e56158bac0673e6dd3bdfdc1e4a0e7744a120fdb640050c8d7abe1c6")
 	dummyEpochs = []Epoch{
-		{Index: 0, VirtualIndex: 0, FirstBlock: 0, LastBlock: 9,
+		{Index: 0, VirtualIndex: 0, FirstBlock: 0, LastBlock: 9, Status: EpochStatus_InputsProcessed,
 			TxBufferDataBlock: &dummyTxBufferDataBlock, MachineHash: &validator.pristineRootHash},
-		{Index: 1, VirtualIndex: 1, FirstBlock: 10, LastBlock: 19},
-		{Index: 2, VirtualIndex: 2, FirstBlock: 20, LastBlock: 29},
-		{Index: 3, VirtualIndex: 3, FirstBlock: 30, LastBlock: 39},
+		{Index: 1, VirtualIndex: 1, FirstBlock: 10, LastBlock: 19, Status: EpochStatus_InputsProcessed},
+		{Index: 2, VirtualIndex: 2, FirstBlock: 20, LastBlock: 29, Status: EpochStatus_InputsProcessed},
+		{Index: 3, VirtualIndex: 3, FirstBlock: 30, LastBlock: 39, Status: EpochStatus_InputsProcessed},
 	}
 	hash := common.HexToHash("0x68b9914c8b694e0037fc9ae85670b5de94fa9d1adb10b3a037c3b170e14ee50d")
 	dummyOutputs = []Output{
@@ -147,7 +149,7 @@ func (s *ValidatorSuite) TearDownSubTest() {
 
 func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 	app := Application{
-		Name: "dummy-application-name",
+		Name: dummyApplicationName, Enabled: true, Status: ApplicationStatus_OK,
 	}
 
 	s.Run("FirstEpochNoOutputs", func() {
@@ -228,7 +230,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 	ctx := context.Background()
 	app := Application{
-		Name: "dummy-application-name",
+		Name: dummyApplicationName, Enabled: true, Status: ApplicationStatus_OK,
 	}
 	xerror := fmt.Errorf("Error")
 
@@ -343,13 +345,14 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 	ctx := context.Background()
 	app := Application{
-		Name: "dummy-application-name",
+		Name: dummyApplicationName, Enabled: true, Status: ApplicationStatus_OK,
 	}
 	s.Run("NoEpoch", func() {
 		repo.On("ListEpochs",
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
 		).Return(([]*Epoch)(nil), uint64(0), nil).Once()
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NoError(err)
 		repo.AssertExpectations(s.T())
@@ -378,6 +381,7 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(nil).Once()
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NoError(err)
 		repo.AssertExpectations(s.T())
@@ -393,19 +397,24 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 			mock.Anything, foreclosedApp.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
 		).Return([]*Epoch{&unacceptableEpoch}, uint64(1), nil).Once()
 
+		repo.application = &foreclosedApp
 		err := validator.validateApplication(ctx, &foreclosedApp)
 		s.NoError(err)
 		repo.AssertExpectations(s.T())
 	})
 }
 
-func (s *ValidatorSuite) TestValidationApplicationsFilterSelectsOKApps() {
+func (s *ValidatorSuite) TestValidationApplicationsFilterSelectsValidPrefixes() {
 	s.Run("Filter", func() {
 		repo.On("ListApplications",
 			mock.Anything,
 			mock.MatchedBy(func(f repository.ApplicationFilter) bool {
 				return f.Enabled != nil && *f.Enabled &&
-					s.ElementsMatch([]ApplicationStatus{ApplicationStatus_OK}, f.Statuses)
+					s.ElementsMatch([]ApplicationStatus{
+						ApplicationStatus_OK, ApplicationStatus_MachineHalted, ApplicationStatus_GuestException,
+						ApplicationStatus_McycleOverflow, ApplicationStatus_UnexpectedYield,
+						ApplicationStatus_InvalidOutputsRoot,
+					}, f.Statuses)
 			}),
 			repository.Pagination{},
 			false,
@@ -420,7 +429,7 @@ func (s *ValidatorSuite) TestValidationApplicationsFilterSelectsOKApps() {
 func (s *ValidatorSuite) TestValidateApplicationFailure() {
 	ctx := context.Background()
 	app := Application{
-		Name: "dummy-application-name",
+		Name: dummyApplicationName, Enabled: true, Status: ApplicationStatus_OK,
 	}
 	xerror := fmt.Errorf("Error")
 
@@ -429,6 +438,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
 		).Return([]*Epoch{}, uint64(0), xerror).Once()
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
@@ -443,6 +453,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, mock.Anything, mock.Anything, mock.Anything, false,
 		).Return([]*Output{}, uint64(0), xerror).Once()
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
@@ -466,6 +477,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), dummyEpochs[0].Index,
 		).Return(&input, xerror).Once()
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
@@ -491,6 +503,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		expectCorrupted(&app, "outputs merkle root is not defined")
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
@@ -517,6 +530,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		expectCorrupted(&app, "machine hash is not defined")
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
@@ -543,12 +557,15 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		expectCorrupted(&app, "outputs merkle root does not match last input")
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
 
 	s.Run("StoreClaimAndProofsFailure", func() {
+		app.Status = ApplicationStatus_OK
+		app.Reason = nil
 		input := Input{
 			EpochApplicationID: app.ID,
 			TxBufferDataBlock:  &validator.pristineRootHash,
@@ -571,6 +588,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(xerror).Once()
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.ErrorIs(err, xerror)
 		repo.AssertExpectations(s.T())
@@ -579,7 +597,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 	// --- nil pointer access guards added in fix/validator-hardening ---
 
 	s.Run("NilEpochMachineHash", func() {
-		epoch := Epoch{
+		epoch := Epoch{Status: EpochStatus_InputsProcessed,
 			Index:             0,
 			VirtualIndex:      0,
 			FirstBlock:        0,
@@ -593,13 +611,14 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		expectCorrupted(&app, "has no machine hash")
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
 	})
 
 	s.Run("NilEpochTxBufferDataBlock", func() {
-		epoch := Epoch{
+		epoch := Epoch{Status: EpochStatus_InputsProcessed,
 			Index:             0,
 			VirtualIndex:      0,
 			FirstBlock:        0,
@@ -613,6 +632,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		expectCorrupted(&app, "has no outputs merkle root")
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
@@ -620,10 +640,10 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 	s.Run("EmptyEpochInNonDaveConsensusApp", func() {
 		app := Application{
-			Name:          "dummy-application-name",
+			Name: dummyApplicationName, Enabled: true, Status: ApplicationStatus_OK,
 			ConsensusType: Consensus_Authority, // non-DaveConsensus
 		}
-		epoch := Epoch{
+		epoch := Epoch{Status: EpochStatus_InputsProcessed,
 			Index:             0,
 			VirtualIndex:      0,
 			FirstBlock:        0,
@@ -647,6 +667,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		expectCorrupted(&app, "has no inputs while not DaveConsensus")
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
@@ -654,10 +675,10 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 	s.Run("EmptyEpochPreviousEpochIsNil", func() {
 		app := Application{
-			Name:          "dummy-application-name",
+			Name: dummyApplicationName, Enabled: true, Status: ApplicationStatus_OK,
 			ConsensusType: Consensus_PRT, // DaveConsensus so !IsDaveConsensus guard passes
 		}
-		epoch := Epoch{
+		epoch := Epoch{Status: EpochStatus_InputsProcessed,
 			Index:             1,
 			VirtualIndex:      1,
 			FirstBlock:        10,
@@ -691,6 +712,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		expectCorrupted(&app, "has no previous epoch")
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
@@ -698,10 +720,10 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 	s.Run("EmptyEpochPreviousEpochMachineHashNil", func() {
 		app := Application{
-			Name:          "dummy-application-name",
+			Name: dummyApplicationName, Enabled: true, Status: ApplicationStatus_OK,
 			ConsensusType: Consensus_PRT,
 		}
-		epoch := Epoch{
+		epoch := Epoch{Status: EpochStatus_InputsProcessed,
 			Index:             1,
 			VirtualIndex:      1,
 			FirstBlock:        10,
@@ -739,6 +761,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		expectCorrupted(&app, "machine hash is not defined")
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
@@ -746,10 +769,10 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 	s.Run("EmptyEpochPreviousEpochTxBufferDataBlockNil", func() {
 		app := Application{
-			Name:          "dummy-application-name",
+			Name: dummyApplicationName, Enabled: true, Status: ApplicationStatus_OK,
 			ConsensusType: Consensus_PRT,
 		}
-		epoch := Epoch{
+		epoch := Epoch{Status: EpochStatus_InputsProcessed,
 			Index:             1,
 			VirtualIndex:      1,
 			FirstBlock:        10,
@@ -787,6 +810,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 
 		expectCorrupted(&app, "outputs merkle root is not defined")
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.NotNil(err)
 		repo.AssertExpectations(s.T())
@@ -800,6 +824,7 @@ func (s *ValidatorSuite) TestValidateApplicationFailure() {
 			mock.Anything, app.IApplicationAddress.String(), mock.Anything, mock.Anything, false,
 		).Return([]*Epoch{&dummyEpochs[0]}, uint64(1), nil).Once()
 
+		repo.application = &app
 		err := validator.validateApplication(ctx, &app)
 		s.ErrorIs(err, context.Canceled)
 		repo.AssertExpectations(s.T())
@@ -1062,6 +1087,11 @@ func (s *ValidatorSuite) TestBuildCommitment() {
 
 type Mockrepo struct {
 	mock.Mock
+	application              *Application
+	applications             []*Application
+	epochs                   []*Epoch
+	problem                  *ApplicationProblem
+	readEpochCompletionState func(context.Context, string, uint64) (*repository.EpochCompletionState, error)
 }
 
 func newMockrepo() *Mockrepo {
@@ -1075,7 +1105,12 @@ func (m *Mockrepo) ListApplications(
 	descending bool,
 ) ([]*Application, uint64, error) {
 	args := m.Called(ctx, f, pagination, descending)
-	return args.Get(0).([]*Application), args.Get(1).(uint64), args.Error(2)
+	apps := args.Get(0).([]*Application)
+	m.applications = apps
+	if len(apps) == 1 {
+		m.application = apps[0]
+	}
+	return apps, args.Get(1).(uint64), args.Error(2)
 }
 
 func (m *Mockrepo) ListOutputs(
@@ -1106,7 +1141,8 @@ func (m *Mockrepo) ListEpochs(
 	descending bool,
 ) ([]*Epoch, uint64, error) {
 	args := m.Called(ctx, nameOrAddress, f, p, descending)
-	return args.Get(0).([]*Epoch), args.Get(1).(uint64), args.Error(2)
+	m.epochs = args.Get(0).([]*Epoch)
+	return m.epochs, args.Get(1).(uint64), args.Error(2)
 }
 
 func (m *Mockrepo) GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error) {
@@ -1133,4 +1169,37 @@ func (m *Mockrepo) ListStateHashes(ctx context.Context, nameOrAddress string,
 func (m *Mockrepo) UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error {
 	args := m.Called(ctx, appID, status, reason)
 	return args.Error(0)
+}
+
+func (m *Mockrepo) StoreInvalidOutputsRoot(ctx context.Context, appID int64, epochIndex uint64, reason string) error {
+	args := m.Called(ctx, appID, epochIndex, reason)
+	return args.Error(0)
+}
+
+func (m *Mockrepo) GetEpochCompletionState(ctx context.Context, name string, index uint64) (*repository.EpochCompletionState, error) {
+	if m.readEpochCompletionState != nil {
+		return m.readEpochCompletionState(ctx, name, index)
+	}
+	app := m.application
+	if m.applications != nil {
+		app = nil
+		for _, candidate := range m.applications {
+			if name == candidate.Name || name == candidate.IApplicationAddress.Hex() {
+				app = candidate
+				break
+			}
+		}
+	}
+	state := &repository.EpochCompletionState{}
+	if app == nil || name != app.Name && name != app.IApplicationAddress.Hex() {
+		return state, nil
+	}
+	state.Application, state.Problem = app, m.problem
+	for _, epoch := range m.epochs {
+		if epoch.Index == index && epoch.ApplicationID == app.ID {
+			state.Epoch = epoch
+			break
+		}
+	}
+	return state, nil
 }

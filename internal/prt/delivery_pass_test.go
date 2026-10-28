@@ -76,9 +76,10 @@ func TestPRTPlanningFailureIsVisibleWhileAnotherApplicationPublishes(t *testing.
 		"each affected action kind warns once, rather than once per poll or fallthrough")
 }
 
-func TestPRTHeldReadFailureCannotAuthorizeAnUrgentSubstitution(t *testing.T) {
+func TestPRTHeldReadFailureAloneDoesNotJustifySubstitution(t *testing.T) {
 	f, call, _ := preparePRTAction(t, stageTournament)
 	submitPRTAction(t, f, call)
+	// This pass has no separately verified priority evidence after the failed read.
 	addDeliveryJoinCandidate(f, 8, 25)
 	cause := errors.New("held application's epoch could not be read")
 	failDeliveryEpochRead(f, f.app, cause)

@@ -103,31 +103,45 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 		return err
 	}
 	var view *daveConsensusSnapshot
-	if app.Status == model.ApplicationStatus_OK && !app.IsForeclosed() {
+	var eligibilityErr error
+	if completionStatusAllowed(app.Status) && !app.IsForeclosed() {
 		for _, epoch := range epochs {
 			if !pendingTournamentResult(epoch) || epoch.LastBlock > facts.Number {
 				continue
 			}
+			eligible, readErr := s.observerCompletionEpoch(ctx, app, epoch)
+			if readErr != nil {
+				eligibilityErr = errors.Join(eligibilityErr, readErr)
+				continue
+			}
+			if eligible == nil {
+				continue
+			}
 			snapshot, readErr := readDaveConsensusSnapshot(withLiveBlock(ctx, facts.Number, facts.Hash), consensus, facts.Number)
-			if errors.Is(readErr, bind.ErrNoCode) {
+			if errors.Is(readErr, bind.ErrNoCode) && app.Status == model.ApplicationStatus_OK {
 				return nil
 			}
 			if readErr != nil {
 				s.recordTournamentObservationFailure(ctx, app, facts.Number, facts.Number, readErr)
-				return fmt.Errorf("application %s (%s), consensus snapshot block %d hash %s: %w",
+				readErr = fmt.Errorf("application %s (%s), consensus snapshot block %d hash %s: %w",
 					app.Name, app.IApplicationAddress, facts.Number, facts.Hash, readErr)
+				if app.Status == model.ApplicationStatus_OK {
+					return readErr
+				}
+				eligibilityErr = errors.Join(eligibilityErr, readErr)
+				break
 			}
 			view = &snapshot
 			break
 		}
 	}
-	observeErr := s.observeTournamentState(ctx, app, epochs, consensus, facts)
+	observeErr := errors.Join(eligibilityErr, s.observeTournamentState(ctx, app, epochs, consensus, facts))
 	if ctx.Err() != nil {
 		return errors.Join(observeErr, ctx.Err())
 	}
 	// Existing committed roots remain independently usable even if another root
 	// failed. Reconciliation uses each owning root's durable endpoint below.
-	if app.Status != model.ApplicationStatus_OK {
+	if eligibilityErr != nil || !completionStatusAllowed(app.Status) {
 		return observeErr
 	}
 	if app.IsForeclosed() {
@@ -162,6 +176,10 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 		return errors.Join(observeErr, err)
 	}
 	if pendingTournamentResult(epoch) && (epoch.StagedAtBlock == nil || *epoch.StagedAtBlock <= facts.Number) {
+		epoch, err = s.observerCompletionEpoch(ctx, app, epoch)
+		if err != nil || epoch == nil {
+			return errors.Join(observeErr, err)
+		}
 		root, readErr := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), view.sealed.Tournament.Hex())
 		if readErr != nil {
 			return errors.Join(observeErr, readErr)
@@ -293,4 +311,36 @@ func (s *Service) validateObservationBlock(ctx context.Context, facts txsender.B
 		txsender.ErrFinality, facts.Number, facts.Hash, header.Hash())
 	s.stopPublication(err)
 	return err
+}
+
+func completionStatusAllowed(status model.ApplicationStatus) bool {
+	return status == model.ApplicationStatus_OK || status.IsExecutionTerminal() || status == model.ApplicationStatus_InvalidOutputsRoot
+}
+
+// Healthy observation retains its existing reconciliation path. Continuing it
+// after ET/IOR requires positive, coherent evidence that this epoch precedes the
+// stop. Tournament interval observation itself remains independent of that gate.
+func (s *Service) observerCompletionEpoch(ctx context.Context, app *model.Application, epoch *model.Epoch) (*model.Epoch, error) {
+	if !completionStatusAllowed(app.Status) {
+		return nil, txsender.ErrIneligible
+	}
+	if app.Status == model.ApplicationStatus_OK {
+		return epoch, nil
+	}
+	state, err := s.repository.GetEpochCompletionState(ctx, app.IApplicationAddress.Hex(), epoch.Index)
+	if err != nil {
+		return nil, err
+	}
+	if state == nil || state.Application == nil || state.Application.ID != app.ID || !state.Application.Enabled ||
+		!completionStatusAllowed(state.Application.Status) {
+		return nil, txsender.ErrIneligible
+	}
+	allowed, err := state.AllowsEpochCompletion()
+	if err != nil {
+		return nil, fmt.Errorf("%w: application %s epoch %d: %w", txsender.ErrInconclusive, app.Name, epoch.Index, err)
+	}
+	if !allowed {
+		return nil, nil
+	}
+	return state.Epoch, nil
 }

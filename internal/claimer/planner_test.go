@@ -45,7 +45,7 @@ func TestClaimPlannerPublishesThroughRealSender(t *testing.T) {
 	}
 }
 
-func TestClaimPlannerUnknownReadDoesNotCancelOrSwitch(t *testing.T) {
+func TestClaimPlannerUnknownReadAloneDoesNotJustifyCancellationOrReplacement(t *testing.T) {
 	s, backend, lookup := newDeliveryFixture(t)
 	queueDelivery(t, backend, lookup, 1)
 	require.NoError(t, s.publisher.tick(t.Context()))
@@ -217,7 +217,7 @@ func TestClaimPlannerInspectsLaterWindowBeforeReadyOldestSend(t *testing.T) {
 	require.Len(t, backend.published, 12, "one publication ends each pass after every window row was considered")
 }
 
-func TestClaimPlannerReconstructsAfterInclusionReorgUnderEveryPolicy(t *testing.T) {
+func TestClaimPlannerRepairsVanishedStageOnlyUnderProvisionalPolicy(t *testing.T) {
 	for _, policy := range []model.DefaultBlock{model.DefaultBlock_Latest, model.DefaultBlock_Safe, model.DefaultBlock_Finalized} {
 		t.Run(policy.String(), func(t *testing.T) {
 			s, backend, lookup := newDeliveryFixture(t, policy)
@@ -231,14 +231,21 @@ func TestClaimPlannerReconstructsAfterInclusionReorgUnderEveryPolicy(t *testing.
 			backend.claims[app.ID] = makeClaimStatus(claimStatusAccepted, epoch, 45)
 			require.NoError(t, s.publisher.tick(t.Context()))
 			require.Len(t, backend.published, 1)
-			// The old nonce has become available again after a reorg. The
-			// already stored STAGED row remains a reconstruction candidate.
+			// A provisional reorg can make the old nonce available again.
+			// Under finalized policy this instead contradicts stored history;
+			// leave that diagnosis to the independent observer.
 			backend.nonce, backend.consumedAt = 0, 0
 			delete(backend.claims, app.ID)
-			require.NoError(t, s.publisher.tick(t.Context()))
-			require.Len(t, backend.published, 2)
-			require.Equal(t, original.Nonce(), backend.published[1].Nonce())
-			require.Equal(t, original.Data(), backend.published[1].Data())
+			err := s.publisher.tick(t.Context())
+			if policy.Provisional() {
+				require.NoError(t, err)
+				require.Len(t, backend.published, 2)
+				require.Equal(t, original.Nonce(), backend.published[1].Nonce())
+				require.Equal(t, original.Data(), backend.published[1].Data())
+			} else {
+				require.ErrorIs(t, err, txsender.ErrInconclusive)
+				require.Len(t, backend.published, 1)
+			}
 			for _, tag := range tags {
 				require.Equal(t, "latest", tag, "sender policy has no hidden finality dependency")
 			}

@@ -77,7 +77,9 @@ func TestListEnabledForeclosedNonPRTApps_UsesAuthorityQuorumFilter(t *testing.T)
 					f.ConsensusTypes,
 				) &&
 				assert.ElementsMatch(t,
-					[]model.ApplicationStatus{model.ApplicationStatus_OK},
+					[]model.ApplicationStatus{model.ApplicationStatus_OK, model.ApplicationStatus_GuestException,
+						model.ApplicationStatus_MachineHalted, model.ApplicationStatus_McycleOverflow,
+						model.ApplicationStatus_UnexpectedYield, model.ApplicationStatus_InvalidOutputsRoot},
 					f.Statuses,
 				)
 		}),
@@ -92,13 +94,13 @@ func TestListEnabledForeclosedNonPRTApps_UsesAuthorityQuorumFilter(t *testing.T)
 	assert.Contains(t, got, quorum.ID)
 }
 
-// TestListEnabledForeclosedNonPRTApps_ExcludesTerminalStatuses verifies the
+// TestListEnabledForeclosedNonPRTApps_ExcludesIntegrityAndRecoverableFailures verifies the
 // selection boundary that keeps terminal foreclosed apps out of the claim
 // drain. A DIVERGED or CORRUPTED app is terminal for claim work; EVM reader
 // still observes it, but the claimer must not keep re-running drain checks
 // every tick. The protection lives in the selecting filter, which restricts
-// Statuses to OK, so terminal apps are never handed to processForeclosedApps.
-func TestListEnabledForeclosedNonPRTApps_ExcludesTerminalStatuses(t *testing.T) {
+// Statuses to OK/ET/IOR, so FAILED/DC are never handed to processForeclosedApps.
+func TestListEnabledForeclosedNonPRTApps_ExcludesIntegrityAndRecoverableFailures(t *testing.T) {
 	s, r, _ := newServiceMock(t)
 	defer r.AssertExpectations(t)
 
@@ -106,7 +108,9 @@ func TestListEnabledForeclosedNonPRTApps_ExcludesTerminalStatuses(t *testing.T) 
 		mock.Anything,
 		mock.MatchedBy(func(f repository.ApplicationFilter) bool {
 			return assert.ElementsMatch(t,
-				[]model.ApplicationStatus{model.ApplicationStatus_OK},
+				[]model.ApplicationStatus{model.ApplicationStatus_OK, model.ApplicationStatus_GuestException,
+					model.ApplicationStatus_MachineHalted, model.ApplicationStatus_McycleOverflow,
+					model.ApplicationStatus_UnexpectedYield, model.ApplicationStatus_InvalidOutputsRoot},
 				f.Statuses,
 			)
 		}),

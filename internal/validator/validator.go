@@ -74,7 +74,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 }
 
 // Tick executes the Validator main logic of producing claims and/or proofs
-// for processed epochs of all running applications.
+// for processed epochs of all applications with a valid epoch prefix.
 func (s *Service) Tick(ctx context.Context) (reschedule bool, err error) {
 	defer func() {
 		if errors.Is(ctx.Err(), context.Canceled) && errutil.IsOnlyCancellation(err) {
@@ -117,7 +117,9 @@ type ValidatorRepository interface {
 	) ([]*Epoch, uint64, error)
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error) // FIXME migrate to list
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
+	GetEpochCompletionState(ctx context.Context, nameOrAddress string, index uint64) (*repository.EpochCompletionState, error)
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
+	StoreInvalidOutputsRoot(ctx context.Context, appID int64, epochIndex uint64, reason string) error
 	ListStateHashes(
 		ctx context.Context, nameOrAddress string, f repository.StateHashFilter, p repository.Pagination, descending bool,
 	) ([]*StateHash, uint64, error)
@@ -129,8 +131,15 @@ func getAllRunningApplications(ctx context.Context, er ValidatorRepository) ([]*
 
 func validationApplicationsFilter() repository.ApplicationFilter {
 	return repository.ApplicationFilter{
-		Enabled:  new(true),
-		Statuses: []ApplicationStatus{ApplicationStatus_OK},
+		Enabled: new(true),
+		Statuses: []ApplicationStatus{
+			ApplicationStatus_OK,
+			ApplicationStatus_MachineHalted,
+			ApplicationStatus_GuestException,
+			ApplicationStatus_McycleOverflow,
+			ApplicationStatus_UnexpectedYield,
+			ApplicationStatus_InvalidOutputsRoot,
+		},
 	}
 }
 
@@ -160,6 +169,26 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 	for _, epoch := range processedEpochs {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		// The application list and epoch list are discovery only. Reload the
+		// application, epoch and stop boundary together before computing work.
+		state, err := s.repository.GetEpochCompletionState(ctx, appAddress, epoch.Index)
+		if err != nil {
+			return fmt.Errorf("failed to read validation state for application %s epoch %d: %w", appAddress, epoch.Index, err)
+		}
+		if state == nil || state.Application == nil || state.Application.ID != app.ID || !state.Application.Enabled {
+			return nil
+		}
+		allowed, err := state.AllowsEpochCompletion()
+		if err != nil {
+			return fmt.Errorf("inconclusive validation state for application %s epoch %d: %w", appAddress, epoch.Index, err)
+		}
+		if !allowed {
+			return nil
+		}
+		app, epoch = state.Application, state.Epoch
+		if epoch.Status != EpochStatus_InputsProcessed {
+			continue
 		}
 		if app.ForecloseBlock != 0 && epoch.LastBlock >= app.ForecloseBlock {
 			s.Logger.Info("Skipping foreclosed epoch that cannot be accepted",
@@ -285,9 +314,15 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) err
 		// the stored state identities. This also checks the pristine root of an
 		// empty first epoch; a mismatch alone does not establish its cause.
 		if *epoch.TxBufferDataBlock != *merkleRoot {
-			return appstatus.SetInvalidOutputsRootf(ctx, s.Logger, s.repository, app,
+			reason := appstatus.NormalizeReason(fmt.Sprintf(
 				"epoch %v: declared outputs root does not match the root calculated from stored outputs; declared=%s; calculated=%s",
-				epoch.Index, epoch.TxBufferDataBlock.Hex(), merkleRoot.Hex())
+				epoch.Index, epoch.TxBufferDataBlock.Hex(), merkleRoot.Hex()))
+			if err := s.repository.StoreInvalidOutputsRoot(ctx, app.ID, epoch.Index, reason); err != nil {
+				return fmt.Errorf("recording invalid outputs root for application %s epoch %d: %w", appAddress, epoch.Index, err)
+			}
+			s.Logger.Error("Invalid outputs root recorded", "application", app.Name, "address", appAddress,
+				"epoch_index", epoch.Index, "reason", reason)
+			return errors.New(reason)
 		}
 
 		if app.IsDaveConsensus() {

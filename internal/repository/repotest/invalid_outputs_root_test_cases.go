@@ -25,7 +25,7 @@ func (s *ApplicationSuite) TestInvalidOutputsRootStatus() {
 			s.Equal(model.ApplicationStatus_OK, app.Status)
 			reason := diagnosis
 			err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, model.ApplicationStatus_InvalidOutputsRoot, &reason)
-			allowed := current == model.ApplicationStatus_OK || current == model.ApplicationStatus_Failed
+			allowed := current == model.ApplicationStatus_OK
 			if allowed {
 				s.Require().NoError(err)
 			} else {
@@ -48,11 +48,22 @@ func (s *ApplicationSuite) TestInvalidOutputsRootStatus() {
 			reason := diagnosis
 			s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, model.ApplicationStatus_InvalidOutputsRoot, &reason))
 			newReason := "later finding"
-			s.Require().Error(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, target, &newReason))
+			err := s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, target, &newReason)
+			escalates := target == model.ApplicationStatus_Diverged || target == model.ApplicationStatus_Corrupted
+			if escalates {
+				s.Require().NoError(err)
+			} else {
+				s.Require().Error(err)
+			}
 			stored, err := s.Repo.GetApplication(s.Ctx, app.Name)
 			s.Require().NoError(err)
-			s.Equal(model.ApplicationStatus_InvalidOutputsRoot, stored.Status)
-			s.Equal(&reason, stored.Reason)
+			if escalates {
+				s.Equal(target, stored.Status)
+				s.Equal(&newReason, stored.Reason)
+			} else {
+				s.Equal(model.ApplicationStatus_InvalidOutputsRoot, stored.Status)
+				s.Equal(&reason, stored.Reason)
+			}
 		})
 	}
 	for _, missing := range []struct {

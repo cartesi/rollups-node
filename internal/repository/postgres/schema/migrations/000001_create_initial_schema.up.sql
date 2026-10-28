@@ -111,6 +111,18 @@ CREATE TABLE "application"
     "enabled" BOOLEAN NOT NULL DEFAULT true,
     "status" "ApplicationStatus" NOT NULL DEFAULT 'OK',
     "reason" VARCHAR(4096),
+    -- Earliest known epoch that cannot be published. A later validator finding
+    -- may lower this boundary without changing the first execution diagnosis.
+    "problem_epoch_index" uint64,
+    "problem_kind" "ApplicationStatus",
+    "problem_input_index" uint64,
+    CONSTRAINT "application_problem_shape" CHECK (
+        ("problem_epoch_index" IS NULL AND "problem_kind" IS NULL AND "problem_input_index" IS NULL)
+        OR ("problem_epoch_index" IS NOT NULL AND "problem_kind" IS NOT NULL
+            AND ("problem_kind" = 'INVALID_OUTPUTS_ROOT'
+                 OR ("problem_kind" IN ('GUEST_EXCEPTION', 'MACHINE_HALTED',
+                     'MCYCLE_OVERFLOW', 'UNEXPECTED_YIELD') AND "problem_input_index" IS NOT NULL)))
+    ),
     "last_epoch_check_block" uint64 NOT NULL,
     "last_input_check_block" uint64 NOT NULL,
     "last_output_check_block" uint64 NOT NULL,
@@ -189,28 +201,28 @@ BEGIN
         RAISE EXCEPTION 'cannot enter execution-terminal status % from application status %', NEW.status, OLD.status;
     END IF;
 
-    -- Integrity failures and an invalid outputs root retain their first
-    -- diagnosis. INVALID_OUTPUTS_ROOT can be entered from OK or FAILED: the
-    -- validator checks completed execution evidence independently of input
-    -- persistence. It cannot replace another terminal status.
-    IF OLD.status IN (
-        'DIVERGED'::"ApplicationStatus",
-        'CORRUPTED'::"ApplicationStatus",
-        'INVALID_OUTPUTS_ROOT'::"ApplicationStatus")
+    -- IOR now permits valid earlier claims. It cannot erase an operational
+    -- failure whose ownership has not been repaired by the operator.
+    IF OLD.status = 'FAILED'::"ApplicationStatus"
+       AND NEW.status = 'INVALID_OUTPUTS_ROOT'::"ApplicationStatus"
+    THEN
+        RAISE EXCEPTION 'cannot replace FAILED with INVALID_OUTPUTS_ROOT';
+    END IF;
+
+    -- The first integrity failure is final. Execution/root stops can escalate
+    -- to a genuine integrity finding while retaining their typed epoch boundary.
+    IF OLD.status IN ('DIVERGED'::"ApplicationStatus", 'CORRUPTED'::"ApplicationStatus")
        AND (NEW.status <> OLD.status OR NEW.reason IS DISTINCT FROM OLD.reason)
     THEN
         RAISE EXCEPTION 'cannot change status or reason of a terminal (%) application', OLD.status;
     END IF;
 
-    -- Preserve the existing four execution-terminal escalation rules. An
-    -- invalid outputs root is not in this group and cannot become CORRUPTED.
     IF OLD.status IN (
-        'GUEST_EXCEPTION'::"ApplicationStatus",
-        'MACHINE_HALTED'::"ApplicationStatus",
-        'MCYCLE_OVERFLOW'::"ApplicationStatus",
-        'UNEXPECTED_YIELD'::"ApplicationStatus")
+        'GUEST_EXCEPTION'::"ApplicationStatus", 'MACHINE_HALTED'::"ApplicationStatus",
+        'MCYCLE_OVERFLOW'::"ApplicationStatus", 'UNEXPECTED_YIELD'::"ApplicationStatus",
+        'INVALID_OUTPUTS_ROOT'::"ApplicationStatus")
        AND NOT (
-           NEW.status = 'CORRUPTED'::"ApplicationStatus"
+           NEW.status IN ('DIVERGED'::"ApplicationStatus", 'CORRUPTED'::"ApplicationStatus")
            OR (NEW.status = OLD.status AND NEW.reason IS NOT DISTINCT FROM OLD.reason)
        )
     THEN

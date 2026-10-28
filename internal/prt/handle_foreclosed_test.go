@@ -221,10 +221,10 @@ func TestHandleForeclosedApp_LeavesClaimedEpochForNextReconciliationPass(t *test
 	r.AssertExpectations(t)
 }
 
-// TestForeclosePendingClaimEpochs_TerminalizesEachPendingEpoch verifies the
-// foreclose step: every pending claim epoch without an on-chain sealed-event
-// transaction is transitioned to CLAIM_FORECLOSED.
-func TestForeclosePendingClaimEpochs_TerminalizesEachPendingEpoch(t *testing.T) {
+// Foreclosure terminalizes only epochs whose claim path is finished; earlier
+// INPUTS_PROCESSED epochs still require validation, and sealed observations stay
+// available for acceptance reconciliation.
+func TestForeclosePendingClaimEpochsPreservesValidationAndSealedClaims(t *testing.T) {
 	s, r := newPRTServiceMock()
 	defer r.AssertExpectations(t)
 
@@ -249,12 +249,12 @@ func TestForeclosePendingClaimEpochs_TerminalizesEachPendingEpoch(t *testing.T) 
 	}, uint64(8), nil).Once()
 	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(0)).Return(nil).Once()
 	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(1)).Return(nil).Once()
-	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(2)).Return(nil).Once()
 	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(3)).Return(nil).Once()
 	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(4)).Return(nil).Once()
 	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(6)).Return(nil).Once()
 
 	require.NoError(t, s.foreclosePendingClaimEpochs(context.Background(), app))
+	r.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(2))
 	r.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(5))
 	r.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(7))
 }
