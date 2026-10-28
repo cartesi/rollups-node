@@ -52,8 +52,7 @@ func (r *PostgresRepository) GetTournamentEventCounts(
 			AND(table.StandingChanges.EpochIndex.EQ(uint64Expr(epochIndex))).
 			AND(table.StandingChanges.TournamentAddress.EQ(postgres.Bytea(tournament.Bytes()))).
 			AND(table.StandingChanges.BlockNumber.LT_EQ(uint64Expr(throughBlock))))
-	stmt := postgres.SELECT(postgres.IntExp(commitments), postgres.IntExp(matches), postgres.IntExp(advances),
-		postgres.IntExp(seals), postgres.IntExp(deletions), postgres.IntExp(children), postgres.IntExp(standing))
+	stmt := postgres.SELECT(commitments, matches, advances, seals, deletions, children, standing)
 	query, args := stmt.Sql()
 	var counts repository.TournamentEventCounts
 	err := r.db.QueryRow(ctx, query, args...).Scan(&counts.CommitmentJoined, &counts.MatchCreated,
