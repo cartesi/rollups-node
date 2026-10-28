@@ -303,10 +303,9 @@ func (s *SnapshotPolicySuite) TestSnapshotPolicyEveryInputPrt() {
 		ExtraDeployArgs: []string{"--prt"},
 		PreClaimHook: func(
 			ctx context.Context, t testing.TB,
-			require *require.Assertions, appName string,
+			_ *require.Assertions, appName string,
 		) {
-			finalizePrtEpoch(ctx, t, require, ethClient, appName, 0)
-			finalizePrtEpoch(ctx, t, require, ethClient, appName, 1)
+			assertReloadedPrtCommitmentCLI(ctx, t, ethClient, appName)
 		},
 	})
 }
