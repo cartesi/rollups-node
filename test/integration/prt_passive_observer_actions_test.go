@@ -45,9 +45,13 @@ func (f *passiveDisputeFixture) bisect(layer *passiveDisputeLayer) {
 		tx, err := layer.contract.AdvanceMatch(f.actors[responder], layer.matchID, left, right, nextLeft, nextRight)
 		f.record(tx, err)
 		responder ^= 1
+		// Let the observer publish each mined clock transition before the next
+		// external move, so successive automined updates do not race its reads.
 		if height == layer.descriptor.Height {
 			// Check a real intermediate snapshot, not only the final state.
 			f.assertCurrent(layer, MatchPhaseBisecting)
+		} else {
+			f.observedTournament(layer)
 		}
 	}
 }

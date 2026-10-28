@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
@@ -463,8 +464,19 @@ func (s *ForecloseSuite) TestSameBlockInputForecloseAndOutputOrdering() {
 		return &opts
 	}
 
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		// Enabling automine can replace the mining mode. Restore the interval
+		// afterward so subsequent suites still receive empty successor blocks.
+		if err := anvilRPC(cleanupCtx, "evm_setAutomine", true); err != nil {
+			s.T().Errorf("restore Anvil automine: %v", err)
+		}
+		if err := anvilRPC(cleanupCtx, "evm_setIntervalMining", 1); err != nil {
+			s.T().Errorf("restore Anvil interval mining: %v", err)
+		}
+	}()
 	setAnvilAutomine(s.ctx, s.T(), false)
-	defer setAnvilAutomine(s.ctx, s.T(), true)
 	// The devnet runs anvil with --block-time 1, so interval mining keeps
 	// producing blocks on a one-second timer even with automine off — which
 	// would split the batch below across consecutive blocks. Turn interval
@@ -472,22 +484,22 @@ func (s *ForecloseSuite) TestSameBlockInputForecloseAndOutputOrdering() {
 	// integration suites run sequentially (no t.Parallel), so no other test
 	// depends on block production during this window.
 	setAnvilIntervalMining(s.ctx, s.T(), 0)
-	defer setAnvilIntervalMining(s.ctx, s.T(), 1)
 
 	// Use separate funded devnet accounts. With Anvil automine disabled, this
 	// lets one manual mine include all pending txs in a single block; using
 	// one account with sequential nonces can be split across blocks by the
 	// devnet mempool.
+	// Low descending bids preserve ordering without inflating the node's fee quotes.
 	preInputTx, err := inputBox.AddInput(
-		nextOpts(2, 10), appAddr, []byte("same-block before foreclose")) //nolint:mnd
+		nextOpts(2, 4), appAddr, []byte("same-block before foreclose"))
 	require.NoError(err, "send same-block pre-foreclosure input")
-	forecloseTx, err := app.Foreclose(nextOpts(guardianIndex, 9)) //nolint:mnd
+	forecloseTx, err := app.Foreclose(nextOpts(guardianIndex, 3))
 	require.NoError(err, "send same-block foreclosure")
 	postInputTx, err := inputBox.AddInput(
-		nextOpts(3, 8), appAddr, []byte("same-block after foreclose")) //nolint:mnd
+		nextOpts(3, 2), appAddr, []byte("same-block after foreclose"))
 	require.NoError(err, "send same-block post-foreclosure input")
 	execTx, err := app.ExecuteOutput(
-		nextOpts(4, 7), voucher.RawData, outputValidityProof(voucher)) //nolint:mnd
+		nextOpts(4, 1), voucher.RawData, outputValidityProof(voucher))
 	require.NoError(err, "send same-block post-foreclosure output execution")
 
 	require.NoError(anvilMine(s.ctx, 1), "mine same-block transaction batch")
@@ -516,6 +528,13 @@ func (s *ForecloseSuite) TestSameBlockInputForecloseAndOutputOrdering() {
 		"test setup requires post-input after foreclose in block order")
 	require.Less(forecloseReceipt.TransactionIndex, execReceipt.TransactionIndex,
 		"test setup requires output execution after foreclose in block order")
+
+	// Mining remains paused. Supply only the empty successors needed for the
+	// configured observation policy to include this already mined event batch.
+	policy, err := config.ToDefaultBlockFromString(envOrDefault(config.BLOCKCHAIN_DEFAULT_BLOCK, "latest"))
+	require.NoError(err, "read fixture observation policy")
+	_, err = advanceFixtureFinality(s.ctx, client, policy)
+	require.NoError(err, "make the same-block batch observable under the configured block policy")
 
 	forecloseCtx, forecloseCancel := context.WithTimeout(s.ctx, 30*time.Second)
 	require.NoError(waitForApplicationForeclosed(forecloseCtx, s.T(), s.appName),
@@ -602,8 +621,23 @@ func waitForApplicationForeclosed(
 	t testing.TB,
 	appName string,
 ) error {
+	// A mined foreclosure can remain behind the configured observation head
+	// longer than this helper's short CLI polling budget. Supply its missing
+	// successors first; this also works while a batching fixture pauses mining.
+	policy, err := config.ToDefaultBlockFromString(envOrDefault(config.BLOCKCHAIN_DEFAULT_BLOCK, "latest"))
+	if err != nil {
+		return fmt.Errorf("read foreclosure fixture observation policy: %w", err)
+	}
+	client, err := ethclient.DialContext(ctx, envOrDefault(config.BLOCKCHAIN_HTTP_ENDPOINT, "http://localhost:8545"))
+	if err != nil {
+		return fmt.Errorf("connect foreclosure fixture: %w", err)
+	}
+	defer client.Close()
+	if _, err = advanceFixtureFinality(ctx, client, policy); err != nil {
+		return fmt.Errorf("make foreclosure observable: %w", err)
+	}
 	var lastErr error
-	err := pollUntil(ctx, 3*time.Second, func() (bool, error) {
+	err = pollUntil(ctx, 3*time.Second, func() (bool, error) {
 		out, err := readApplicationStatus(ctx, appName)
 		if err != nil {
 			if isCLIExitError(err) {

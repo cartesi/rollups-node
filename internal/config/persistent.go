@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // PersistentChainConfig identifies the chain and the observation policy used to
@@ -77,6 +78,7 @@ type PersistentSubmitterConfig struct {
 	DefaultBlock           model.DefaultBlock
 	ClaimSubmissionEnabled bool
 	ChainID                uint64
+	ResolvedSignerAddress  common.Address `json:",omitempty"`
 }
 
 func (c PersistentSubmitterConfig) chainConfig() PersistentChainConfig {
@@ -84,7 +86,16 @@ func (c PersistentSubmitterConfig) chainConfig() PersistentChainConfig {
 }
 
 func (c PersistentSubmitterConfig) Validate() error {
-	return c.chainConfig().Validate()
+	if err := c.chainConfig().Validate(); err != nil {
+		return err
+	}
+	if c.ClaimSubmissionEnabled && c.ResolvedSignerAddress == (common.Address{}) {
+		return fmt.Errorf("submitting role requires a resolved signer address")
+	}
+	if !c.ClaimSubmissionEnabled && c.ResolvedSignerAddress != (common.Address{}) {
+		return fmt.Errorf("observer-only role cannot register a signer address")
+	}
+	return nil
 }
 
 func (c *PersistentSubmitterConfig) UnmarshalJSON(data []byte) error {
@@ -92,17 +103,25 @@ func (c *PersistentSubmitterConfig) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &chain); err != nil {
 		return err
 	}
-	var raw struct{ ClaimSubmissionEnabled *bool }
+	var raw struct {
+		ClaimSubmissionEnabled *bool
+		ResolvedSignerAddress  common.Address
+	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 	if raw.ClaimSubmissionEnabled == nil {
 		return fmt.Errorf("persistent config requires non-null ClaimSubmissionEnabled")
 	}
-	*c = PersistentSubmitterConfig{
+	next := PersistentSubmitterConfig{
 		DefaultBlock: chain.DefaultBlock, ChainID: chain.ChainID,
 		ClaimSubmissionEnabled: *raw.ClaimSubmissionEnabled,
+		ResolvedSignerAddress:  raw.ResolvedSignerAddress,
 	}
+	if err := next.Validate(); err != nil {
+		return err
+	}
+	*c = next
 	return nil
 }
 
@@ -114,6 +133,10 @@ func (c PersistentSubmitterConfig) CheckRequested(requested PersistentSubmitterC
 		return fmt.Errorf("claim submission mode mismatch: database=%t, configured=%t; "+
 			"mode changes on an existing database are not supported; saved config was not changed",
 			c.ClaimSubmissionEnabled, requested.ClaimSubmissionEnabled)
+	}
+	if c.ResolvedSignerAddress != requested.ResolvedSignerAddress {
+		return fmt.Errorf("resolved signer address mismatch: saved=%s, configured=%s",
+			c.ResolvedSignerAddress, requested.ResolvedSignerAddress)
 	}
 	return nil
 }

@@ -73,7 +73,7 @@ func NewEthClient(
 	rpcOptions ...rpc.ClientOption,
 ) (*ethclient.Client, error) {
 	rclient := retryablehttp.NewClient()
-	safeBase, inner, err := httpclient.NewClient(endpoint, rclient.HTTPClient, httpclient.Options{})
+	safeBase, inner, err := httpclient.NewClient(endpoint, rclient.HTTPClient, httpclient.Options{PublicationReplies: true})
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func NewEthClient(
 // NewEthClient. It accepts only HTTP(S) endpoints with a hostname and does not
 // follow redirects.
 func DialEthClient(ctx context.Context, endpoint string) (*ethclient.Client, error) {
-	safeBase, client, err := httpclient.NewClient(endpoint, nil, httpclient.Options{})
+	safeBase, client, err := httpclient.NewClient(endpoint, nil, httpclient.Options{PublicationReplies: true})
 	if err != nil {
 		return nil, err
 	}

@@ -34,7 +34,10 @@ func TestDaveScanReportsMissingInputBox(t *testing.T) {
 }
 
 func TestReadinessTracksScanFailures(t *testing.T) {
-	for _, failure := range []string{"application list", "input counter", "input logs", "input cursor", "input store", "output query", "foreclosure query", "drive cursor", "withdrawal store"} {
+	for _, failure := range []string{
+		"application list", "input counter", "input count mismatch", scanInputLogs, "input cursor", "input store",
+		"output query", "foreclosure query", "drive cursor", "withdrawal store",
+	} {
 		t.Run(failure, func(t *testing.T) {
 			app := &Application{
 				ID: 1, Name: "app", Enabled: true, IApplicationAddress: app1Addr, IInputBoxAddress: inputBoxAddr,
@@ -63,12 +66,18 @@ func TestReadinessTracksScanFailures(t *testing.T) {
 			case "input counter":
 				failedCall, recovered = count, []any{big.NewInt(0), nil}
 				count.Return((*big.Int)(nil), failureErr)
-			case "input logs", "input store":
+			case "input count mismatch":
+				count.Return(big.NewInt(1), nil)
+				failedCall = input.On("RetrieveInputs", mock.Anything, mock.Anything, mock.Anything).
+					Return([]iinputbox.IInputBoxInputAdded(nil), nil)
+				recovered = []any{[]iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 0, 101)}, nil}
+				repo.On("CreateEpochsAndInputs", mock.Anything, mock.Anything, mock.Anything, uint64(110)).Return(nil)
+			case scanInputLogs, "input store":
 				count.Return(big.NewInt(1), nil)
 				events := []iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 0, 101)}
 				logs := input.On("RetrieveInputs", mock.Anything, mock.Anything, mock.Anything).Return(events, nil)
 				store := repo.On("CreateEpochsAndInputs", mock.Anything, mock.Anything, mock.Anything, uint64(110)).Return(nil)
-				if failure == "input logs" {
+				if failure == scanInputLogs {
 					failedCall, recovered = logs, []any{events, nil}
 					logs.Return([]iinputbox.IInputBoxInputAdded(nil), failureErr)
 				} else {

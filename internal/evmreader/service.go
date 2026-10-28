@@ -5,7 +5,6 @@ package evmreader
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -13,8 +12,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/config"
-	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -36,7 +34,7 @@ type Service struct {
 	resolver                *applicationAdapterResolver
 	repository              EvmReaderRepository
 	chainID                 uint64
-	defaultBlock            DefaultBlock
+	defaultBlock            model.DefaultBlock
 	hasEnabledApps          bool
 	lastBlockNumber         atomic.Uint64
 	lastSuccessfulPoll      atomic.Pointer[time.Time]
@@ -115,6 +113,10 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	s.client = ethClient
 	s.chainID = nodeConfig.ChainID
 	s.defaultBlock = nodeConfig.DefaultBlock
+	if s.defaultBlock != model.DefaultBlock_Finalized {
+		s.Logger.Warn("EVM Reader stores provisional observations; reorg rollback is unsupported",
+			"block_policy", s.defaultBlock)
+	}
 	s.hasEnabledApps = true
 
 	if c.AdapterFactory != nil {
@@ -151,25 +153,12 @@ func (s *Service) setupPersistentConfig(
 	if err := requested.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid evm-reader config: %w", err)
 	}
-	config, err := repository.LoadNodeConfig[PersistentConfig](ctx, s.repository, EvmReaderConfigKey)
-	if config == nil && errors.Is(err, repository.ErrNotFound) {
-		nc := NodeConfig[PersistentConfig]{
-			Key:   EvmReaderConfigKey,
-			Value: requested,
-		}
-		s.Logger.Info("Initializing evm-reader persistent config", "config", nc.Value)
-		config, err = repository.InitializeNodeConfig(ctx, s.repository, &nc)
+	saved, err := s.repository.RegisterObserver(ctx, EvmReaderConfigKey, requested)
+	if err != nil {
+		return nil, fmt.Errorf("register evm-reader observation policy: %w", err)
 	}
-	if err == nil {
-		if err := config.Value.CheckRequested(requested); err != nil {
-			return nil, fmt.Errorf("evm-reader persistent config: %w", err)
-		}
-		s.Logger.Info("Evm-reader persistent config matches requested config", "config", config.Value)
-		return &config.Value, nil
-	}
-
-	s.Logger.Error("Could not retrieve persistent config from database", "error", err)
-	return nil, err
+	s.Logger.Info("Evm-reader observation policy registered", "config", saved)
+	return &saved, nil
 }
 
 // readinessBudget is independent of the HTTP retry-backoff cap.

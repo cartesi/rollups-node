@@ -283,7 +283,9 @@ jobs:
 
       - name: List shard x topology cells
         id: matrix
-        run: echo "cells=$(make -s list-integration-cells)" >> "$GITHUB_OUTPUT"
+        run: |
+          cells=$(make -s list-integration-cells | jq -c '.')
+          echo "cells=$cells" >> "$GITHUB_OUTPUT"
 
   integration-test:
     runs-on: ubuntu-24.04
@@ -333,7 +335,7 @@ jobs:
       - name: Run integration shard ${{ matrix.shard }} (${{ matrix.topology }})
         run: |
           make integration-test-with-compose SHARD=${{ matrix.shard }} \
-            NODE_TOPOLOGY=${{ matrix.topology }} \
+            NODE_TOPOLOGY=${{ matrix.topology }} DEFAULT_BLOCK=${{ matrix.default_block }} \
             COMPOSE_PROJECT="$COMPOSE_PROJECT"
 
       - name: Upload integration test logs

@@ -279,6 +279,8 @@ func (r *PostgresRepository) GetEpoch(
 	nameOrAddress string,
 	index uint64,
 ) (*model.Epoch, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
@@ -385,6 +387,9 @@ func (r *PostgresRepository) HasUndrainedEpochsBeforeBlock(
 	appID int64,
 	blockBound uint64,
 ) (bool, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	stmt := table.Input.
 		SELECT(table.Input.Index).
 		FROM(
@@ -419,6 +424,9 @@ func (r *PostgresRepository) ForecloseUnacceptedEpochsAtOrAfterBlock(
 	appID int64,
 	blockBound uint64,
 ) (int64, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	updateStmt := table.Epoch.
 		UPDATE(table.Epoch.Status).
 		SET(enum.EpochStatus.ClaimForeclosed).
@@ -462,6 +470,9 @@ func (r *PostgresRepository) HasUnreconciledClaimsBeforeBlock(
 	appID int64,
 	blockBound uint64,
 ) (bool, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	stmt := table.Epoch.
 		SELECT(table.Epoch.Index).
 		WHERE(
@@ -533,6 +544,9 @@ func (r *PostgresRepository) GetLastAcceptedEpochIndex(
 // GetLastNonOpenEpochIndex returns only the sweep boundary, without epoch proofs.
 // A nil index means the application has no non-open epoch. Index zero is valid.
 func (r *PostgresRepository) GetLastNonOpenEpochIndex(ctx context.Context, nameOrAddress string) (*uint64, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	query := table.Epoch.SELECT(table.Epoch.Index).
 		FROM(table.Epoch.INNER_JOIN(table.Application, table.Epoch.ApplicationID.EQ(table.Application.ID))).
 		WHERE(getWhereClauseFromNameOrAddress(nameOrAddress).
@@ -919,6 +933,9 @@ func (r *PostgresRepository) ListEpochs(
 	p repository.Pagination,
 	descending bool,
 ) ([]*model.Epoch, uint64, error) {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+
 	if p.Limit > math.MaxInt64 || p.Offset > math.MaxInt64 {
 		return nil, 0, fmt.Errorf("pagination exceeds PostgreSQL integer range")
 	}

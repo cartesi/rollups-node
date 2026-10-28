@@ -5,22 +5,18 @@ package prt
 
 import (
 	"context"
-	"math/big"
-	"testing"
-	"time"
-
+	"fmt"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
+	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/repotest"
-	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"math/big"
+	"testing"
 )
 
 func TestCheckedUint64(t *testing.T) {
@@ -87,354 +83,170 @@ func TestReadDaveConsensusSnapshotUsesOnePinnedCallOptions(t *testing.T) {
 	consensus.AssertExpectations(t)
 }
 
-func TestValidateDaveConsensusSnapshotRejectsInconsistentViews(t *testing.T) {
-	epoch := resultTestEpoch(model.EpochStatus_ClaimStaged)
-	tests := []struct {
-		name   string
-		mutate func(*daveConsensusSnapshot)
-		want   string
-	}{
+type inconsistentConsensusView struct {
+	name   string
+	mutate func(*daveConsensusSnapshot)
+	want   string
+}
+
+func inconsistentConsensusViews() []inconsistentConsensusView {
+	return []inconsistentConsensusView{
 		{name: "epoch number", mutate: func(s *daveConsensusSnapshot) { s.accept.EpochNumber++ }, want: "epoch numbers"},
 		{name: "staged flag", mutate: func(s *daveConsensusSnapshot) {
 			s.accept.IsTournamentResultStaged = false
 		}, want: "staged flags"},
-		{name: "staging block", mutate: func(s *daveConsensusSnapshot) { s.sealed.StagingBlockNumber = 21 }, want: "staging block"},
 		{name: "staged machine", mutate: func(s *daveConsensusSnapshot) {
 			s.accept.StagedPostEpochMachineStateHash[0] ^= 0xff
 		}, want: "staged machine state differs"},
 		{name: "staged outputs", mutate: func(s *daveConsensusSnapshot) {
 			s.accept.StagedPostEpochOutputsMerkleRoot[0] ^= 0xff
 		}, want: "staged outputs root differs"},
+		{name: "winner machine", mutate: func(s *daveConsensusSnapshot) {
+			s.stage.WinnerPostEpochMachineStateHash[0] ^= 0xff
+		}, want: "differs from the tournament winner"},
 	}
-	for _, test := range tests {
+}
+
+func TestValidateDaveConsensusSnapshotRejectsInconsistentViews(t *testing.T) {
+	epoch := resultTestEpoch(model.EpochStatus_ClaimStaged)
+	for _, test := range inconsistentConsensusViews() {
 		t.Run(test.name, func(t *testing.T) {
 			snapshot := resultTestSnapshot(epoch, true)
 			test.mutate(&snapshot)
-			require.ErrorContains(t, validateDaveConsensusSnapshot(snapshot, 20), test.want)
+			err := validateDaveConsensusSnapshot(snapshot, 20)
+			require.ErrorIs(t, err, txsender.ErrInconclusive)
+			require.ErrorContains(t, err, test.want)
 		})
 	}
+	t.Run("invalid staging block", func(t *testing.T) {
+		snapshot := resultTestSnapshot(epoch, true)
+		snapshot.sealed.StagingBlockNumber = 21
+		err := validateDaveConsensusSnapshot(snapshot, 20)
+		require.ErrorContains(t, err, "staging block")
+		require.NotErrorIs(t, err, txsender.ErrInconclusive, "structurally invalid data is distinct from disagreeing views")
+	})
 }
 
-func TestProgressTournamentResultReaderReconcilesStagedResult(t *testing.T) {
-	epoch := resultTestEpoch(model.EpochStatus_ClaimComputed)
-	app := prtRevertTestApp()
-	app.LastTournamentCheckBlock = 20
-	service, repo, consensus := resultTestService(t, epoch, resultTestSnapshot(epoch, true), false)
-	repo.On("UpdateEpochReconciledStaged", mock.Anything, epoch.ApplicationID, epoch.Index, uint64(10)).
-		Return(nil).Once()
-
-	joinEpoch, _, err := service.progressTournamentResult(context.Background(), app, 20, 20)
-	require.NoError(t, err)
-	require.Nil(t, joinEpoch)
-	require.Equal(t, model.EpochStatus_ClaimStaged, epoch.Status)
-	require.NotNil(t, epoch.StagedAtBlock)
-	require.Equal(t, uint64(10), *epoch.StagedAtBlock)
-	consensus.AssertNotCalled(t, "AcceptStagedTournamentResult", mock.Anything, mock.Anything)
-	repo.AssertExpectations(t)
-	consensus.AssertExpectations(t)
-}
-
-func TestProgressTournamentResultReaderDoesNotStageResult(t *testing.T) {
-	epoch := resultTestEpoch(model.EpochStatus_ClaimComputed)
-	service, repo, consensus := resultTestService(t, epoch, resultTestSnapshot(epoch, false), false)
-	app := prtRevertTestApp()
-	app.LastTournamentCheckBlock = 20
-
-	joinEpoch, _, err := service.progressTournamentResult(context.Background(), app, 20, 20)
-	require.NoError(t, err)
-	require.Nil(t, joinEpoch)
-	consensus.AssertNotCalled(t, "StageTournamentResult", mock.Anything, mock.Anything, mock.Anything)
-	repo.AssertExpectations(t)
-	consensus.AssertExpectations(t)
-}
-
-func TestProgressTournamentResultUsesLatestWithoutPublishedConsensus(t *testing.T) {
-	for _, publishedBlock := range []uint64{0, 99} {
-		name := "no published window"
-		if publishedBlock != 0 {
-			name = "published window precedes deployment"
-		}
-		t.Run(name, func(t *testing.T) {
-			f := newPRTBlockPolicyFixture(t, true)
-			f.app.LastTournamentCheckBlock = publishedBlock
-			if publishedBlock != 0 {
-				f.consensus.On("GetCurrentSealedEpoch", mock.MatchedBy(resultCallOptsAtBlock(publishedBlock))).
-					Return(CurrentSealedEpoch{}, bind.ErrNoCode).Once()
-			}
-			latest := resultTestSnapshot(f.epoch, false)
-			latest.stage.IsFinished = false
-			f.expectSnapshot(120, latest)
-
-			epoch, _, err := f.s.progressTournamentResult(t.Context(), f.app, 100, 120)
+// These cases exercise the separated observer and planner. Latest-view
+// failures never publish a durable application diagnosis.
+func TestTournamentResultPlansPreserveConsensusReadiness(t *testing.T) {
+	for _, test := range []struct {
+		name                                    string
+		kind                                    actionKind
+		staged, agree, period, finished, failed bool
+		want                                    bool
+	}{
+		{name: "stage complete result", kind: stageTournament, finished: true, want: true},
+		{name: "unfinished result cannot stage", kind: stageTournament},
+		{name: "failed root remains observable", kind: stageTournament, finished: true, failed: true},
+		{name: "already staged cannot stage again", kind: stageTournament, staged: true, finished: true},
+		{name: "sentries agree", kind: acceptTournament, staged: true, finished: true, agree: true, want: true},
+		{name: "staging period over", kind: acceptTournament, staged: true, finished: true, period: true, want: true},
+		{name: "staging period still running", kind: acceptTournament, staged: true, finished: true},
+		{name: "accept requires staged result", kind: acceptTournament, finished: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newDeliveryFixture(t)
+			view := resultTestSnapshot(f.epoch, test.staged)
+			view.stage.IsFinished, view.stage.IsTournamentFailed = test.finished, test.failed
+			view.accept.DoAllSentriesAgreeWithStagedTournamentResult, view.accept.IsClaimStagingPeriodOver = test.agree, test.period
+			f.snapshot(view)
+			call, err := f.d.planAction(t.Context(), f.app, test.kind, f.block, observerFacts(100))
 			require.NoError(t, err)
-			require.Same(t, f.epoch, epoch, "latest join selection must remain available")
-			f.assertNoStageWrite(t)
-			f.assertNoPermanentStatusWrite(t)
-			f.consensus.AssertNotCalled(t, "GetCurrentSealedEpoch", mock.MatchedBy(resultCallOptsAtBlock(0)))
-		})
-	}
-}
-
-func TestProgressTournamentResultReaderWaitsWithoutPublishedConsensus(t *testing.T) {
-	for _, publishedBlock := range []uint64{0, 99} {
-		t.Run(new(big.Int).SetUint64(publishedBlock).String(), func(t *testing.T) {
-			s, repo := newPRTServiceMock()
-			app := prtRevertTestApp()
-			app.LastTournamentCheckBlock = publishedBlock
-			consensus := &daveConsensusAdapterMock{}
-			factory := &adapterFactoryMock{}
-			factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Once()
-			s.adapterFactory = factory
-			if publishedBlock != 0 {
-				consensus.On("GetCurrentSealedEpoch", mock.MatchedBy(resultCallOptsAtBlock(publishedBlock))).
-					Return(CurrentSealedEpoch{}, bind.ErrNoCode).Once()
+			require.Equal(t, test.want, call != nil)
+			if test.want {
+				require.Equal(t, test.kind, call.Key.Kind)
+				require.Equal(t, f.epoch.Index, call.Key.Epoch)
+				require.Equal(t, f.app.IConsensusAddress, call.To)
+				abi, err := idaveconsensus.IDaveConsensusMetaData.GetAbi()
+				require.NoError(t, err)
+				method, err := abi.MethodById(call.Data[:4])
+				require.NoError(t, err)
+				if test.kind == stageTournament {
+					require.Equal(t, "stageTournamentResult", method.Name)
+				} else {
+					require.Equal(t, "acceptStagedTournamentResult", method.Name)
+				}
+				values, err := method.Inputs.Unpack(call.Data[4:])
+				require.NoError(t, err)
+				require.Equal(t, f.epoch.Index, values[0].(*big.Int).Uint64())
 			}
-
-			epoch, _, err := s.progressTournamentResult(t.Context(), app, 100, 100)
-			require.NoError(t, err)
-			require.Nil(t, epoch)
-			require.Empty(t, repo.Calls)
-			consensus.AssertNotCalled(t, "GetCurrentSealedEpoch", mock.MatchedBy(resultCallOptsAtBlock(100)))
-			consensus.AssertExpectations(t)
-			factory.AssertExpectations(t)
+			require.Equal(t, model.EpochStatus_ClaimComputed, f.epoch.Status)
+			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
+			f.repo.AssertNotCalled(t, "UpdateEpochReconciledStaged", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			f.repo.AssertNotCalled(t, "UpdateEpochWithAcceptedClaim", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 		})
 	}
 }
 
-func TestProgressTournamentResultReusesPublishedSnapshotAtLatest(t *testing.T) {
-	f := newPRTBlockPolicyFixture(t, true)
-	f.app.LastTournamentCheckBlock = 100
-	snapshot := resultTestSnapshot(f.epoch, false)
-	snapshot.stage.IsFinished = false
-	f.expectSnapshot(100, snapshot)
-
-	epoch, _, err := f.s.progressTournamentResult(t.Context(), f.app, 100, 100)
-	require.NoError(t, err)
-	require.Same(t, f.epoch, epoch)
-	f.consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 1)
-}
-
-func TestProgressTournamentResultPreservesObservedReadError(t *testing.T) {
-	s, repo := newPRTServiceMock()
-	s.submissionEnabled = true
-	app := prtRevertTestApp()
-	app.LastTournamentCheckBlock = 99
-	consensus := &daveConsensusAdapterMock{}
-	factory := &adapterFactoryMock{}
-	factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Once()
-	s.adapterFactory = factory
-	consensus.On("GetCurrentSealedEpoch", mock.MatchedBy(resultCallOptsAtBlock(99))).
-		Return(CurrentSealedEpoch{}, context.DeadlineExceeded).Once()
-
-	epoch, _, err := s.progressTournamentResult(t.Context(), app, 100, 120)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Nil(t, epoch)
-	require.Empty(t, repo.Calls)
-	consensus.AssertNotCalled(t, "GetCurrentSealedEpoch", mock.MatchedBy(resultCallOptsAtBlock(120)))
-	consensus.AssertExpectations(t)
-	factory.AssertExpectations(t)
-}
-
-func TestProgressTournamentResultReloadsLatestEpochAfterPublishedResult(t *testing.T) {
-	f := newPRTBlockPolicyFixture(t, true)
-	f.app.LastTournamentCheckBlock = 99
-	observed := resultTestSnapshot(f.epoch, false)
-	observed.stage.IsFinished = false
-	f.expectSnapshot(99, observed)
-	latestEpoch := *f.epoch
-	latestEpoch.Index++
-	latestEpoch.TournamentAddress = new(common.HexToAddress("0x201"))
-	latest := resultTestSnapshot(&latestEpoch, false)
-	latest.stage.IsFinished = false
-	f.expectSnapshot(120, latest)
-	f.repo.On("GetEpoch", mock.Anything, f.app.IApplicationAddress.Hex(), latestEpoch.Index).Return(&latestEpoch, nil).Once()
-
-	epoch, _, err := f.s.progressTournamentResult(t.Context(), f.app, 100, 120)
-	require.NoError(t, err)
-	require.Same(t, &latestEpoch, epoch)
-	f.assertNoStageWrite(t)
-	f.assertNoPermanentStatusWrite(t)
-}
-
-func TestProgressTournamentResultWaitsBelowStoredStagingBlock(t *testing.T) {
-	f := newPRTBlockPolicyFixture(t, false)
-	f.app.LastTournamentCheckBlock = 99
-	f.epoch.Status = model.EpochStatus_ClaimStaged
-	f.epoch.StagedAtBlock = new(uint64(100))
-	older := resultTestSnapshot(f.epoch, true)
-	older.sealed.StagingBlockNumber = 90
-	f.expectSnapshot(99, older)
-
-	epoch, _, err := f.s.progressTournamentResult(t.Context(), f.app, 101, 101)
-	require.NoError(t, err)
-	require.Nil(t, epoch)
-	require.Equal(t, new(uint64(100)), f.epoch.StagedAtBlock)
-	f.assertNoStageWrite(t)
-	f.assertNoPermanentStatusWrite(t)
-}
-
-func TestProgressTournamentResultRejectsInputBoundsMismatch(t *testing.T) {
+func TestTournamentResultLatestMismatchIsPure(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		mutate func(*daveConsensusSnapshot)
 	}{
-		{name: "lower bound", mutate: func(snapshot *daveConsensusSnapshot) {
-			snapshot.sealed.InputIndexLowerBound++
-		}},
-		{name: "upper bound", mutate: func(snapshot *daveConsensusSnapshot) {
-			snapshot.sealed.InputIndexUpperBound++
+		{"lower input bound", func(v *daveConsensusSnapshot) { v.sealed.InputIndexLowerBound++ }},
+		{"upper input bound", func(v *daveConsensusSnapshot) { v.sealed.InputIndexUpperBound++ }},
+		{"winner commitment", func(v *daveConsensusSnapshot) { v.stage.WinnerCommitment[0] ^= 1 }},
+		{"staged winner state", func(v *daveConsensusSnapshot) { v.stage.WinnerPostEpochMachineStateHash[0] ^= 1 }},
+		{"staged output root", func(v *daveConsensusSnapshot) {
+			v.sealed.StagedPostEpochOutputsMerkleRoot[0] ^= 1
+			v.accept.StagedPostEpochOutputsMerkleRoot = v.sealed.StagedPostEpochOutputsMerkleRoot
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			epoch := resultTestEpoch(model.EpochStatus_ClaimComputed)
-			snapshot := resultTestSnapshot(epoch, false)
-			test.mutate(&snapshot)
-			service, repo, consensus := resultTestService(t, epoch, snapshot, true)
-			app := prtRevertTestApp()
-			app.LastTournamentCheckBlock = 20
-			repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Corrupted,
-				mock.MatchedBy(reasonContains("input bounds inconsistent"))).Return(nil).Once()
-
-			joinEpoch, _, err := service.progressTournamentResult(context.Background(), app, 20, 20)
+			f := newDeliveryFixture(t)
+			view := resultTestSnapshot(f.epoch, true)
+			test.mutate(&view)
+			f.snapshot(view)
+			call, err := f.d.planAction(t.Context(), f.app, acceptTournament, f.block, observerFacts(100))
 			require.Error(t, err)
-			require.Nil(t, joinEpoch)
-			consensus.AssertNotCalled(t, "StageTournamentResult", mock.Anything, mock.Anything, mock.Anything)
-			consensus.AssertNotCalled(t, "AcceptStagedTournamentResult", mock.Anything, mock.Anything)
-			require.Empty(t, service.rootBondRecoveries[app.ID])
-			repo.AssertExpectations(t)
-			consensus.AssertExpectations(t)
+			require.Nil(t, call)
+			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
+			f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 		})
 	}
 }
 
-func TestProgressTournamentResultKeepsFailedRootObservable(t *testing.T) {
-	epoch := resultTestEpoch(model.EpochStatus_ClaimComputed)
-	snapshot := resultTestSnapshot(epoch, false)
-	snapshot.stage.IsTournamentFailed = true
-	snapshot.stage.WinnerCommitment = common.Hash{}
-	snapshot.stage.WinnerPostEpochMachineStateHash = common.Hash{}
-	service, repo, consensus := resultTestService(t, epoch, snapshot, true)
-	app := prtRevertTestApp()
-	joinEpoch, _, err := service.progressTournamentResult(context.Background(), app, 20, 20)
-	require.NoError(t, err)
-	require.Equal(t, model.ApplicationStatus_OK, app.Status)
-	repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	require.Nil(t, joinEpoch)
-	consensus.AssertNotCalled(t, "StageTournamentResult", mock.Anything, mock.Anything, mock.Anything)
-	repo.AssertExpectations(t)
-	consensus.AssertExpectations(t)
-}
-
-func TestProgressTournamentResultAcceptsWhenSentriesAgreeOrPeriodIsOver(t *testing.T) {
+func TestTournamentResultObservationRecordsOnlyPublishedStage(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		agree   bool
-		period  bool
-		accepts bool
+		name   string
+		staged bool
+		stored uint64
 	}{
-		{name: "sentries agree", agree: true, accepts: true},
-		{name: "zero period is over", period: true, accepts: true},
-		{name: "not ready", accepts: false},
+		{"matching published stage", true, 0}, {"reader remains passive", false, 0}, {"stored stage is newer", true, 101},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			epoch := resultTestEpoch(model.EpochStatus_ClaimStaged)
-			snapshot := resultTestSnapshot(epoch, true)
-			snapshot.accept.DoAllSentriesAgreeWithStagedTournamentResult = test.agree
-			snapshot.accept.IsClaimStagingPeriodOver = test.period
-			service, repo, consensus := resultTestService(t, epoch, snapshot, true)
-			if test.accepts {
-				tx := types.NewTx(&types.LegacyTx{Nonce: 7})
-				consensus.On("AcceptStagedTournamentResult", mock.Anything, epoch.Index).Return(tx, nil).Once()
+			f := newDeliveryFixture(t)
+			f.d.submissionEnabled = false
+			if test.stored != 0 {
+				f.epoch.Status, f.epoch.StagedAtBlock = model.EpochStatus_ClaimStaged, new(test.stored)
 			}
-
-			joinEpoch, _, err := service.progressTournamentResult(context.Background(), prtRevertTestApp(), 20, 20)
-			require.NoError(t, err)
-			require.Nil(t, joinEpoch)
-			if test.accepts {
-				require.Contains(t, service.pendingTransactions, epoch.ApplicationID)
-			} else {
-				require.NotContains(t, service.pendingTransactions, epoch.ApplicationID)
+			view := resultTestSnapshot(f.epoch, test.staged)
+			opts := mock.MatchedBy(resultCallOptsAtBlock(100))
+			f.consensus.On("GetCurrentSealedEpoch", opts).Return(view.sealed, nil).Once()
+			f.consensus.On("CanStageTournamentResult", opts).Return(view.stage, nil).Once()
+			f.consensus.On("CanAcceptStagedTournamentResult", opts).Return(view.accept, nil).Once()
+			f.repo.On("ListEpochs", mock.Anything, f.app.Name, repository.EpochFilter{HasTournament: new(true)},
+				repository.Pagination{}, false).Return([]*model.Epoch{f.epoch}, uint64(1), nil).Once()
+			if test.staged && test.stored == 0 {
+				f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, f.epoch.Index, uint64(10)).Return(nil).Once()
 			}
-			repo.AssertNotCalled(t, "UpdateEpochWithAcceptedClaim", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-			consensus.AssertExpectations(t)
+			require.NoError(t, f.d.observeApplication(t.Context(), f.app, observerFacts(100)))
+			switch {
+			case test.staged && test.stored == 0:
+				require.Equal(t, model.EpochStatus_ClaimStaged, f.epoch.Status)
+				require.Equal(t, new(uint64(10)), f.epoch.StagedAtBlock)
+			case test.stored != 0:
+				require.Equal(t, new(test.stored), f.epoch.StagedAtBlock)
+			default:
+				require.Equal(t, model.EpochStatus_ClaimComputed, f.epoch.Status)
+			}
+			require.Empty(t, f.backend.published)
+			f.repo.AssertExpectations(t)
+			f.consensus.AssertExpectations(t)
 		})
 	}
-}
-
-func TestProgressTournamentResultRejectsIncompleteProofBeforeBroadcast(t *testing.T) {
-	epoch := resultTestEpoch(model.EpochStatus_ClaimComputed)
-	service, repo, consensus := resultTestService(t, epoch, resultTestSnapshot(epoch, false), true)
-	app := prtRevertTestApp()
-	repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Corrupted,
-		mock.MatchedBy(reasonContains("cannot stage", "proof is incomplete"))).Return(nil).Once()
-
-	_, _, err := service.progressTournamentResult(context.Background(), app, 20, 20)
-	require.Error(t, err)
-	consensus.AssertNotCalled(t, "StageTournamentResult", mock.Anything, mock.Anything, mock.Anything)
-	repo.AssertExpectations(t)
-}
-
-func TestProgressTournamentResultDefersCompleteProofValidationToContract(t *testing.T) {
-	proof := repotest.KeccakStateProof(common.HexToHash("0x1234"))
-	epoch := resultTestEpoch(model.EpochStatus_ClaimComputed)
-	applyPRTStateProof(epoch, proof)
-	epoch.TxBufferProof[0][0] ^= 0xff
-	corruptSibling := [32]byte(epoch.TxBufferProof[0])
-	snapshot := resultTestSnapshot(epoch, false)
-	service, repo, consensus := resultTestService(t, epoch, snapshot, true)
-	app := prtRevertTestApp()
-	client := &ethClientMock{}
-	client.On("HeaderByNumber", mock.Anything, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
-		Return(&types.Header{Number: big.NewInt(20)}, nil).Once()
-	service.client = client
-	service.defaultBlock = model.DefaultBlock_Finalized
-	opts := mock.MatchedBy(resultCallOptsAtBlock(20))
-	consensus.On("GetCurrentSealedEpoch", opts).Return(snapshot.sealed, nil).Once()
-	consensus.On("CanStageTournamentResult", opts).Return(snapshot.stage, nil).Once()
-	consensus.On("CanAcceptStagedTournamentResult", opts).Return(snapshot.accept, nil).Once()
-	factory := service.adapterFactory.(*adapterFactoryMock)
-	factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Once()
-	consensus.On("StageTournamentResult", mock.Anything, epoch.Index,
-		mock.MatchedBy(func(got model.StateProof) bool {
-			return got.TxBufferProof[0] == corruptSibling
-		})).Return((*types.Transaction)(nil), daveConsensusRevertError("InvalidMachineMerkleProof")).Once()
-	repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
-		mock.MatchedBy(reasonContains("Check proof serialization", "stored proof data"))).Return(nil).Once()
-
-	joinEpoch, _, err := service.progressTournamentResult(context.Background(), app, 20, 20)
-	require.NoError(t, err)
-	require.Nil(t, joinEpoch)
-	require.Empty(t, service.pendingTransactions)
-	require.Equal(t, model.ApplicationStatus_Failed, app.Status)
-	repo.AssertExpectations(t)
-	consensus.AssertExpectations(t)
-	client.AssertExpectations(t)
-	factory.AssertExpectations(t)
-}
-
-func TestProgressTournamentResultStagesCompleteProof(t *testing.T) {
-	proof := repotest.KeccakStateProof(common.HexToHash("0x1234"))
-	epoch := resultTestEpoch(model.EpochStatus_ClaimComputed)
-	applyPRTStateProof(epoch, proof)
-	snapshot := resultTestSnapshot(epoch, false)
-	service, repo, consensus := resultTestService(t, epoch, snapshot, true)
-	tx := types.NewTx(&types.LegacyTx{Nonce: 8})
-	consensus.On("StageTournamentResult", mock.Anything, epoch.Index,
-		mock.MatchedBy(func(got model.StateProof) bool {
-			return got.IflagsYDataBlock == proof.IflagsYDataBlock &&
-				got.HtifTohostDataBlock == proof.HtifTohostDataBlock &&
-				got.TxBufferDataBlock == proof.TxBufferDataBlock &&
-				len(got.IflagsYProof) == model.StateProofSiblingCount &&
-				len(got.HtifTohostProof) == model.StateProofSiblingCount &&
-				len(got.TxBufferProof) == model.StateProofSiblingCount
-		})).Return(tx, nil).Once()
-
-	joinEpoch, _, err := service.progressTournamentResult(context.Background(), prtRevertTestApp(), 20, 20)
-	require.NoError(t, err)
-	require.Nil(t, joinEpoch)
-	require.Contains(t, service.pendingTransactions, epoch.ApplicationID)
-	repo.AssertExpectations(t)
-	consensus.AssertExpectations(t)
 }
 
 func TestCheckEpochsAcceptsComputedOrStagedEpochFromExactEpochSealedEvent(t *testing.T) {
@@ -449,18 +261,20 @@ func TestCheckEpochsAcceptsComputedOrStagedEpochFromExactEpochSealedEvent(t *tes
 			epoch.LastBlock = 10
 			acceptTx := common.HexToHash("0x700")
 			epoch.ClaimTransactionHash = &acceptTx
+			header := &types.Header{Number: big.NewInt(12)}
 			wrongEmitterLog := &types.Log{
 				Address: common.HexToAddress("0xbad"), TxHash: acceptTx, BlockNumber: 12, Index: 1,
 			}
 			wrongHashLog := &types.Log{
 				Address: app.IConsensusAddress, TxHash: common.HexToHash("0xbad"), BlockNumber: 12, Index: 2,
 			}
-			staleLog := &types.Log{Address: app.IConsensusAddress, TxHash: acceptTx, BlockNumber: 12, Index: 3}
-			exactLog := &types.Log{Address: app.IConsensusAddress, TxHash: acceptTx, BlockNumber: 12, Index: 4}
+			staleLog := &types.Log{Address: app.IConsensusAddress, TxHash: acceptTx, BlockNumber: 12, BlockHash: header.Hash(), Index: 3}
+			exactLog := &types.Log{Address: app.IConsensusAddress, TxHash: acceptTx, BlockNumber: 12, BlockHash: header.Hash(), Index: 4}
 			receipt := &types.Receipt{
 				Status:      types.ReceiptStatusSuccessful,
 				TxHash:      acceptTx,
 				BlockNumber: big.NewInt(12),
+				BlockHash:   header.Hash(),
 				Logs:        []*types.Log{wrongEmitterLog, wrongHashLog, staleLog, exactLog},
 			}
 			staleEvent := &idaveconsensus.IDaveConsensusEpochSealed{
@@ -487,7 +301,7 @@ func TestCheckEpochsAcceptsComputedOrStagedEpochFromExactEpochSealedEvent(t *tes
 					Address:       *epoch.TournamentAddress,
 					MaxLevel:      3,
 					Level:         0,
-					Snapshot:      model.TournamentSnapshot{FinishedAtBlock: 9},
+					Snapshot:      model.TournamentSnapshot{FinishedAtBlock: 9, AsOfBlock: 20},
 				}, nil).Once()
 			repo.On("UpdateEpochWithAcceptedClaim", mock.Anything, app.ID, epoch.Index,
 				mock.MatchedBy(func(hash *common.Hash) bool { return hash != nil && *hash == acceptTx })).
@@ -500,16 +314,17 @@ func TestCheckEpochsAcceptsComputedOrStagedEpochFromExactEpochSealedEvent(t *tes
 			factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Once()
 			client := &ethClientMock{}
 			client.On("TransactionReceipt", mock.Anything, acceptTx).Return(receipt, nil).Once()
+			client.On("HeaderByNumber", mock.Anything, receipt.BlockNumber).Return(header, nil).Once()
 
 			service, _ := newPRTServiceMock()
 			service.repository = repo
 			service.adapterFactory = factory
 			service.client = client
 			service.submissionEnabled = true
-			deferActions, err := service.checkEpochs(context.Background(), app, 20)
+			deferActions, err := observeEpochsForTest(context.Background(), service, app, 20)
 			require.NoError(t, err)
 			require.False(t, deferActions)
-			require.Empty(t, service.rootBondRecoveries, "acceptance is not a recovery discovery source")
+			require.Empty(t, service.delivery.rootBondRecoveryScans, "acceptance is not a recovery discovery source")
 			repo.AssertExpectations(t)
 			consensus.AssertExpectations(t)
 			factory.AssertExpectations(t)
@@ -552,7 +367,8 @@ func TestCheckEpochsValidatesAcceptanceReceiptAgainstPinnedHead(t *testing.T) {
 			repo.On("ListEpochs", mock.Anything, app.Name, mock.Anything, repository.Pagination{}, false).
 				Return([]*model.Epoch{epoch}, uint64(1), nil).Once()
 			repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
-				Return(&model.Tournament{Snapshot: model.TournamentSnapshot{FinishedAtBlock: 9}}, nil).Once()
+				Return(&model.Tournament{ApplicationID: app.ID, EpochIndex: epoch.Index, Address: *epoch.TournamentAddress,
+					Snapshot: model.TournamentSnapshot{FinishedAtBlock: 9, AsOfBlock: 20}}, nil).Once()
 			consensus := &daveConsensusAdapterMock{}
 			factory := &adapterFactoryMock{}
 			factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Once()
@@ -563,7 +379,7 @@ func TestCheckEpochsValidatesAcceptanceReceiptAgainstPinnedHead(t *testing.T) {
 			service.adapterFactory = factory
 			service.client = client
 
-			deferActions, err := service.checkEpochs(context.Background(), app, 20)
+			deferActions, err := observeEpochsForTest(context.Background(), service, app, 20)
 			if test.wantErr == "" {
 				require.NoError(t, err)
 				require.True(t, deferActions)
@@ -590,13 +406,16 @@ func TestValidateApplicationDefersActionsForAcceptanceAfterPinnedHead(t *testing
 	repo.On("ListEpochs", mock.Anything, app.Name, mock.Anything, repository.Pagination{}, false).
 		Return([]*model.Epoch{epoch}, uint64(1), nil).Once()
 	repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
-		Return(&model.Tournament{Snapshot: model.TournamentSnapshot{FinishedAtBlock: 9}}, nil).Once()
+		Return(&model.Tournament{ApplicationID: app.ID, EpochIndex: epoch.Index, Address: *epoch.TournamentAddress,
+			Snapshot: model.TournamentSnapshot{FinishedAtBlock: 9, AsOfBlock: 20}}, nil).Once()
 	consensus := &daveConsensusAdapterMock{}
+	view := resultTestSnapshot(epoch, true)
+	consensus.On("GetCurrentSealedEpoch", mock.Anything).Return(view.sealed, nil).Once()
+	consensus.On("CanStageTournamentResult", mock.Anything).Return(view.stage, nil).Once()
+	consensus.On("CanAcceptStagedTournamentResult", mock.Anything).Return(view.accept, nil).Once()
 	factory := &adapterFactoryMock{}
 	factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Once()
 	client := &ethClientMock{}
-	client.On("HeaderByNumber", mock.Anything, big.NewInt(rpc.FinalizedBlockNumber.Int64())).
-		Return(&types.Header{Number: big.NewInt(20)}, nil).Once()
 	client.On("TransactionReceipt", mock.Anything, acceptTx).Return(&types.Receipt{
 		Status:      types.ReceiptStatusSuccessful,
 		TxHash:      acceptTx,
@@ -608,12 +427,10 @@ func TestValidateApplicationDefersActionsForAcceptanceAfterPinnedHead(t *testing
 	service.client = client
 	service.defaultBlock = model.DefaultBlock_Finalized
 
-	require.NoError(t, runPRTApplicationTick(service, app))
-	consensus.AssertNotCalled(t, "GetCurrentSealedEpoch", mock.Anything)
-	consensus.AssertNotCalled(t, "CanStageTournamentResult", mock.Anything)
-	consensus.AssertNotCalled(t, "CanAcceptStagedTournamentResult", mock.Anything)
-	consensus.AssertNotCalled(t, "StageTournamentResult", mock.Anything, mock.Anything, mock.Anything)
-	consensus.AssertNotCalled(t, "AcceptStagedTournamentResult", mock.Anything, mock.Anything)
+	require.NoError(t, service.delivery.observeApplication(t.Context(), app, observerFacts(20)))
+	consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 1)
+	consensus.AssertNumberOfCalls(t, "CanStageTournamentResult", 1)
+	consensus.AssertNumberOfCalls(t, "CanAcceptStagedTournamentResult", 1)
 	repo.AssertExpectations(t)
 	consensus.AssertExpectations(t)
 	factory.AssertExpectations(t)
@@ -622,7 +439,14 @@ func TestValidateApplicationDefersActionsForAcceptanceAfterPinnedHead(t *testing
 
 func resultCallOptsAtBlock(block uint64) func(*bind.CallOpts) bool {
 	return func(opts *bind.CallOpts) bool {
-		return opts != nil && opts.BlockNumber != nil && opts.BlockNumber.IsUint64() && opts.BlockNumber.Uint64() == block
+		if opts == nil {
+			return false
+		}
+		if opts.BlockHash != (common.Hash{}) {
+			pinned, ok := opts.Context.Value(liveBlockContextKey{}).(liveBlock)
+			return ok && pinned.number == block && pinned.hash == opts.BlockHash && opts.BlockNumber == nil
+		}
+		return opts.BlockNumber != nil && opts.BlockNumber.IsUint64() && opts.BlockNumber.Uint64() == block
 	}
 }
 
@@ -641,6 +465,11 @@ func resultTestEpoch(status model.EpochStatus) *model.Epoch {
 		Commitment:           &commitment,
 		MachineHash:          &machineHash,
 		TxBufferDataBlock:    &outputsRoot,
+		IflagsYDataBlock:     new(common.Hash),
+		HtifTohostDataBlock:  new(common.Hash),
+		TxBufferProof:        make([]common.Hash, model.StateProofSiblingCount),
+		IflagsYProof:         make([]common.Hash, model.StateProofSiblingCount),
+		HtifTohostProof:      make([]common.Hash, model.StateProofSiblingCount),
 	}
 	if status == model.EpochStatus_ClaimStaged {
 		epoch.StagedAtBlock = new(uint64)
@@ -680,32 +509,6 @@ func resultTestSnapshot(epoch *model.Epoch, staged bool) daveConsensusSnapshot {
 	return snapshot
 }
 
-func resultTestService(
-	t *testing.T,
-	epoch *model.Epoch,
-	snapshot daveConsensusSnapshot,
-	submissionEnabled bool,
-) (*Service, *prtRepositoryMock, *daveConsensusAdapterMock) {
-	t.Helper()
-	app := prtRevertTestApp()
-	app.IConsensusAddress = common.HexToAddress("0x100")
-	repo := &prtRepositoryMock{}
-	repo.On("GetEpoch", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index).Return(epoch, nil).Once()
-	consensus := &daveConsensusAdapterMock{}
-	consensus.On("GetCurrentSealedEpoch", mock.Anything).Return(snapshot.sealed, nil).Once()
-	consensus.On("CanStageTournamentResult", mock.Anything).Return(snapshot.stage, nil).Once()
-	consensus.On("CanAcceptStagedTournamentResult", mock.Anything).Return(snapshot.accept, nil).Once()
-	factory := &adapterFactoryMock{}
-	factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Once()
-	service, _ := newPRTServiceMock()
-	service.repository = repo
-	service.adapterFactory = factory
-	service.submissionEnabled = submissionEnabled
-	service.submissionTimeout = time.Second
-	service.txOptsFactory = ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{From: common.HexToAddress("0x600")})
-	return service, repo, consensus
-}
-
 func applyPRTStateProof(epoch *model.Epoch, proof model.StateProof) {
 	epoch.MachineHash = new(common.Hash)
 	*epoch.MachineHash = proof.MachineHash
@@ -726,4 +529,41 @@ func stateProofHashes(proof [][32]byte) []common.Hash {
 		result[i] = proof[i]
 	}
 	return result
+}
+
+func TestTournamentResultStageProofPreservesContractValidation(t *testing.T) {
+	for _, incomplete := range []bool{true, false} {
+		t.Run(fmt.Sprint(incomplete), func(t *testing.T) {
+			f := newDeliveryFixture(t)
+			if incomplete {
+				f.epoch.TxBufferProof = nil
+			} else {
+				f.epoch.TxBufferProof[0][0] ^= 1
+			}
+			f.snapshot(resultTestSnapshot(f.epoch, false))
+			call, err := f.d.planAction(t.Context(), f.app, stageTournament, f.block, observerFacts(100))
+			if incomplete {
+				require.Error(t, err)
+				require.Nil(t, call)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, call)
+				proof, err := f.epoch.StateProof()
+				require.NoError(t, err)
+				abi, err := idaveconsensus.IDaveConsensusMetaData.GetAbi()
+				require.NoError(t, err)
+				expected, err := abi.Pack("stageTournamentResult", new(big.Int).SetUint64(f.epoch.Index), daveMachineValidityProof(proof))
+				require.NoError(t, err)
+				require.Equal(t, expected, call.Data)
+				failure := daveConsensusRevertError("InvalidMachineMerkleProof")
+				f.backend.preflightError = failure
+				report, err := f.d.sender.PublishNext(t.Context(), singleAction{f.d, *call})
+				require.ErrorIs(t, err, failure)
+				require.False(t, report.Attempted)
+				require.Empty(t, f.backend.published)
+			}
+			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
+			f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		})
+	}
 }

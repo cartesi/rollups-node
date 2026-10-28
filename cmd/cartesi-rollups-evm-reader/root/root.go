@@ -44,7 +44,8 @@ func init() {
 	config.SetDefaults()
 
 	cli.AddFlagStrVarP(flags, &defaultBlockString, "default-block", "d", config.BLOCKCHAIN_DEFAULT_BLOCK,
-		"Default block to be used when fetching new blocks.\nOne of 'latest', 'safe', 'pending', 'finalized'")
+		"Default block to be used when fetching new blocks.\n"+
+			"One of 'latest', 'safe', 'finalized'; provisional observations have no reorg rollback")
 	cli.AddFlagStrVar(flags, &telemetryAddress, "telemetry-address", config.EVM_READER_TELEMETRY_ADDRESS,
 		"Health check and metrics address and port")
 	cli.AddFlagStrVar(flags, &logLevel, "log-level", config.LOG_LEVEL,

@@ -11,6 +11,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 const nodeConfigTestChainID = 31337
@@ -27,9 +28,13 @@ func (s *NodeConfigSuite) TestConcurrentConfigInitializationPreservesWinner() {
 				requested := config.PersistentSubmitterConfig{
 					DefaultBlock: DefaultBlock_Finalized, ChainID: nodeConfigTestChainID, ClaimSubmissionEnabled: enabled,
 				}
-				stored, err := repository.InitializeNodeConfig(s.Ctx, s.Repo, &NodeConfig[config.PersistentSubmitterConfig]{
-					Key: key, Value: requested,
-				})
+				if enabled {
+					requested.ResolvedSignerAddress = common.HexToAddress("0x1")
+				}
+				stored, err := InitializeNodeConfig(
+					s.Ctx, s.Repo.(NodeConfigInitializer), &NodeConfig[config.PersistentSubmitterConfig]{
+						Key: key, Value: requested,
+					})
 				if err == nil {
 					err = stored.Value.CheckRequested(requested)
 				}
@@ -54,9 +59,10 @@ func (s *NodeConfigSuite) TestConcurrentConfigInitializationPreservesWinner() {
 		s.Require().NoError(err)
 		opposite := winner.Value
 		opposite.ClaimSubmissionEnabled = !opposite.ClaimSubmissionEnabled
-		retained, err := repository.InitializeNodeConfig(s.Ctx, s.Repo, &NodeConfig[config.PersistentSubmitterConfig]{
-			Key: key, Value: opposite,
-		})
+		retained, err := InitializeNodeConfig(
+			s.Ctx, s.Repo.(NodeConfigInitializer), &NodeConfig[config.PersistentSubmitterConfig]{
+				Key: key, Value: opposite,
+			})
 		s.Require().NoError(err)
 		s.Equal(winner.Value, retained.Value)
 		s.Equal(winner.CreatedAt, retained.CreatedAt)
@@ -68,10 +74,11 @@ func (s *NodeConfigSuite) TestConfigInitializationDoesNotRepairInvalidSavedValue
 	for i, raw := range []string{`{}`, `null`, `{"ChainID":0,"DefaultBlock":"FINALIZED"}`} {
 		s.Run(fmt.Sprint(i), func() {
 			key := fmt.Sprintf("invalid-config-%d", i)
-			s.Require().NoError(s.Repo.SaveNodeConfigRaw(s.Ctx, key, []byte(raw)))
-			_, err := repository.InitializeNodeConfig(s.Ctx, s.Repo, &NodeConfig[config.PersistentChainConfig]{
-				Key: key, Value: config.PersistentChainConfig{DefaultBlock: DefaultBlock_Finalized, ChainID: nodeConfigTestChainID},
-			})
+			s.Require().NoError(s.Repo.(NodeConfigWriter).SaveNodeConfigRaw(s.Ctx, key, []byte(raw)))
+			_, err := InitializeNodeConfig(
+				s.Ctx, s.Repo.(NodeConfigInitializer), &NodeConfig[config.PersistentChainConfig]{
+					Key: key, Value: config.PersistentChainConfig{DefaultBlock: DefaultBlock_Finalized, ChainID: nodeConfigTestChainID},
+				})
 			s.Require().Error(err)
 			got, _, _, err := s.Repo.LoadNodeConfigRaw(s.Ctx, key)
 			s.Require().NoError(err)
@@ -95,7 +102,7 @@ func (s *NodeConfigSuite) TestSaveAndLoadNodeConfigRaw() {
 		data, err := json.Marshal(value)
 		s.Require().NoError(err)
 
-		err = s.Repo.SaveNodeConfigRaw(s.Ctx, key, data)
+		err = s.Repo.(NodeConfigWriter).SaveNodeConfigRaw(s.Ctx, key, data)
 		s.Require().NoError(err)
 
 		got, createdAt, updatedAt, err := s.Repo.LoadNodeConfigRaw(s.Ctx, key)
@@ -113,13 +120,15 @@ func (s *NodeConfigSuite) TestSaveAndLoadNodeConfigRaw() {
 
 	s.Run("UpdateExistingKey", func() {
 		key := "update-test"
-		data1, _ := json.Marshal("value1")
-		data2, _ := json.Marshal("value2")
-
-		err := s.Repo.SaveNodeConfigRaw(s.Ctx, key, data1)
+		data1, err := json.Marshal("value1")
+		s.Require().NoError(err)
+		data2, err := json.Marshal("value2")
 		s.Require().NoError(err)
 
-		err = s.Repo.SaveNodeConfigRaw(s.Ctx, key, data2)
+		err = s.Repo.(NodeConfigWriter).SaveNodeConfigRaw(s.Ctx, key, data1)
+		s.Require().NoError(err)
+
+		err = s.Repo.(NodeConfigWriter).SaveNodeConfigRaw(s.Ctx, key, data2)
 		s.Require().NoError(err)
 
 		got, _, _, err := s.Repo.LoadNodeConfigRaw(s.Ctx, key)
@@ -150,7 +159,7 @@ func (s *NodeConfigSuite) TestGenericNodeConfig() {
 			Value: TestConfig{Name: "test", Count: 42},
 		}
 
-		err := repository.SaveNodeConfig(s.Ctx, s.Repo, nc)
+		err := SaveNodeConfig(s.Ctx, s.Repo.(NodeConfigWriter), nc)
 		s.Require().NoError(err)
 
 		got, err := repository.LoadNodeConfig[TestConfig](s.Ctx, s.Repo, "typed-config")

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/cartesi/rollups-node/internal/cli"
+	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -73,6 +74,12 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
+// Match make env and development Compose defaults, preserving explicit policy
+// selection. Per-fixture environment overrides are appended after this value.
+func developmentDeliveryEnv() []string {
+	return []string{config.BLOCKCHAIN_DEFAULT_BLOCK + "=" + envOrDefault(config.BLOCKCHAIN_DEFAULT_BLOCK, "latest")}
+}
+
 // cliError wraps a CLI execution failure, preserving the exit code for
 // error discrimination in poll helpers.
 type cliError struct {
@@ -119,19 +126,19 @@ func runCLIWithEnv(ctx context.Context, extraEnv []string, args ...string) (stri
 		"CARTESI_AUTH_MNEMONIC="+ethutil.FoundryMnemonic,
 		fmt.Sprintf("CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX=%d", integrationCLIAccountIndex),
 	)
-	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Env = append(append(cmd.Env, developmentDeliveryEnv()...), extraEnv...)
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return "", &cliError{
+			return string(out), &cliError{
 				Args:     args,
 				ExitCode: exitErr.ExitCode(),
 				Stderr:   string(exitErr.Stderr),
 				Err:      err,
 			}
 		}
-		return "", fmt.Errorf("cli %v failed: %w", args, err)
+		return string(out), fmt.Errorf("cli %v failed: %w", args, err)
 	}
 	return string(out), nil
 }

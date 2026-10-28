@@ -22,6 +22,10 @@
 set -euo pipefail
 
 COMPOSE_FILE="test/compose/compose.integration.yaml"
+COMPOSE_FILES=(-f "$COMPOSE_FILE")
+if [ "${CARTESI_BLOCKCHAIN_DEFAULT_BLOCK:-latest}" = finalized ]; then
+    COMPOSE_FILES+=(-f test/compose/compose.delivery-finalized.yaml)
+fi
 NODE_LOG_PATH="/var/lib/cartesi-rollups-node/logs/node.log"
 
 : "${COMPOSE_PROJECT:?COMPOSE_PROJECT is required}"
@@ -31,7 +35,7 @@ export SHARD_NAME="${SHARD_NAME:-full}"
 export NODE_TOPOLOGY="${NODE_TOPOLOGY:-standalone}"
 
 compose() {
-    docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"
+    docker compose -p "$COMPOSE_PROJECT" "${COMPOSE_FILES[@]}" "$@"
 }
 
 remove_integration_run_containers() {

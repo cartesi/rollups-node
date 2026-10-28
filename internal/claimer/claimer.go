@@ -4,9 +4,9 @@
 // Package claimer drives the on-chain claim lifecycle for Authority and
 // Quorum consensus apps.
 //
-// Each Tick runs the claim stages in order: submit, stage, send accept,
-// confirm accept, and accept by event. The code takes new DB snapshots between
-// groups of stages so later stages see the rows updated by earlier stages.
+// Tick observes claims and events at the configured block policy. A separate publisher
+// reads committed rows and maintains its signer without waiting for Tick.
+// The Claimer owns its signer independently of the PRT service.
 //
 // The in-DB lifecycle mirrors the v3 IConsensus contract:
 //
@@ -44,109 +44,82 @@ package claimer
 import (
 	"context"
 	"errors"
-
-	"github.com/cartesi/rollups-node/internal/errutil"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/txsender"
+	"math/big"
+	"time"
 )
 
 func (s *Service) Tick(ctx context.Context) (reschedule bool, err error) {
-	// Classify the complete result once, on every return path. Cancellation can
-	// interrupt claim writes as well as work-selection queries. Keep all causes
-	// when a real failure accompanies shutdown; never hide it behind cancellation.
 	defer func() {
-		if !errors.Is(ctx.Err(), context.Canceled) {
-			return
+		if txsender.HardFailure(err) {
+			cause := err
+			s.failure.CompareAndSwap(nil, &cause)
+			if time.Since(s.observationHardWarnedAt) < claimWarningInterval {
+				err = nil
+			} else {
+				s.observationHardWarnedAt = time.Now()
+			}
 		}
-		reschedule = false
-		if errutil.IsOnlyCancellation(err) {
-			s.Logger.Debug("Tick interrupted by shutdown", "error", err)
+		if txsender.ShutdownOnly(ctx, err, txsender.ErrLimit) {
+			reschedule, err = false, nil
+		} else if txsender.WaitOnly(err) {
+			s.Logger.Debug("Claim observation deferred", "error", err)
 			err = nil
 		}
 	}()
-
-	// Use the same finalized block number for all chain reads in this tick.
-	// This is one RPC per tick even when there is no DB work. The call is
-	// cheap, and Tick already runs on a polling interval.
-	defaultBlockNumber, err := s.blockchain.getDefaultBlockNumber(ctx)
+	block, err := s.blockchain.getDefaultBlockNumber(ctx)
 	if err != nil {
 		return false, err
 	}
 	s.consensusAddressChecks = map[consensusAddressCheckKey]error{}
-	defer func() {
-		s.consensusAddressChecks = nil
-	}()
-
-	// Each stage reads its input after the previous stage finishes. This lets
-	// stage 2 see rows that stage 1 just moved to SUBMITTED. If all reads ran
-	// first, one chain update could take several ticks to reach STAGED.
-
-	// Stage 1: submit. COMPUTED -> SUBMITTED, or directly to STAGED when the
-	// transaction receipt already contains ClaimStaged.
-	prevSubmittedOrStaged, computedEpochs, computedApps, errComputed := s.repository.SelectClaimsToSubmitPerApp(ctx)
-	if errComputed != nil {
-		return false, errComputed
+	defer func() { s.consensusAddressChecks = nil }()
+	for kind := claimSubmitPage; kind <= claimAcceptPage; kind++ {
+		count, stageErr := s.observeClaimStage(ctx, kind, block)
+		reschedule = reschedule || count > 0
+		err = errors.Join(err, stageErr)
+		if txsender.HardFailure(stageErr) || ctx.Err() != nil {
+			break
+		}
 	}
-	submitted, err := s.submitClaimsAndUpdateDatabase(ctx, prevSubmittedOrStaged, computedEpochs, computedApps, defaultBlockNumber)
+	return reschedule, err
+}
 
-	// Stage 2: stage. SUBMITTED -> STAGED. This read sees stage 1 updates.
-	prevAcceptedForSubmitted, submittedEpochs, submittedApps, errSubmitted := s.repository.SelectClaimsToStagePerApp(ctx)
-	if errSubmitted != nil {
-		return false, errors.Join(err, errSubmitted)
+func (s *Service) observeClaimStage(ctx context.Context, kind int, block *big.Int) (int, error) {
+	page, err := s.selectClaimPage(ctx, kind)
+	if err != nil {
+		return 0, err
 	}
-	staged, stageErr := s.stageClaimsAndUpdateDatabase(ctx, prevAcceptedForSubmitted, submittedEpochs, submittedApps, defaultBlockNumber)
-	err = errors.Join(err, stageErr)
-
-	// Stages 3, 4, and 5: accept. STAGED -> ACCEPTED by our own transaction,
-	// another party's event, or a getClaim read before we send acceptClaim.
-	// This read sees stage 1 and stage 2 updates.
-	prevAcceptedForStaged, stagedEpochs, stagedApps, errStaged := s.repository.SelectClaimsToAcceptPerApp(ctx)
-	if errStaged != nil {
-		return false, errors.Join(err, errStaged)
+	count := 0
+	for _, item := range page.Work {
+		epochs := map[int64]*model.Epoch{item.Application.ID: item.Epoch}
+		apps := map[int64]*model.Application{item.Application.ID: item.Application}
+		var progressed int
+		var observeErr error
+		switch kind {
+		case claimSubmitPage:
+			progressed, observeErr = s.submitClaimsAndUpdateDatabase(ctx, epochs, apps, block)
+		case claimStagePage:
+			progressed, observeErr = s.stageClaimsAndUpdateDatabase(ctx, epochs, apps, block)
+		default:
+			accepted, acceptErr := s.acceptClaimsAndUpdateDatabase(ctx, epochs, apps, block)
+			issued, issueErr := s.observeStagedClaims(ctx, epochs, apps, block)
+			progressed, observeErr = accepted+issued, errors.Join(acceptErr, issueErr)
+		}
+		s.pageCursors[kind].Advance(item, page)
+		count += progressed
+		err = errors.Join(err, observeErr)
+		if txsender.HardFailure(observeErr) || ctx.Err() != nil {
+			break
+		}
 	}
-
-	// Foreclosed apps still need some read-only claim work. A claim accepted
-	// before foreclosure must be copied from chain into the local DB. The
-	// read-only steps inside the normal stages do that:
-	// findClaimSubmittedEvent, getClaim, and findClaimStagedEvent.
-	//
-	// The submitClaim and acceptClaim paths skip new broadcasts when
-	// foreclose_block is set, so this does not spend gas on transactions that
-	// must revert.
-	//
-	// The query below adds foreclosed apps that no longer have pending claim
-	// work, so operators can still see drain and reconciliation progress. Once
-	// drained, the app remains enabled for L1 observation with foreclose_block
-	// set.
-	foreclosed, listErr := s.listEnabledForeclosedNonPRTApps(ctx)
-	err = errors.Join(err, listErr)
-
-	// Finish the accept side of the lifecycle. First send acceptClaim for
-	// staged epochs that are ready. Then check acceptClaim transactions sent in
-	// previous ticks. Finally, scan for ClaimAccepted events from any party.
-	issuedAccepts, issueErr := s.acceptStagedClaimsAndIssueAcceptTx(ctx, stagedEpochs, stagedApps, defaultBlockNumber)
-	err = errors.Join(err, issueErr)
-
-	confirmedAccepts, confirmErr := s.checkAcceptsInFlight(ctx, stagedEpochs, stagedApps, defaultBlockNumber)
-	err = errors.Join(err, confirmErr)
-
-	accepted, acceptErr := s.acceptClaimsAndUpdateDatabase(ctx, prevAcceptedForStaged, stagedEpochs, stagedApps, defaultBlockNumber)
-	err = errors.Join(err, acceptErr)
-
-	// Keep logging foreclosed apps until all pre-foreclosure work is done.
-	// After that, processForeclosedApps has nothing else to change.
-	forecloseErr := s.processForeclosedApps(ctx, foreclosed)
-	err = errors.Join(err, forecloseErr)
-
-	s.cleanupOrphanedInFlight(computedApps, stagedApps, stagedEpochs)
-
-	s.Logger.Debug("Processed claims for epochs",
-		"computed", len(computedEpochs),
-		"submitted", len(submittedEpochs),
-		"staged", len(stagedEpochs),
-	)
-
-	// Signal reschedule whenever pipeline progress was made, even with errors.
-	if submitted > 0 || staged > 0 || issuedAccepts > 0 || confirmedAccepts > 0 || accepted > 0 {
-		return true, err
+	if kind == claimAcceptPage {
+		foreclosed, listErr := s.listEnabledForeclosedNonPRTApps(ctx)
+		err = errors.Join(err, listErr, s.processForeclosedApps(ctx, foreclosed, block.Uint64()))
 	}
-	return false, err
+	return count, err
+}
+
+func (s *Service) Ready() bool {
+	return s.failure.Load() == nil && (!s.submissionEnabled || s.publicationReady.Load())
 }

@@ -4,23 +4,16 @@
 package prt
 
 import (
-	"bytes"
 	"context"
-	"errors"
-	"fmt"
-	"log/slog"
-	"math/big"
-	"testing"
-	"time"
-
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"math/big"
+	"testing"
 )
 
 const noWinnerCase = "no winner"
@@ -28,456 +21,138 @@ const noWinnerCase = "no winner"
 func TestBondRecoveryFromBindingMapsAndOwnsPayment(t *testing.T) {
 	claimer := common.HexToAddress("0x100")
 	payment := big.NewInt(42)
-	recovery, err := bondRecoveryFromBinding(uint8(2), claimer, payment)
+	recovery, err := bondRecoveryFromBinding(2, claimer, payment)
 	require.NoError(t, err)
 	require.Equal(t, model.BondDispositionRecoverable, recovery.Disposition)
 	require.Equal(t, claimer, recovery.Claimer)
 	require.Equal(t, int64(42), recovery.Payment.Int64())
-
 	recovery.Payment.SetInt64(7)
 	require.Equal(t, int64(42), payment.Int64())
 }
 
 func TestBondRecoveryFromBindingValidatesCanonicalState(t *testing.T) {
 	claimer := common.HexToAddress("0x100")
-	tests := []struct {
+	for _, test := range []struct {
 		name        string
 		disposition uint8
 		claimer     common.Address
 		payment     *big.Int
 	}{
-		{name: "unknown disposition", disposition: 4, payment: big.NewInt(0)},
-		{name: "nil payment", disposition: uint8(3)},
-		{name: "negative payment", disposition: uint8(2), claimer: claimer, payment: big.NewInt(-1)},
-		{name: "running claimer", disposition: uint8(0), claimer: claimer, payment: big.NewInt(0)},
-		{name: "no winner payment", disposition: uint8(1), payment: big.NewInt(1)},
-		{name: "recovered claimer", disposition: uint8(3), claimer: claimer, payment: big.NewInt(0)},
-		{name: "recoverable zero claimer", disposition: uint8(2), payment: big.NewInt(0)},
-	}
-	for _, test := range tests {
+		{"unknown disposition", 4, common.Address{}, big.NewInt(0)},
+		{"nil payment", 3, common.Address{}, nil},
+		{"negative payment", 2, claimer, big.NewInt(-1)},
+		{"running claimer", 0, claimer, big.NewInt(0)},
+		{"no winner payment", 1, common.Address{}, big.NewInt(1)},
+		{"recovered claimer", 3, claimer, big.NewInt(0)},
+		{"recoverable zero claimer", 2, common.Address{}, big.NewInt(0)},
+	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := bondRecoveryFromBinding(test.disposition, test.claimer, test.payment)
 			require.ErrorIs(t, err, errInvalidBondRecovery)
 		})
 	}
-
-	recovery, err := bondRecoveryFromBinding(
-		uint8(2), claimer, big.NewInt(0),
-	)
+	recovery, err := bondRecoveryFromBinding(2, claimer, big.NewInt(0))
 	require.NoError(t, err)
 	require.Zero(t, recovery.Payment.Sign(), "a zero recoverable payment is valid")
 }
 
-func TestAcceptDoesNotCreateRecoveryCandidates(t *testing.T) {
-	app := prtRevertTestApp()
-	epoch := resultTestEpoch(model.EpochStatus_ClaimStaged)
-	snapshot := resultTestSnapshot(epoch, true)
-	acceptErr := errors.New("accept failed")
-	consensus := &daveConsensusAdapterMock{}
-	service := newRootBondTestService(common.HexToAddress("0x600"), &adapterFactoryMock{})
-	consensus.On("AcceptStagedTournamentResult", mock.Anything, epoch.Index).
-		Run(func(mock.Arguments) {
-			require.Empty(t, service.rootBondRecoveries)
-		}).
-		Return((*types.Transaction)(nil), acceptErr).Twice()
-
-	for range 2 {
-		err := service.broadcastAcceptTournamentResult(context.Background(), app, epoch, consensus, snapshot)
-		require.ErrorIs(t, err, acceptErr)
-	}
-	require.Empty(t, service.rootBondRecoveries)
-	consensus.AssertExpectations(t)
+// Recovery plans read mutable live state; the fake implements only the read
+// operation that these plans need. Publishing always goes through txsender.
+type recoveryPortAdapter struct {
+	TournamentAdapter
+	recovery BondRecovery
+	err      error
+	reads    []*bind.CallOpts
 }
 
-func TestRootBondRecoveryDoesNotRequireAcceptance(t *testing.T) {
-	for _, app := range []*model.Application{prtRevertTestApp(), prtForeclosedApp(1, 10)} {
-		t.Run(fmt.Sprintf("foreclosed=%t", app.IsForeclosed()), func(t *testing.T) {
-			owned := common.HexToAddress("0x600")
-			factory := &adapterFactoryMock{}
-			service := newRootBondTestService(owned, factory)
-			root := common.HexToAddress("0x300")
-			service.selectRootBondRecovery(app.ID, 3, root)
-			tournament := &tournamentAdapterMock{}
-			tx := types.NewTx(&types.LegacyTx{Nonce: 1})
-			factory.On("CreateTournamentAdapter", root).Return(tournament, nil).Once()
-			tournament.On("BondRecovery", mock.MatchedBy(resultCallOptsAtBlock(20))).
-				Return(canonicalBondRecovery(model.BondDispositionRecoverable, owned, 1), nil).Once()
-			tournament.On("TryRecoveringBond", mock.Anything).Return(tx, nil).Once()
+func (a *recoveryPortAdapter) BondRecovery(opts *bind.CallOpts) (BondRecovery, error) {
+	a.reads = append(a.reads, opts)
+	return a.recovery, a.err
+}
 
-			require.NoError(t, service.recoverRootBonds(context.Background(), app, 20))
-			require.NotNil(t, service.rootBondRecoveries[app.ID])
-			require.Equal(t, tx.Hash(), *service.rootBondRecoveries[app.ID].TxHash)
-			factory.AssertNotCalled(t, "CreateDaveConsensusAdapter", mock.Anything)
-			factory.AssertExpectations(t)
-			tournament.AssertExpectations(t)
-			require.Empty(t, service.pendingTransactions)
-			service.repository.(*prtRepositoryMock).AssertExpectations(t)
-		})
-	}
+type recoveryPortFixture struct {
+	*deliveryFixture
+	target  common.Address
+	adapter *recoveryPortAdapter
+}
+
+func newRecoveryPortFixture(t *testing.T) *recoveryPortFixture {
+	t.Helper()
+	f := newDeliveryFixture(t)
+	target := common.HexToAddress("0x900")
+	f.repo.recoveries = []repository.RootBondRecoveryCandidate{{EpochIndex: 3, Tournament: target}}
+	f.repo.On("GetLastNonOpenEpochIndex", mock.Anything, f.app.IApplicationAddress.Hex()).Return(new(uint64(3)), nil).Maybe()
+	adapter := &recoveryPortAdapter{recovery: canonicalBondRecovery(model.BondDispositionRecoverable, f.repo.signer, 1)}
+	f.backend.code[f.repo.signer] = nil
+	f.factory.On("CreateTournamentAdapter", target).Return(adapter, nil).Maybe()
+	return &recoveryPortFixture{f, target, adapter}
+}
+
+func (f *recoveryPortFixture) plan(ctx context.Context) (*plannedAction, error) {
+	return f.d.planAction(ctx, f.app, recoverBond, f.block, txsender.BlockRef{Number: 100})
+}
+
+func TestAcceptDoesNotCreateRecoveryCandidates(t *testing.T) {
+	f := newDeliveryFixture(t)
+	f.epoch.Status = model.EpochStatus_ClaimStaged
+	view := resultTestSnapshot(f.epoch, true)
+	view.accept.IsClaimStagingPeriodOver = true
+	f.snapshot(view)
+	call, err := f.d.planAction(t.Context(), f.app, acceptTournament, f.block, txsender.BlockRef{Number: 100})
+	require.NoError(t, err)
+	require.NotNil(t, call)
+	require.Equal(t, acceptTournament, call.Key.Kind)
+	require.Empty(t, f.d.rootBondRecoveryScans, "accept planning must not manufacture refund candidates")
+	f.repo.AssertNotCalled(t, "ListRecoverableRootBonds", mock.Anything)
 }
 
 func TestRootBondRecoveryHandlesEveryDispositionAndOwnership(t *testing.T) {
-	owned := common.HexToAddress("0x600")
-	external := common.HexToAddress("0x700")
-	tests := []struct {
-		name        string
-		recovery    BondRecovery
-		wantRetired bool
-		wantTx      bool
-	}{
-		{name: "running", recovery: canonicalBondRecovery(model.BondDispositionTournamentRunning, common.Address{}, 0), wantRetired: true},
-		{name: noWinnerCase, recovery: canonicalBondRecovery(model.BondDispositionNoWinner, common.Address{}, 0), wantRetired: true},
-		{name: "recovered by other actor",
-			recovery: canonicalBondRecovery(model.BondDispositionRecovered, common.Address{}, 0), wantRetired: true},
-		{name: "external claimer", recovery: canonicalBondRecovery(model.BondDispositionRecoverable, external, 8), wantRetired: true},
-		{name: "owned zero payment", recovery: canonicalBondRecovery(model.BondDispositionRecoverable, owned, 0), wantTx: true},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			app := prtRevertTestApp()
-			factory := &adapterFactoryMock{}
-			service := newRootBondTestService(owned, factory)
-			tournamentAddress := common.HexToAddress("0x300")
-			service.selectRootBondRecovery(app.ID, 3, tournamentAddress)
-			tournament := &tournamentAdapterMock{}
-			tournament.On("BondRecovery", mock.MatchedBy(resultCallOptsAtBlock(20))).Return(test.recovery, nil).Once()
-			if test.wantTx {
-				tournament.On("TryRecoveringBond", mock.Anything).
-					Return(types.NewTx(&types.LegacyTx{Nonce: 1}), nil).Once()
-			}
-			factory.On("CreateTournamentAdapter", tournamentAddress).Return(tournament, nil).Once()
-
-			require.NoError(t, service.recoverRootBonds(context.Background(), app, 20))
-			if test.wantRetired {
-				require.Empty(t, service.rootBondRecoveries[app.ID])
-				// A resolved candidate must not trigger another state read or send.
-				require.NoError(t, service.recoverRootBonds(context.Background(), app, 21))
-			} else {
-				require.NotNil(t, service.rootBondRecoveries[app.ID])
-				require.Equal(t, test.wantTx, service.rootBondRecoveries[app.ID].TxHash != nil)
-			}
-			factory.AssertExpectations(t)
-			tournament.AssertExpectations(t)
-		})
-	}
-}
-
-func TestPendingRootBondRecoveryBlocksOtherMutations(t *testing.T) {
-	app := prtRevertTestApp()
-	service := newRootBondTestService(common.HexToAddress("0x600"), &adapterFactoryMock{})
-	candidate := &rootBondRecovery{EpochIndex: 3, Tournament: common.HexToAddress("0x300")}
-	txHash := common.HexToHash("0x400")
-	candidate.TxHash = &txHash
-	service.rootBondRecoveries[app.ID] = candidate
-	client := &ethClientMock{}
-	client.On("TransactionByHash", mock.Anything, txHash).
-		Return(types.NewTx(&types.LegacyTx{}), true, nil).Once()
-	service.client = client
-
-	joinEpoch, _, err := service.progressTournamentResult(context.Background(), app, 20, 20)
-	require.NoError(t, err)
-	require.Nil(t, joinEpoch)
-	require.NoError(t, service.recoverRootBonds(context.Background(), app, 20))
-	require.Equal(t, &txHash, candidate.TxHash)
-	client.AssertExpectations(t)
-}
-
-func TestOtherPRTMutationBlocksRootBondRecovery(t *testing.T) {
-	app := prtRevertTestApp()
-	for _, action := range []tournamentAction{tournamentActionJoin, tournamentActionStage, tournamentActionAccept} {
-		t.Run(string(action), func(t *testing.T) {
-			factory := &adapterFactoryMock{}
-			service := newRootBondTestService(common.HexToAddress("0x600"), factory)
-			service.selectRootBondRecovery(app.ID, 3, common.HexToAddress("0x300"))
-			txHash := common.HexToHash("0x400")
-			service.pendingTransactions[app.ID] = pendingTournamentTransaction{Action: action, Hash: txHash}
-
-			require.NoError(t, service.recoverRootBonds(context.Background(), app, 20))
-			require.NotNil(t, service.rootBondRecoveries[app.ID])
-			factory.AssertNotCalled(t, "CreateDaveConsensusAdapter", mock.Anything)
-			factory.AssertNotCalled(t, "CreateTournamentAdapter", mock.Anything)
-		})
-	}
-}
-
-func TestConcurrentRootRecoveryAndResultMutationIsRejected(t *testing.T) {
-	app := prtRevertTestApp()
-	service := newRootBondTestService(common.HexToAddress("0x600"), &adapterFactoryMock{})
-	recoveryTx := common.HexToHash("0x400")
-	stageTx := common.HexToHash("0x500")
-	service.rootBondRecoveries[app.ID] = &rootBondRecovery{
-		EpochIndex: 3,
-		Tournament: common.HexToAddress("0x300"),
-		TxHash:     &recoveryTx,
-	}
-	service.pendingTransactions[app.ID] = pendingTournamentTransaction{Action: tournamentActionStage, Hash: stageTx}
-
-	joinEpoch, _, err := service.progressTournamentResult(context.Background(), app, 20, 20)
-	require.Nil(t, joinEpoch)
-	require.ErrorContains(t, err, "bond recovery and another PRT transaction in flight")
-}
-
-func TestRootBondRecoveryKnownRevertsWaitForFreshView(t *testing.T) {
-	app := prtRevertTestApp()
 	for _, test := range []struct {
-		name string
-		err  error
+		name     string
+		recovery BondRecovery
+		eligible bool
 	}{
-		{name: "tournament not finished", err: tournamentRevertError("TournamentNotFinished")},
-		{name: noWinnerCase, err: tournamentRevertError("NoWinner")},
-		{name: "nonce too low", err: errors.New("nonce too low")},
+		{"running", canonicalBondRecovery(model.BondDispositionTournamentRunning, common.Address{}, 0), false},
+		{noWinnerCase, canonicalBondRecovery(model.BondDispositionNoWinner, common.Address{}, 0), false},
+		{"recovered by other actor", canonicalBondRecovery(model.BondDispositionRecovered, common.Address{}, 0), false},
+		{"external claimer", canonicalBondRecovery(model.BondDispositionRecoverable, common.HexToAddress("0x700"), 8), false},
+		{"owned zero payment", canonicalBondRecovery(model.BondDispositionRecoverable, common.HexToAddress("0x600"), 0), true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			service := newRootBondTestService(common.HexToAddress("0x600"), &adapterFactoryMock{})
-			candidate := &rootBondRecovery{EpochIndex: 3, Tournament: common.HexToAddress("0x300")}
-			tournament := &tournamentAdapterMock{}
-			tournament.On("TryRecoveringBond", mock.Anything).
-				Return((*types.Transaction)(nil), test.err).Once()
-
-			err := service.broadcastRootBondRecovery(
-				context.Background(), app, candidate, tournament,
-				canonicalBondRecovery(model.BondDispositionRecoverable, common.HexToAddress("0x600"), 1),
-			)
+			f := newRecoveryPortFixture(t)
+			f.adapter.recovery = test.recovery
+			if test.eligible {
+				f.adapter.recovery.Claimer = f.repo.signer
+			}
+			call, err := f.plan(t.Context())
 			require.NoError(t, err)
-			require.Nil(t, candidate.TxHash)
-			tournament.AssertExpectations(t)
-		})
-	}
-}
-
-func TestMinedRootBondRecoveryUsesPostTransactionState(t *testing.T) {
-	owned := common.HexToAddress("0x600")
-	external := common.HexToAddress("0x700")
-	for _, test := range []struct {
-		name           string
-		status         uint64
-		recovery       BondRecovery
-		wantRetired    bool
-		wantTxCleared  bool
-		wantError      string
-		wantFailedPush bool
-		latestBlock    uint64
-	}{
-		{name: "recovered", status: types.ReceiptStatusSuccessful,
-			recovery: canonicalBondRecovery(model.BondDispositionRecovered, common.Address{}, 0), wantRetired: true},
-		{name: "recovered state newer than receipt", status: types.ReceiptStatusSuccessful, latestBlock: 30,
-			recovery: canonicalBondRecovery(model.BondDispositionRecovered, common.Address{}, 0), wantRetired: true},
-		{name: "recovered despite reverted transaction", status: types.ReceiptStatusFailed,
-			recovery: canonicalBondRecovery(model.BondDispositionRecovered, common.Address{}, 0), wantRetired: true},
-		{name: "successful receipt with failed push", status: types.ReceiptStatusSuccessful,
-			recovery:    canonicalBondRecovery(model.BondDispositionRecoverable, owned, 7),
-			wantRetired: true, wantFailedPush: true},
-		{name: "recoverable bond now belongs to another claimer", status: types.ReceiptStatusSuccessful,
-			recovery: canonicalBondRecovery(model.BondDispositionRecoverable, external, 7), wantRetired: true},
-		{name: "failed receipt with recoverable state", status: types.ReceiptStatusFailed,
-			recovery: canonicalBondRecovery(model.BondDispositionRecoverable, owned, 7), wantTxCleared: true},
-		{name: noWinnerCase, status: types.ReceiptStatusSuccessful,
-			recovery: canonicalBondRecovery(model.BondDispositionNoWinner, common.Address{}, 0), wantRetired: true},
-		{name: "running", status: types.ReceiptStatusFailed,
-			recovery:      canonicalBondRecovery(model.BondDispositionTournamentRunning, common.Address{}, 0),
-			wantTxCleared: true, wantError: "running bond"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			app := prtRevertTestApp()
-			factory := &adapterFactoryMock{}
-			service := newRootBondTestService(owned, factory)
-			var logs bytes.Buffer
-			service.Logger = slog.New(slog.NewTextHandler(&logs, nil))
-			tournamentAddress := common.HexToAddress("0x300")
-			txHash := common.HexToHash("0x400")
-			candidate := &rootBondRecovery{EpochIndex: 3, Tournament: tournamentAddress, TxHash: &txHash}
-			service.rootBondRecoveries[app.ID] = candidate
-			client := &ethClientMock{}
-			client.On("TransactionByHash", mock.Anything, txHash).
-				Return(types.NewTx(&types.LegacyTx{}), false, nil).Once()
-			client.On("TransactionReceipt", mock.Anything, txHash).Return(&types.Receipt{
-				Status:      test.status,
-				TxHash:      txHash,
-				BlockNumber: big.NewInt(21),
-			}, nil).Once()
-			service.client = client
-			tournament := &tournamentAdapterMock{}
-			latestBlock := max(uint64(20), test.latestBlock)
-			checkedBlock := max(uint64(21), latestBlock)
-			tournament.On("BondRecovery", mock.MatchedBy(resultCallOptsAtBlock(checkedBlock))).Return(test.recovery, nil).Once()
-			factory.On("CreateTournamentAdapter", tournamentAddress).Return(tournament, nil).Once()
-
-			err := service.recoverRootBonds(context.Background(), app, latestBlock)
-			if test.wantError == "" {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, test.wantError)
+			require.Equal(t, test.eligible, call != nil)
+			require.Empty(t, f.backend.published)
+			require.Empty(t, f.repo.windows)
+			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
+			for _, opts := range f.adapter.reads {
+				require.Equal(t, f.block.Hash, opts.BlockHash)
+				require.Nil(t, opts.BlockNumber)
+				require.False(t, opts.Pending)
 			}
-			require.Equal(t, test.wantRetired, service.rootBondRecoveries[app.ID] == nil)
-			if test.recovery.Disposition == model.BondDispositionRecovered {
-				require.Equal(t, checkedBlock, service.paidRootBondObservations[app.ID][tournamentAddress])
-			} else {
-				require.Empty(t, service.paidRootBondObservations, "receipt success alone does not prove payment")
-			}
-			if test.wantTxCleared {
-				require.Nil(t, candidate.TxHash)
-			}
-			if test.wantFailedPush {
-				require.Contains(t, logs.String(), "level=ERROR")
-				require.Contains(t, logs.String(), "outcome=failed_push")
-			} else {
-				require.NotContains(t, logs.String(), "outcome=failed_push")
-			}
-			client.AssertExpectations(t)
-			factory.AssertExpectations(t)
-			tournament.AssertExpectations(t)
-		})
-	}
-}
-
-func TestRootBondRecoveryDefersUnsentFailuresAndKeepsSentTransactions(t *testing.T) {
-	owned := common.HexToAddress("0x600")
-	app := prtRevertTestApp()
-	tournamentAddress := common.HexToAddress("0x300")
-
-	t.Run("pre-broadcast view", func(t *testing.T) {
-		factory := &adapterFactoryMock{}
-		service := newRootBondTestService(owned, factory)
-		service.selectRootBondRecovery(app.ID, 3, tournamentAddress)
-		tournament := &tournamentAdapterMock{}
-		tournament.On("BondRecovery", mock.Anything).Return(BondRecovery{}, errors.New("view failed")).Once()
-		factory.On("CreateTournamentAdapter", tournamentAddress).Return(tournament, nil).Once()
-
-		require.ErrorContains(t, service.recoverRootBonds(context.Background(), app, 20), "view failed")
-		require.Empty(t, service.rootBondRecoveries[app.ID])
-	})
-
-	t.Run("nil transaction", func(t *testing.T) {
-		factory := &adapterFactoryMock{}
-		service := newRootBondTestService(owned, factory)
-		service.selectRootBondRecovery(app.ID, 3, tournamentAddress)
-		tournament := &tournamentAdapterMock{}
-		tournament.On("BondRecovery", mock.Anything).
-			Return(canonicalBondRecovery(model.BondDispositionRecoverable, owned, 1), nil).Once()
-		tournament.On("TryRecoveringBond", mock.Anything).Return((*types.Transaction)(nil), nil).Once()
-		factory.On("CreateTournamentAdapter", tournamentAddress).Return(tournament, nil).Once()
-
-		require.ErrorContains(t, service.recoverRootBonds(context.Background(), app, 20), "nil transaction")
-		require.Empty(t, service.rootBondRecoveries[app.ID])
-	})
-
-	t.Run("transaction lookup", func(t *testing.T) {
-		service := newRootBondTestService(owned, &adapterFactoryMock{})
-		txHash := common.HexToHash("0x400")
-		candidate := &rootBondRecovery{EpochIndex: 3, Tournament: tournamentAddress, TxHash: &txHash}
-		service.rootBondRecoveries[app.ID] = candidate
-		client := &ethClientMock{}
-		client.On("TransactionByHash", mock.Anything, txHash).
-			Return((*types.Transaction)(nil), false, errors.New("lookup failed")).Once()
-		service.client = client
-
-		require.ErrorContains(t, service.recoverRootBonds(context.Background(), app, 20), "lookup failed")
-		require.Equal(t, &txHash, candidate.TxHash)
-	})
-
-	for _, test := range []struct {
-		name    string
-		viewErr error
-		clearTx bool
-	}{
-		{name: "post-transaction view", viewErr: errors.New("view failed")},
-		{name: "invalid post-transaction view", viewErr: errInvalidBondRecovery, clearTx: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			factory := &adapterFactoryMock{}
-			service := newRootBondTestService(owned, factory)
-			txHash := common.HexToHash("0x400")
-			candidate := &rootBondRecovery{EpochIndex: 3, Tournament: tournamentAddress, TxHash: &txHash}
-			service.rootBondRecoveries[app.ID] = candidate
-			client := &ethClientMock{}
-			client.On("TransactionByHash", mock.Anything, txHash).
-				Return(types.NewTx(&types.LegacyTx{}), false, nil).Once()
-			client.On("TransactionReceipt", mock.Anything, txHash).
-				Return(&types.Receipt{TxHash: txHash, BlockNumber: big.NewInt(21)}, nil).Once()
-			service.client = client
-			tournament := &tournamentAdapterMock{}
-			tournament.On("BondRecovery", mock.Anything).Return(BondRecovery{}, test.viewErr).Once()
-			factory.On("CreateTournamentAdapter", tournamentAddress).Return(tournament, nil).Once()
-
-			require.ErrorIs(t, service.recoverRootBonds(context.Background(), app, 20), test.viewErr)
-			if test.clearTx {
-				require.Nil(t, candidate.TxHash)
-			} else {
-				require.Equal(t, &txHash, candidate.TxHash)
-			}
-			require.NotNil(t, service.rootBondRecoveries[app.ID])
-			require.Same(t, candidate, service.rootBondRecoveries[app.ID])
-			client.AssertExpectations(t)
-			tournament.AssertExpectations(t)
-			factory.AssertExpectations(t)
-		})
-	}
-
-	for _, test := range []struct {
-		name    string
-		receipt *types.Receipt
-		want    string
-	}{
-		{name: "receipt hash", receipt: &types.Receipt{
-			TxHash: common.HexToHash("0xbad"), BlockNumber: big.NewInt(21),
-		}, want: "differs from transaction"},
-		{name: "receipt status", receipt: &types.Receipt{
-			TxHash: common.HexToHash("0x400"), BlockNumber: big.NewInt(21), Status: 2,
-		}, want: "invalid receipt status"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			service := newRootBondTestService(owned, &adapterFactoryMock{})
-			txHash := common.HexToHash("0x400")
-			candidate := &rootBondRecovery{EpochIndex: 3, Tournament: tournamentAddress, TxHash: &txHash}
-			service.rootBondRecoveries[app.ID] = candidate
-			client := &ethClientMock{}
-			client.On("TransactionByHash", mock.Anything, txHash).
-				Return(types.NewTx(&types.LegacyTx{}), false, nil).Once()
-			client.On("TransactionReceipt", mock.Anything, txHash).Return(test.receipt, nil).Once()
-			service.client = client
-
-			require.ErrorContains(t, service.recoverRootBonds(context.Background(), app, 20), test.want)
-			require.Equal(t, &txHash, candidate.TxHash)
 		})
 	}
 }
 
 func TestRootBondRecoveryIsIsolatedPerApplication(t *testing.T) {
-	owned := common.HexToAddress("0x600")
-	factory := &adapterFactoryMock{}
-	service := newRootBondTestService(owned, factory)
-	appOne := prtRevertTestApp()
-	appTwo := prtRevertTestApp()
-	appTwo.ID = 8
-	appTwo.Name = "prt-app-two"
-	appTwo.IConsensusAddress = common.HexToAddress("0x108")
-	rootOne := common.HexToAddress("0x301")
-	rootThree := common.HexToAddress("0x303")
-	service.selectRootBondRecovery(appOne.ID, 1, rootOne)
-	service.selectRootBondRecovery(appTwo.ID, 1, rootThree)
-
-	for _, address := range []common.Address{rootOne, rootThree} {
-		tournament := &tournamentAdapterMock{}
-		tournament.On("BondRecovery", mock.Anything).
-			Return(canonicalBondRecovery(model.BondDispositionRecoverable, owned, 1), nil).Once()
-		tournament.On("TryRecoveringBond", mock.Anything).
-			Return(types.NewTx(&types.LegacyTx{Nonce: uint64(address[19])}), nil).Once()
-		factory.On("CreateTournamentAdapter", address).Return(tournament, nil).Once()
-	}
-
-	require.NoError(t, service.recoverRootBonds(context.Background(), appOne, 20))
-	require.NotNil(t, service.rootBondRecoveries[appOne.ID].TxHash)
-	require.NoError(t, service.recoverRootBonds(context.Background(), appTwo, 20))
-	require.NotNil(t, service.rootBondRecoveries[appTwo.ID].TxHash)
-	factory.AssertExpectations(t)
-}
-
-func newRootBondTestService(from common.Address, factory AdapterFactory) *Service {
-	service, _ := newPRTServiceMock()
-	service.adapterFactory = factory
-	service.submissionTimeout = time.Second
-	service.txOptsFactory = ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{From: from})
-	return service
+	f := newRecoveryPortFixture(t)
+	first, err := f.plan(t.Context())
+	require.NoError(t, err)
+	appTwo := *f.app
+	appTwo.ID++
+	appTwo.IApplicationAddress = common.HexToAddress("0x108")
+	f.repo.On("GetLastNonOpenEpochIndex", mock.Anything, appTwo.IApplicationAddress.Hex()).Return(new(uint64(3)), nil).Once()
+	second, err := f.d.planAction(t.Context(), &appTwo, recoverBond, f.block, txsender.BlockRef{Number: 100})
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	require.NotEqual(t, first.Key, second.Key)
+	require.Contains(t, f.d.rootBondRecoveryScans, f.app.ID)
+	require.Contains(t, f.d.rootBondRecoveryScans, appTwo.ID)
 }
 
 func canonicalBondRecovery(disposition model.BondDisposition, claimer common.Address, payment int64) BondRecovery {

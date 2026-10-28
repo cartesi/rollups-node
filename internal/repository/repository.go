@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("not found")
-	ErrNoUpdate = errors.New("update did not take effect")
+	ErrNotFound           = errors.New("not found")
+	ErrNoUpdate           = errors.New("update did not take effect")
+	ErrApplicationEnabled = errors.New("application must be disabled before removal")
 	// ErrEpochForeclosed means a stale epoch publication lost to foreclosure.
 	// The stored epoch is CLAIM_FORECLOSED; no new claim or proof was stored.
 	ErrEpochForeclosed = errors.New("epoch publication superseded by foreclosure")
@@ -51,6 +52,8 @@ type Pagination struct {
 }
 
 type ApplicationFilter struct {
+	AfterID        *int64
+	ThroughID      *int64
 	Enabled        *bool
 	Status         *ApplicationStatus
 	Statuses       []ApplicationStatus
@@ -331,7 +334,7 @@ type TournamentRepository interface {
 		p Pagination, descending bool) ([]*Tournament, uint64, error)
 	// ListRecoverableRootBonds lists owned RECOVERABLE roots in ascending epoch order,
 	// regardless of local claim status or join history. observedBlock must not exceed
-	// either the configured observation head or the published application cursor.
+	// the configured observation head. Each row certifies its own observation.
 	// afterEpoch is exclusive (nil includes epoch zero); throughEpoch is inclusive.
 	// limit must be positive and fit in a PostgreSQL signed integer. No count is read.
 	ListRecoverableRootBonds(ctx context.Context, appID int64, claimer common.Address, observedBlock uint64,
@@ -377,56 +380,39 @@ type TournamentEventBatch struct {
 type BulkOperationsRepository interface {
 	StoreAdvanceResult(ctx context.Context, appID int64, result *AdvanceResult) error
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
-	// StoreTournamentEvents commits every tournament batch and one application
-	// cursor together. Callers must finish all event reads before this call.
-	StoreTournamentEvents(ctx context.Context, appID int64, batches []*TournamentEventBatch, lastBlock uint64) error
 }
 
-type NodeConfigRepository interface {
-	InitializeNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
-	SaveNodeConfigRaw(ctx context.Context, key string, rawJSON []byte) error
+type NodeConfigReader interface {
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
 
 // TODO: migrate ClaimRow -> Application + Epoch and use the other interfaces
 type ClaimerRepository interface {
-	SelectClaimsToSubmitPerApp(ctx context.Context) (
-		map[int64]*Epoch,
-		map[int64]*Epoch,
-		map[int64]*Application,
-		error,
-	)
-	SelectClaimsToStagePerApp(ctx context.Context) (
-		map[int64]*Epoch,
-		map[int64]*Epoch,
-		map[int64]*Application,
-		error,
-	)
-	SelectClaimsToAcceptPerApp(ctx context.Context) (
-		map[int64]*Epoch,
-		map[int64]*Epoch,
-		map[int64]*Application,
-		error,
-	)
+	SelectClaimsToSubmitPage(ctx context.Context, cursor ClaimCursor, limit uint64) (ClaimPage, error)
+	SelectClaimsToStagePage(ctx context.Context, cursor ClaimCursor, limit uint64) (ClaimPage, error)
+	SelectClaimsToAcceptPage(ctx context.Context, cursor ClaimCursor, limit uint64) (ClaimPage, error)
+
 	UpdateEpochWithSubmittedClaim(
 		ctx context.Context,
 		applicationID int64,
 		index uint64,
 		transactionHash common.Hash,
 	) error
+	// RefreshClaimObservation replaces only audit metadata for the same still-open
+	// claim. The caller verifies matching events at the selected observation view.
+	// A nil hash records the absence of canonical own-vote evidence; it does not
+	// prevent recording the staging clock of a valid majority claim.
+	RefreshClaimObservation(ctx context.Context, expected *Epoch, transactionHash *common.Hash, stagedAtBlock *uint64) error
 	UpdateEpochToStaged(
 		ctx context.Context,
 		applicationID int64,
 		index uint64,
 		stagedAtBlock uint64,
 	) error
-	UpdateEpochThroughStaging(
-		ctx context.Context,
-		applicationID int64,
-		index uint64,
-		transactionHash common.Hash,
-		stagedAtBlock uint64,
-	) error
+	// UpdateEpochStagingBlock refreshes only a still-staged PRT epoch whose saved
+	// staging block matches the caller's previous observation. The caller must
+	// verify that the claim content is unchanged at the selected chain view.
+	UpdateEpochStagingBlock(ctx context.Context, applicationID int64, index, expectedOldBlock, newBlock uint64) error
 	UpdateEpochReconciledStaged(
 		ctx context.Context,
 		applicationID int64,
@@ -476,6 +462,7 @@ type RejectEpochAndDivergeResult struct {
 }
 
 type Repository interface {
+	DeliveryRepository
 	ReplayRepository
 	ApplicationRepository
 	EpochRepository
@@ -489,49 +476,17 @@ type Repository interface {
 	MatchAdvancedRepository
 	BondEventRepository
 	BulkOperationsRepository
-	NodeConfigRepository
+	NodeConfigReader
 	ClaimerRepository
 	WithdrawalRepository
 	Close()
-}
-
-func SaveNodeConfig[T any](
-	ctx context.Context,
-	repo NodeConfigRepository,
-	nc *NodeConfig[T],
-) error {
-	data, err := json.Marshal(nc.Value)
-	if err != nil {
-		return fmt.Errorf("marshal node_config value failed: %w", err)
-	}
-	err = repo.SaveNodeConfigRaw(ctx, nc.Key, data)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// InitializeNodeConfig saves only a missing key, then returns the stored value.
-// Callers must validate that value against the requested configuration. A
-// concurrent initializer may have won with a different value.
-func InitializeNodeConfig[T any](
-	ctx context.Context, repo NodeConfigRepository, nc *NodeConfig[T],
-) (*NodeConfig[T], error) {
-	data, err := json.Marshal(nc.Value)
-	if err != nil {
-		return nil, fmt.Errorf("marshal initial node_config value: %w", err)
-	}
-	if err := repo.InitializeNodeConfigRaw(ctx, nc.Key, data); err != nil {
-		return nil, fmt.Errorf("initialize node_config %q: %w", nc.Key, err)
-	}
-	return LoadNodeConfig[T](ctx, repo, nc.Key)
 }
 
 // LoadNodeConfig returns a non-nil record when err is nil. A missing JSON payload
 // is an error, even if the repository reports a successful read.
 func LoadNodeConfig[T any](
 	ctx context.Context,
-	repo NodeConfigRepository,
+	repo NodeConfigReader,
 	key string,
 ) (*NodeConfig[T], error) {
 	raw, createdAt, updatedAt, err := repo.LoadNodeConfigRaw(ctx, key)

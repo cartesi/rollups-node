@@ -65,6 +65,8 @@ type DivergentClaimSuite struct {
 	ctx                      context.Context
 	cancel                   context.CancelFunc
 	readerFixtureOwnsRestart bool
+	appAName                 string
+	appBName                 string
 }
 
 func TestDivergentClaim(t *testing.T) {
@@ -93,11 +95,21 @@ func (s *DivergentClaimSuite) TearDownSuite() {
 
 func (s *DivergentClaimSuite) SetupTest() {
 	s.StartLogCapture()
+	s.appAName, s.appBName = "", ""
 }
 
 func (s *DivergentClaimSuite) TearDownTest() {
-	// Both apps end the test in DIVERGED (terminal); the disable helper
-	// rejects that state. Leave them; unique names mean no collision next run.
+	// Enabled divergent apps continue observation alerts. Stop this fixture's
+	// remaining apps before another suite starts collecting its own node logs.
+	for _, appName := range []string{s.appAName, s.appBName} {
+		if appName == "" {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		err := disableApplication(ctx, appName)
+		cancel()
+		s.NoError(err, "disable fixture application %s", appName)
+	}
 	s.CheckLogs(s.T())
 }
 
@@ -151,6 +163,7 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	appAddrStr, consensusAddrStr, err := deployApplicationWithConsensus(s.ctx,
 		appAName, dappPath, "--salt", uniqueSalt(), "--withdrawal-config", withdrawalConfigJSON)
 	r.NoError(err, "deploy A")
+	s.appAName = appAName
 	appAddr := common.HexToAddress(appAddrStr)
 	consensusAddr := common.HexToAddress(consensusAddrStr)
 	s.T().Logf("    app=%s consensus=%s", appAddr.Hex(), consensusAddr.Hex())
@@ -273,6 +286,15 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	// checkEpochConstraint now let the divergence detection proceed.
 
 	// ─── Phase 1 conclusion: restart node, expect DIVERGED ────────────
+	// This case replays an already confirmed attack. Wait for finality under
+	// both profiles so restart cannot turn it into a latest-only preflight race.
+	finalityCtx, finalityCancel := context.WithTimeout(s.ctx, time.Minute)
+	observed, err := advanceFixtureFinality(finalityCtx, client, model.DefaultBlock_Finalized)
+	if err == nil && observed < submitReceipt.BlockNumber.Uint64() {
+		err = fmt.Errorf("finalized block %d does not cover attacker claim at %d", observed, submitReceipt.BlockNumber.Uint64())
+	}
+	finalityCancel()
+	r.NoError(err, "finalize the attacker claim before restarting the confirmed-replay fixture")
 	s.T().Log("--- Phase 1: restart node and wait for divergence-driven DIVERGED ---")
 	startSharedNode(s.T())
 
@@ -304,6 +326,7 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	s.T().Log("--- Phase 2: remove A, restart node in reader mode, re-register as B ---")
 	r.NoError(disableApplication(s.ctx, appAName), "disable %s before remove", appAName)
 	r.NoError(removeApplication(s.ctx, appAName), "remove %s", appAName)
+	s.appAName = ""
 
 	// The fixture sets matching saved/requested reader settings while stopped.
 	// This tests read-only replay, not a production submission-mode transition.
@@ -313,6 +336,7 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	appBName := uniqueAppName("divergent-b")
 	r.NoError(registerApplication(s.ctx, appBName, appAddrStr, dappPath),
 		"register %s at %s", appBName, appAddrStr)
+	s.appBName = appBName
 	s.T().Logf("    %s registered at %s", appBName, appAddrStr)
 
 	// B has to replay all 3 inputs locally before it reaches the epoch

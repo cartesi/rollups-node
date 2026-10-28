@@ -5,7 +5,6 @@ package prt
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/http/httptest"
@@ -22,6 +21,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/txsender"
 )
 
 func TestCreateWiresLegacyFees(t *testing.T) {
@@ -33,42 +33,31 @@ func TestCreateWiresLegacyFees(t *testing.T) {
 				viper.Set(config.PRT_AUTH_KIND, nil)
 				viper.Set(config.PRT_AUTH_PRIVATE_KEY, nil)
 			})
-			raw, err := json.Marshal(PersistentConfig{
-				ChainID: 42, DefaultBlock: model.DefaultBlock_Finalized, ClaimSubmissionEnabled: true,
-			})
-			require.NoError(t, err)
 			repo := &prtBlockPolicyCreateRepository{}
-			repo.On("LoadNodeConfigRaw", mock.Anything, PrtConfigKey).Return(raw, nil).Once()
+			repo.On("RegisterSubmitter", mock.Anything, PrtConfigKey, mock.Anything).
+				Return(PersistentConfig{ChainID: 42, DefaultBlock: model.DefaultBlock_Finalized, ClaimSubmissionEnabled: true}, nil).
+				Once()
 			client := &ethClientMock{}
 			client.On("ChainID", mock.Anything).Return(big.NewInt(42), nil).Once()
-			if legacy {
-				client.On("SuggestGasPrice", mock.Anything).Return(big.NewInt(101), nil).Once()
-				client.On("SuggestGasPrice", mock.Anything).Return(big.NewInt(102), nil).Once()
-			}
+			cfg := prtStartupConfig(true)
+			cfg.BlockchainLegacyEnabled = legacy
 			svc, err := Create(t.Context(), &CreateInfo{
-				Config: config.PrtConfig{
-					PrtPollingInterval: time.Hour,
-					BlockchainId:       42, BlockchainDefaultBlock: model.DefaultBlock_Finalized,
-					FeatureClaimSubmissionEnabled: true, BlockchainHttpRequestTimeout: time.Second,
-					BlockchainLegacyEnabled: legacy,
-				},
+				Config:    cfg,
 				EthClient: client, Repository: repo, AdapterFactory: &adapterFactoryMock{},
+				DeliveryBackend: &deliveryBackendFake{},
 			})
 			require.NoError(t, err)
 			s := svc.(*Service)
-			for sequence := int64(1); sequence <= 2; sequence++ {
+			require.Equal(t, legacy, s.delivery.deliveryPolicy.Legacy)
+			require.Equal(t, big.NewInt(100), s.delivery.deliveryPolicy.MaxFee)
+			require.Equal(t, big.NewInt(100), s.delivery.deliveryPolicy.MaxFee)
+			require.NotNil(t, s.delivery.sender)
+			for range 2 {
 				opts, err := s.txOptsFactory.NewTransactOpts(t.Context())
 				require.NoError(t, err)
-				require.Zero(t, opts.GasLimit, "keep estimation enabled")
-				if legacy {
-					require.Equal(t, big.NewInt(100+sequence), opts.GasPrice)
-				} else {
-					require.Nil(t, opts.GasPrice)
-				}
+				require.Nil(t, opts.GasPrice, "the sender supplies its protected fee quote when it signs")
 			}
-			if !legacy {
-				client.AssertNotCalled(t, "SuggestGasPrice", mock.Anything)
-			}
+			client.AssertNotCalled(t, "SuggestGasPrice", mock.Anything)
 			client.AssertExpectations(t)
 			repo.AssertExpectations(t)
 		})
@@ -90,18 +79,14 @@ func TestCreateWiresLegacyFeesWithDefaultClient(t *testing.T) {
 	t.Cleanup(httpServer.Close)
 	endpoint, err := config.ToURLFromString(httpServer.URL)
 	require.NoError(t, err)
-	raw, err := json.Marshal(PersistentConfig{
-		ChainID: 42, DefaultBlock: model.DefaultBlock_Finalized, ClaimSubmissionEnabled: true,
-	})
-	require.NoError(t, err)
 	repo := &prtBlockPolicyCreateRepository{}
-	repo.On("LoadNodeConfigRaw", mock.Anything, PrtConfigKey).Return(raw, nil).Once()
+	repo.On("RegisterSubmitter", mock.Anything, PrtConfigKey, mock.Anything).
+		Return(PersistentConfig{ChainID: 42, DefaultBlock: model.DefaultBlock_Finalized, ClaimSubmissionEnabled: true}, nil).Once()
+	cfg := prtStartupConfig(true)
+	cfg.BlockchainHttpEndpoint = endpoint
+	cfg.BlockchainLegacyEnabled = true
 	svc, err := Create(t.Context(), &CreateInfo{
-		Config: config.PrtConfig{
-			PrtPollingInterval: time.Hour, BlockchainId: 42, BlockchainDefaultBlock: model.DefaultBlock_Finalized,
-			BlockchainHttpEndpoint: endpoint, BlockchainHttpRequestTimeout: time.Second,
-			FeatureClaimSubmissionEnabled: true, BlockchainLegacyEnabled: true,
-		},
+		Config:     cfg,
 		Repository: repo,
 	})
 	require.NoError(t, err)
@@ -112,14 +97,23 @@ func TestCreateWiresLegacyFeesWithDefaultClient(t *testing.T) {
 	factory, ok := s.adapterFactory.(*DefaultAdapterFactory)
 	require.True(t, ok)
 	require.Same(t, client, factory.client)
+	require.True(t, s.delivery.deliveryPolicy.Legacy)
+	require.IsType(t, txsender.ProtectedClient{}, s.delivery.deliveryBackend)
+	require.Zero(t, backend.prices.Load(), "startup must not obtain unpinned fees from a binding")
 	for sequence := int64(1); sequence <= 2; sequence++ {
-		opts, err := s.txOptsFactory.NewTransactOpts(t.Context())
+		price, err := s.delivery.deliveryBackend.Price(t.Context())
 		require.NoError(t, err)
-		require.Zero(t, opts.GasLimit, "keep estimation enabled")
-		require.Equal(t, big.NewInt(100+sequence), opts.GasPrice)
+		require.Equal(t, big.NewInt(100+sequence), price)
 	}
 	require.EqualValues(t, 2, backend.prices.Load())
 	repo.AssertExpectations(t)
+}
+
+func prtStartupConfig(enabled bool) config.PrtConfig {
+	return config.PrtConfig{
+		PrtPollingInterval: time.Hour, BlockchainId: 42, BlockchainDefaultBlock: model.DefaultBlock_Finalized,
+		FeatureClaimSubmissionEnabled: enabled, BlockchainHttpRequestTimeout: time.Second,
+		BlockchainTxMaxFeePerGas: "100"}
 }
 
 type prtLegacyFeeRPC struct {

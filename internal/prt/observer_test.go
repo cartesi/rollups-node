@@ -5,6 +5,7 @@ package prt
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -303,9 +304,8 @@ func TestGatherTournamentData_UsesDynamicLastLevel(t *testing.T) {
 			s.adapterFactory = f.factory
 			epoch := checkpointEpoch(3, "0x92")
 			tournament := f.tournament(epoch, *epoch.TournamentAddress, uint64(test.level), 4, 100, 100, &TournamentEvents{}, nil)
-			if test.wantChildScan {
-				f.children(epoch, tournament)
-			}
+			_ = tournament // Known children are scheduled independently.
+
 			batches, err := s.gatherTournamentData(t.Context(), f.app, epoch, test.level, nil, nil,
 				*epoch.TournamentAddress, 4, 100)
 			require.NoError(t, err)
@@ -317,51 +317,42 @@ func TestGatherTournamentData_UsesDynamicLastLevel(t *testing.T) {
 	}
 }
 
-func TestValidateJoinedCommitment_FinalState(t *testing.T) {
-	machineHash := common.HexToHash("0xa1")
-	t.Run("missing local machine hash", func(t *testing.T) {
-		s, repo := newPRTServiceMock()
-		app := &model.Application{ID: 1, Status: model.ApplicationStatus_OK}
-		epoch := &model.Epoch{Index: 3}
-		repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Corrupted,
-			mock.MatchedBy(func(reason *string) bool {
-				return reason != nil && strings.Contains(*reason, "has no machine hash")
-			})).Return(nil).Once()
+func TestObservedResultRequiresLocalMachineHash(t *testing.T) {
+	f := newDeliveryFixture(t)
+	view := resultTestSnapshot(f.epoch, false)
+	f.epoch.MachineHash = nil
+	f.repo.On("UpdateApplicationStatus", mock.Anything, f.app.ID, model.ApplicationStatus_Corrupted,
+		mock.MatchedBy(func(reason *string) bool {
+			return reason != nil && strings.Contains(*reason, "missing required fields")
+		})).Return(nil).Once()
+	err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
+	require.ErrorContains(t, err, "missing required fields")
+	require.Equal(t, model.ApplicationStatus_Corrupted, f.app.Status)
+	f.repo.AssertExpectations(t)
+}
 
-		err := s.validateJoinedCommitment(
-			context.Background(), app, epoch, CommitmentStanding{Joined: true},
-		)
-		require.ErrorContains(t, err, "has no machine hash")
-		require.Equal(t, model.ApplicationStatus_Corrupted, app.Status)
-		repo.AssertExpectations(t)
-	})
-
-	t.Run("match", func(t *testing.T) {
-		s, repo := newPRTServiceMock()
-		app := &model.Application{ID: 1, Status: model.ApplicationStatus_OK}
-		epoch := &model.Epoch{Index: 3, MachineHash: &machineHash}
-
-		require.NoError(t, s.validateJoinedCommitment(
-			context.Background(), app, epoch, CommitmentStanding{Joined: true, FinalState: machineHash},
-		))
-		require.Equal(t, model.ApplicationStatus_OK, app.Status)
-		repo.AssertExpectations(t)
-	})
-
-	t.Run("latest mismatch does not change application status", func(t *testing.T) {
-		s, repo := newPRTServiceMock()
-		app := &model.Application{ID: 1, Status: model.ApplicationStatus_OK}
-		epoch := &model.Epoch{Index: 3, MachineHash: &machineHash}
-		onchain := common.HexToHash("0xa2")
-
-		err := s.validateJoinedCommitment(
-			context.Background(), app, epoch, CommitmentStanding{Joined: true, FinalState: onchain},
-		)
-		require.ErrorContains(t, err, "inconsistent final state")
-		require.ErrorContains(t, err, machineHash.String())
-		require.ErrorContains(t, err, onchain.String())
-		require.Equal(t, model.ApplicationStatus_OK, app.Status)
-		repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-		repo.AssertExpectations(t)
-	})
+func TestObservedResultChecksLocalMachineState(t *testing.T) {
+	for _, mismatch := range []bool{false, true} {
+		t.Run(fmt.Sprint(mismatch), func(t *testing.T) {
+			f := newDeliveryFixture(t)
+			view := resultTestSnapshot(f.epoch, true)
+			if mismatch {
+				view.sealed.StagedPostEpochMachineStateHash[0] ^= 1
+				f.repo.On("UpdateApplicationStatus", mock.Anything, f.app.ID, model.ApplicationStatus_Diverged,
+					mock.Anything).Return(nil).Once()
+			} else {
+				f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, f.epoch.Index,
+					view.sealed.StagingBlockNumber).Return(nil).Once()
+			}
+			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
+			if mismatch {
+				require.Error(t, err)
+				require.Equal(t, model.ApplicationStatus_Diverged, f.app.Status)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
+			}
+			f.repo.AssertExpectations(t)
+		})
+	}
 }

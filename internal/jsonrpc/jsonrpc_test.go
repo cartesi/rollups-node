@@ -228,7 +228,7 @@ func TestMethod(t *testing.T) {
 
 			chainID := uint64(0xdeadbeef)
 			defaultBlock := model.DefaultBlock_Safe
-			err := repository.SaveNodeConfig(ctx, s.repository,
+			err := repotest.SaveNodeConfig(ctx, s.repository.(repotest.NodeConfigWriter),
 				&model.NodeConfig[evmreader.PersistentConfig]{
 					Key: evmreader.EvmReaderConfigKey,
 					Value: evmreader.PersistentConfig{
@@ -286,7 +286,7 @@ func TestMethod(t *testing.T) {
 
 			// NodeConfig provision
 			nr := uint64(0xdeadbeef)
-			err := repository.SaveNodeConfig(ctx, s.repository,
+			err := repotest.SaveNodeConfig(ctx, s.repository.(repotest.NodeConfigWriter),
 				&model.NodeConfig[evmreader.PersistentConfig]{
 					Key: evmreader.EvmReaderConfigKey,
 					Value: evmreader.PersistentConfig{
@@ -3976,9 +3976,10 @@ func TestMethod(t *testing.T) {
 			ctx := t.Context()
 			app := uint64(1)
 			appID := s.newTestApplication(ctx, t, app)
-			epoch := repotest.NewEpochBuilder(appID).WithStatus(model.EpochStatus_Closed).Build()
-			s.createTestEpoch(ctx, t, numberToName(app), epoch)
 			tournament := repotest.NewTournamentBuilder(appID).Build()
+			epoch := repotest.NewEpochBuilder(appID).WithStatus(model.EpochStatus_Closed).Build()
+			epoch.TournamentAddress = &tournament.Address
+			s.createTestEpoch(ctx, t, numberToName(app), epoch)
 			txHash := repotest.UniqueHash()
 			first := &model.BondEvent{
 				ApplicationID: appID, EpochIndex: epoch.Index, TournamentAddress: tournament.Address,
@@ -3988,9 +3989,9 @@ func TestMethod(t *testing.T) {
 			second := *first
 			second.LogIndex = 1
 			second.Refund = &model.PartialBondRefund{Recipient: repotest.UniqueAddress(), Success: true}
-			require.NoError(t, s.repository.StoreTournamentEvents(ctx, appID, []*repository.TournamentEventBatch{{
+			require.NoError(t, s.repository.StoreTournamentInterval(ctx, appID, nil, []*repository.TournamentEventBatch{{
 				Tournament: tournament, BondEvents: []*model.BondEvent{first, &second},
-			}}, tournament.Snapshot.AsOfBlock))
+			}}))
 			params := map[string]any{"application": numberToName(app)}
 			if method == "cartesi_getBondEvent" {
 				params["tx_hash"], params["log_index"] = txHash.Hex(), "0x1"

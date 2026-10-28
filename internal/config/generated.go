@@ -31,6 +31,7 @@ const (
 	BLOCKCHAIN_HTTP_ENDPOINT                          = "CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"
 	BLOCKCHAIN_ID                                     = "CARTESI_BLOCKCHAIN_ID"
 	BLOCKCHAIN_LEGACY_ENABLED                         = "CARTESI_BLOCKCHAIN_LEGACY_ENABLED"
+	BLOCKCHAIN_TX_MAX_FEE_PER_GAS                     = "CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS"
 	CONTRACTS_APPLICATION_FACTORY_ADDRESS             = "CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS"
 	CONTRACTS_AUTHORITY_FACTORY_ADDRESS               = "CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS"
 	CONTRACTS_DAVE_APP_FACTORY_ADDRESS                = "CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS"
@@ -79,7 +80,6 @@ const (
 	BLOCKCHAIN_HTTP_RETRY_MAX_WAIT                    = "CARTESI_BLOCKCHAIN_HTTP_RETRY_MAX_WAIT"
 	BLOCKCHAIN_HTTP_RETRY_MIN_WAIT                    = "CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT"
 	BLOCKCHAIN_MAX_BLOCK_RANGE                        = "CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"
-	CLAIMER_MAX_ACCEPT_ATTEMPTS                       = "CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS"
 	CLAIMER_POLLING_INTERVAL                          = "CARTESI_CLAIMER_POLLING_INTERVAL"
 	EVM_READER_POLLING_INTERVAL                       = "CARTESI_EVM_READER_POLLING_INTERVAL"
 	EVM_READER_READY_MAX_STALENESS                    = "CARTESI_EVM_READER_READY_MAX_STALENESS"
@@ -128,6 +128,8 @@ func DeclaredDefault(name string) (string, bool) {
 		return "", true
 	case BLOCKCHAIN_LEGACY_ENABLED:
 		return "false", true
+	case BLOCKCHAIN_TX_MAX_FEE_PER_GAS:
+		return "", true
 	case CONTRACTS_APPLICATION_FACTORY_ADDRESS:
 		return "", true
 	case CONTRACTS_AUTHORITY_FACTORY_ADDRESS:
@@ -223,9 +225,7 @@ func DeclaredDefault(name string) (string, bool) {
 	case BLOCKCHAIN_HTTP_RETRY_MIN_WAIT:
 		return "1", true
 	case BLOCKCHAIN_MAX_BLOCK_RANGE:
-		return "0", true
-	case CLAIMER_MAX_ACCEPT_ATTEMPTS:
-		return "5", true
+		return "2000", true
 	case CLAIMER_POLLING_INTERVAL:
 		return "3", true
 	case EVM_READER_POLLING_INTERVAL:
@@ -267,6 +267,8 @@ func SetDefaults() {
 	// no default for CARTESI_BLOCKCHAIN_ID
 
 	viper.SetDefault(BLOCKCHAIN_LEGACY_ENABLED, "false")
+
+	viper.SetDefault(BLOCKCHAIN_TX_MAX_FEE_PER_GAS, "")
 
 	// no default for CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS
 
@@ -362,9 +364,7 @@ func SetDefaults() {
 
 	viper.SetDefault(BLOCKCHAIN_HTTP_RETRY_MIN_WAIT, "1")
 
-	viper.SetDefault(BLOCKCHAIN_MAX_BLOCK_RANGE, "0")
-
-	viper.SetDefault(CLAIMER_MAX_ACCEPT_ATTEMPTS, "5")
+	viper.SetDefault(BLOCKCHAIN_MAX_BLOCK_RANGE, "2000")
 
 	viper.SetDefault(CLAIMER_POLLING_INTERVAL, "3")
 
@@ -562,11 +562,15 @@ func LoadAdvancerConfig() (*AdvancerConfig, error) {
 // ClaimerConfig holds configuration values for the claimer service.
 type ClaimerConfig struct {
 
+	// One of 'latest', 'safe', 'finalized'. Defaults to 'finalized'.
 	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
-	// PRT checks transaction readiness separately at 'latest'.
-	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// Nonce selection and transaction readiness checks use 'latest'.
+	// The sender releases its in-memory transaction when the latest mined nonce advances.
+	// All contributing services must use the same policy.
+	// 'latest' and 'safe' observations can change after a reorg. The node does not roll back
+	// stored observations; rebuilding may be required.
 	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
-	// One of 'latest', 'pending', 'safe', 'finalized'
+	// 'pending' is unsupported because it does not identify a mined block.
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
@@ -579,8 +583,15 @@ type ClaimerConfig struct {
 	// If true, force the legacy transaction format with a fresh suggested gas price
 	// for each transaction. If false, select the fee format automatically: EIP-1559
 	// when the network provides a base fee, or legacy otherwise.
-	// This setting does not change gas estimation or replace pending transactions.
+	// This setting does not change gas estimation. After a price refusal, service delivery
+	// retries once using a fresh-quote fallback and the optional fee cap.
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
+
+	// Optional maximum transaction fee per gas, as a positive decimal integer in wei.
+	// Caps dynamic maxFeePerGas and legacy gasPrice. Unset means no operator price ceiling.
+	// The sender uses fresh fee quotes. After a price refusal, it retries once within
+	// this ceiling. The ceiling does not guarantee replacement, cancellation or inclusion.
+	BlockchainTxMaxFeePerGas string `mapstructure:"CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS"`
 
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
 	//
@@ -609,7 +620,8 @@ type ClaimerConfig struct {
 	// Maximum number of retry attempts for HTTP blockchain requests after encountering an error.
 	BlockchainHttpMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"`
 
-	// Maximum time in seconds allowed for each HTTP request to the blockchain provider. This prevents a single slow or stuck provider request from blocking a service indefinitely.
+	// Maximum time in seconds for each HTTP request attempt to the blockchain provider or AWS KMS,
+	// and for each transaction signing operation. This does not bound a whole publication pass.
 	BlockchainHttpRequestTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT"`
 
 	// Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation.
@@ -620,15 +632,6 @@ type ClaimerConfig struct {
 
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
-
-	// Maximum number of consecutive acceptClaim attempts per (application, epoch) before
-	// the application is marked FAILED. Bounds wasted gas on a persistently-reverting chain
-	// (gas misconfig, nonce gap, signer not authorised, fork inconsistency). The default
-	// of 5 tolerates short transient blips and escalates within ~5 ticks. High-traffic
-	// mainnet apps with brittle gas markets may set this higher; conservative test networks
-	// may set it lower. The counter is in-memory per (appID, epochIndex) and resets on
-	// transition to CLAIM_ACCEPTED.
-	ClaimerMaxAcceptAttempts uint64 `mapstructure:"CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS"`
 
 	// How many seconds the node will wait before querying the database for new claims.
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
@@ -677,6 +680,13 @@ func LoadClaimerConfig() (*ClaimerConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_LEGACY_ENABLED: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_LEGACY_ENABLED is required for the claimer service: %w", err)
+	}
+
+	cfg.BlockchainTxMaxFeePerGas, err = GetBlockchainTxMaxFeePerGas()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS is required for the claimer service: %w", err)
 	}
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
@@ -749,13 +759,6 @@ func LoadClaimerConfig() (*ClaimerConfig, error) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the claimer service: %w", err)
 	}
 
-	cfg.ClaimerMaxAcceptAttempts, err = GetClaimerMaxAcceptAttempts()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS is required for the claimer service: %w", err)
-	}
-
 	cfg.ClaimerPollingInterval, err = GetClaimerPollingInterval()
 	if err != nil && err != ErrNotDefined {
 		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_POLLING_INTERVAL: %w", err)
@@ -776,11 +779,15 @@ func LoadClaimerConfig() (*ClaimerConfig, error) {
 // EvmreaderConfig holds configuration values for the evmreader service.
 type EvmreaderConfig struct {
 
+	// One of 'latest', 'safe', 'finalized'. Defaults to 'finalized'.
 	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
-	// PRT checks transaction readiness separately at 'latest'.
-	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// Nonce selection and transaction readiness checks use 'latest'.
+	// The sender releases its in-memory transaction when the latest mined nonce advances.
+	// All contributing services must use the same policy.
+	// 'latest' and 'safe' observations can change after a reorg. The node does not roll back
+	// stored observations; rebuilding may be required.
 	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
-	// One of 'latest', 'pending', 'safe', 'finalized'
+	// 'pending' is unsupported because it does not identify a mined block.
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
@@ -812,7 +819,8 @@ type EvmreaderConfig struct {
 	// Maximum number of retry attempts for HTTP blockchain requests after encountering an error.
 	BlockchainHttpMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"`
 
-	// Maximum time in seconds allowed for each HTTP request to the blockchain provider. This prevents a single slow or stuck provider request from blocking a service indefinitely.
+	// Maximum time in seconds for each HTTP request attempt to the blockchain provider or AWS KMS,
+	// and for each transaction signing operation. This does not bound a whole publication pass.
 	BlockchainHttpRequestTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT"`
 
 	// Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation.
@@ -1076,11 +1084,15 @@ func LoadJsonrpcConfig() (*JsonrpcConfig, error) {
 // NodeConfig holds configuration values for the node service.
 type NodeConfig struct {
 
+	// One of 'latest', 'safe', 'finalized'. Defaults to 'finalized'.
 	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
-	// PRT checks transaction readiness separately at 'latest'.
-	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// Nonce selection and transaction readiness checks use 'latest'.
+	// The sender releases its in-memory transaction when the latest mined nonce advances.
+	// All contributing services must use the same policy.
+	// 'latest' and 'safe' observations can change after a reorg. The node does not roll back
+	// stored observations; rebuilding may be required.
 	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
-	// One of 'latest', 'pending', 'safe', 'finalized'
+	// 'pending' is unsupported because it does not identify a mined block.
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
@@ -1093,8 +1105,15 @@ type NodeConfig struct {
 	// If true, force the legacy transaction format with a fresh suggested gas price
 	// for each transaction. If false, select the fee format automatically: EIP-1559
 	// when the network provides a base fee, or legacy otherwise.
-	// This setting does not change gas estimation or replace pending transactions.
+	// This setting does not change gas estimation. After a price refusal, service delivery
+	// retries once using a fresh-quote fallback and the optional fee cap.
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
+
+	// Optional maximum transaction fee per gas, as a positive decimal integer in wei.
+	// Caps dynamic maxFeePerGas and legacy gasPrice. Unset means no operator price ceiling.
+	// The sender uses fresh fee quotes. After a price refusal, it retries once within
+	// this ceiling. The ceiling does not guarantee replacement, cancellation or inclusion.
+	BlockchainTxMaxFeePerGas string `mapstructure:"CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS"`
 
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
 	//
@@ -1173,7 +1192,8 @@ type NodeConfig struct {
 	// Maximum number of retry attempts for HTTP blockchain requests after encountering an error.
 	BlockchainHttpMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"`
 
-	// Maximum time in seconds allowed for each HTTP request to the blockchain provider. This prevents a single slow or stuck provider request from blocking a service indefinitely.
+	// Maximum time in seconds for each HTTP request attempt to the blockchain provider or AWS KMS,
+	// and for each transaction signing operation. This does not bound a whole publication pass.
 	BlockchainHttpRequestTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT"`
 
 	// Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation.
@@ -1184,15 +1204,6 @@ type NodeConfig struct {
 
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
-
-	// Maximum number of consecutive acceptClaim attempts per (application, epoch) before
-	// the application is marked FAILED. Bounds wasted gas on a persistently-reverting chain
-	// (gas misconfig, nonce gap, signer not authorised, fork inconsistency). The default
-	// of 5 tolerates short transient blips and escalates within ~5 ticks. High-traffic
-	// mainnet apps with brittle gas markets may set this higher; conservative test networks
-	// may set it lower. The counter is in-memory per (appID, epochIndex) and resets on
-	// transition to CLAIM_ACCEPTED.
-	ClaimerMaxAcceptAttempts uint64 `mapstructure:"CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS"`
 
 	// How many seconds the node will wait before querying the database for new claims.
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
@@ -1260,6 +1271,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_LEGACY_ENABLED: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_LEGACY_ENABLED is required for the node service: %w", err)
+	}
+
+	cfg.BlockchainTxMaxFeePerGas, err = GetBlockchainTxMaxFeePerGas()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS is required for the node service: %w", err)
 	}
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
@@ -1416,13 +1434,6 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the node service: %w", err)
 	}
 
-	cfg.ClaimerMaxAcceptAttempts, err = GetClaimerMaxAcceptAttempts()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS is required for the node service: %w", err)
-	}
-
 	cfg.ClaimerPollingInterval, err = GetClaimerPollingInterval()
 	if err != nil && err != ErrNotDefined {
 		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_POLLING_INTERVAL: %w", err)
@@ -1478,11 +1489,15 @@ func LoadNodeConfig() (*NodeConfig, error) {
 // PrtConfig holds configuration values for the prt service.
 type PrtConfig struct {
 
+	// One of 'latest', 'safe', 'finalized'. Defaults to 'finalized'.
 	// The block used by EVM Reader, Claimer, and PRT for chain-state observations.
-	// PRT checks transaction readiness separately at 'latest'.
-	// Use 'finalized' in production. The node does not detect or roll back reorgs.
+	// Nonce selection and transaction readiness checks use 'latest'.
+	// The sender releases its in-memory transaction when the latest mined nonce advances.
+	// All contributing services must use the same policy.
+	// 'latest' and 'safe' observations can change after a reorg. The node does not roll back
+	// stored observations; rebuilding may be required.
 	// The policy is saved when each service first starts. A later configuration mismatch stops startup.
-	// One of 'latest', 'pending', 'safe', 'finalized'
+	// 'pending' is unsupported because it does not identify a mined block.
 	BlockchainDefaultBlock DefaultBlock `mapstructure:"CARTESI_BLOCKCHAIN_DEFAULT_BLOCK"`
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
@@ -1495,8 +1510,15 @@ type PrtConfig struct {
 	// If true, force the legacy transaction format with a fresh suggested gas price
 	// for each transaction. If false, select the fee format automatically: EIP-1559
 	// when the network provides a base fee, or legacy otherwise.
-	// This setting does not change gas estimation or replace pending transactions.
+	// This setting does not change gas estimation. After a price refusal, service delivery
+	// retries once using a fresh-quote fallback and the optional fee cap.
 	BlockchainLegacyEnabled bool `mapstructure:"CARTESI_BLOCKCHAIN_LEGACY_ENABLED"`
+
+	// Optional maximum transaction fee per gas, as a positive decimal integer in wei.
+	// Caps dynamic maxFeePerGas and legacy gasPrice. Unset means no operator price ceiling.
+	// The sender uses fresh fee quotes. After a price refusal, it retries once within
+	// this ceiling. The ceiling does not guarantee replacement, cancellation or inclusion.
+	BlockchainTxMaxFeePerGas string `mapstructure:"CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS"`
 
 	// Postgres endpoint in the 'postgres://user:password@hostname:port/database' format (URL).
 	//
@@ -1525,7 +1547,8 @@ type PrtConfig struct {
 	// Maximum number of retry attempts for HTTP blockchain requests after encountering an error.
 	BlockchainHttpMaxRetries uint64 `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_MAX_RETRIES"`
 
-	// Maximum time in seconds allowed for each HTTP request to the blockchain provider. This prevents a single slow or stuck provider request from blocking a service indefinitely.
+	// Maximum time in seconds for each HTTP request attempt to the blockchain provider or AWS KMS,
+	// and for each transaction signing operation. This does not bound a whole publication pass.
 	BlockchainHttpRequestTimeout Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_REQUEST_TIMEOUT"`
 
 	// Maximum wait time in seconds for the exponential backoff retry policy. The delay between retries for HTTP blockchain requests will never exceed this value, regardless of the backoff calculation.
@@ -1587,6 +1610,13 @@ func LoadPrtConfig() (*PrtConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_LEGACY_ENABLED: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_LEGACY_ENABLED is required for the prt service: %w", err)
+	}
+
+	cfg.BlockchainTxMaxFeePerGas, err = GetBlockchainTxMaxFeePerGas()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS is required for the prt service: %w", err)
 	}
 
 	cfg.DatabaseConnection, err = GetDatabaseConnection()
@@ -1797,6 +1827,7 @@ func (c *NodeConfig) ToClaimerConfig() *ClaimerConfig {
 		BlockchainHttpEndpoint:        c.BlockchainHttpEndpoint,
 		BlockchainId:                  c.BlockchainId,
 		BlockchainLegacyEnabled:       c.BlockchainLegacyEnabled,
+		BlockchainTxMaxFeePerGas:      c.BlockchainTxMaxFeePerGas,
 		DatabaseConnection:            c.DatabaseConnection,
 		FeatureClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
 		LogColor:                      c.LogColor,
@@ -1806,7 +1837,6 @@ func (c *NodeConfig) ToClaimerConfig() *ClaimerConfig {
 		BlockchainHttpRetryMaxWait:    c.BlockchainHttpRetryMaxWait,
 		BlockchainHttpRetryMinWait:    c.BlockchainHttpRetryMinWait,
 		BlockchainMaxBlockRange:       c.BlockchainMaxBlockRange,
-		ClaimerMaxAcceptAttempts:      c.ClaimerMaxAcceptAttempts,
 		ClaimerPollingInterval:        c.ClaimerPollingInterval,
 		MaxStartupTime:                c.MaxStartupTime,
 	}
@@ -1852,6 +1882,7 @@ func (c *NodeConfig) ToPrtConfig() *PrtConfig {
 		BlockchainHttpEndpoint:        c.BlockchainHttpEndpoint,
 		BlockchainId:                  c.BlockchainId,
 		BlockchainLegacyEnabled:       c.BlockchainLegacyEnabled,
+		BlockchainTxMaxFeePerGas:      c.BlockchainTxMaxFeePerGas,
 		DatabaseConnection:            c.DatabaseConnection,
 		FeatureClaimSubmissionEnabled: c.FeatureClaimSubmissionEnabled,
 		LogColor:                      c.LogColor,
@@ -2038,6 +2069,19 @@ func GetBlockchainLegacyEnabled() (bool, error) {
 		return v, nil
 	}
 	return notDefinedbool(), fmt.Errorf("%s: %w", BLOCKCHAIN_LEGACY_ENABLED, ErrNotDefined)
+}
+
+// GetBlockchainTxMaxFeePerGas returns the value for the environment variable CARTESI_BLOCKCHAIN_TX_MAX_FEE_PER_GAS.
+func GetBlockchainTxMaxFeePerGas() (string, error) {
+	s := viper.GetString(BLOCKCHAIN_TX_MAX_FEE_PER_GAS)
+	if viper.IsSet(BLOCKCHAIN_TX_MAX_FEE_PER_GAS) {
+		v, err := toString(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", BLOCKCHAIN_TX_MAX_FEE_PER_GAS, err)
+		}
+		return v, nil
+	}
+	return notDefinedstring(), fmt.Errorf("%s: %w", BLOCKCHAIN_TX_MAX_FEE_PER_GAS, ErrNotDefined)
 }
 
 // GetContractsApplicationFactoryAddress returns the value for the environment variable CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS.
@@ -2686,19 +2730,6 @@ func GetBlockchainMaxBlockRange() (uint64, error) {
 		return v, nil
 	}
 	return notDefineduint64(), fmt.Errorf("%s: %w", BLOCKCHAIN_MAX_BLOCK_RANGE, ErrNotDefined)
-}
-
-// GetClaimerMaxAcceptAttempts returns the value for the environment variable CARTESI_CLAIMER_MAX_ACCEPT_ATTEMPTS.
-func GetClaimerMaxAcceptAttempts() (uint64, error) {
-	s := viper.GetString(CLAIMER_MAX_ACCEPT_ATTEMPTS)
-	if s != "" {
-		v, err := toUint64(s)
-		if err != nil {
-			return v, fmt.Errorf("failed to parse %s: %w", CLAIMER_MAX_ACCEPT_ATTEMPTS, err)
-		}
-		return v, nil
-	}
-	return notDefineduint64(), fmt.Errorf("%s: %w", CLAIMER_MAX_ACCEPT_ATTEMPTS, ErrNotDefined)
 }
 
 // GetClaimerPollingInterval returns the value for the environment variable CARTESI_CLAIMER_POLLING_INTERVAL.

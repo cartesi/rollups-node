@@ -6,17 +6,13 @@ package prt
 import (
 	"encoding/json"
 	"errors"
-	"math/big"
-	"testing"
-	"time"
-
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"math/big"
+	"testing"
 )
 
 const (
@@ -216,49 +212,6 @@ func TestTournamentProjectionLeavesReadErrorsUnchanged(t *testing.T) {
 	}
 }
 
-func TestJoinChecksSupportedRootGeometry(t *testing.T) {
-	for _, height := range []uint64{model.Log2EpochComputationHashLeafCount, 7} {
-		t.Run(new(big.Int).SetUint64(height).String(), func(t *testing.T) {
-			app := prtRevertTestApp()
-			epoch := resultTestEpoch(model.EpochStatus_ClaimComputed)
-			epoch.CommitmentProof = make([]common.Hash, model.Log2EpochComputationHashLeafCount)
-			service, repo := newPRTServiceMock()
-			service.submissionTimeout = time.Second
-			service.txOptsFactory = ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{From: common.HexToAddress("0x600")})
-			factory := &adapterFactoryMock{}
-			service.adapterFactory = factory
-			adapter := &tournamentAdapterMock{}
-			factory.On("CreateTournamentAdapter", *epoch.TournamentAddress).Return(adapter, nil).Once()
-			repo.On("GetCommitment", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index,
-				epoch.TournamentAddress.Hex(), epoch.Commitment.Hex()).Return(nil, nil).Once()
-			opts := mock.MatchedBy(func(opts *bind.CallOpts) bool { return resultCallOptsAtBlock(20)(opts) })
-			adapter.On("CommitmentStanding", opts, [32]byte(*epoch.Commitment)).Return(CommitmentStanding{}, nil).Once()
-			adapter.On("Descriptor", opts).Return(TournamentDescriptor{Height: height}, nil).Once()
-			if height == model.Log2EpochComputationHashLeafCount {
-				adapter.On("BondValue", opts).Return(big.NewInt(0), nil).Once()
-				adapter.On("JoinTournament", mock.Anything, [32]byte(*epoch.MachineHash),
-					mock.Anything, mock.Anything, mock.Anything).Return(types.NewTx(&types.LegacyTx{Nonce: 1}), nil).Once()
-				joined, err := service.reactToTournament(t.Context(), app, epoch, 20)
-				require.NoError(t, err)
-				require.False(t, joined)
-				require.Equal(t, tournamentActionJoin, service.pendingTransactions[app.ID].Action)
-				require.Equal(t, model.ApplicationStatus_OK, app.Status)
-			} else {
-				repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
-					mock.MatchedBy(reasonContains("commitment height 48", "factory and node versions"))).Return(nil).Once()
-				joined, err := service.reactToTournament(t.Context(), app, epoch, 20)
-				require.NoError(t, err)
-				require.False(t, joined)
-				require.Equal(t, model.ApplicationStatus_Failed, app.Status)
-				adapter.AssertNotCalled(t, "JoinTournament", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-			}
-			adapter.AssertExpectations(t)
-			factory.AssertExpectations(t)
-			repo.AssertExpectations(t)
-		})
-	}
-}
-
 func TestRootWinnerMismatchDoesNotChangeLocalHealthDuringObservation(t *testing.T) {
 	for _, update := range []bool{false, true} {
 		operation := projectionCreateCase
@@ -291,6 +244,43 @@ func TestRootWinnerMismatchDoesNotChangeLocalHealthDuringObservation(t *testing.
 			require.Empty(t, repo.Calls)
 			repo.AssertExpectations(t)
 			adapter.AssertExpectations(t)
+		})
+	}
+}
+
+func TestJoinChecksSupportedRootGeometry(t *testing.T) {
+	for _, height := range []uint64{model.Log2EpochComputationHashLeafCount, 7} {
+		t.Run(new(big.Int).SetUint64(height).String(), func(t *testing.T) {
+			f := newDeliveryFixture(t)
+			view := resultTestSnapshot(f.epoch, false)
+			view.stage.IsFinished = false
+			view.stage.WinnerCommitment = common.Hash{}
+			view.stage.WinnerPostEpochMachineStateHash = common.Hash{}
+			f.snapshot(view)
+			adapter := &tournamentAdapterMock{}
+			f.factory.On("CreateTournamentAdapter", *f.epoch.TournamentAddress).Return(adapter, nil).Once()
+			opts := mock.MatchedBy(resultCallOptsAtBlock(f.block.Number))
+			adapter.On("CommitmentStanding", opts, [32]byte(*f.epoch.Commitment)).Return(CommitmentStanding{}, nil).Once()
+			adapter.On("Descriptor", opts).Return(TournamentDescriptor{
+				Height: height, StartInstant: 100, Allowance: 20,
+			}, nil).Once()
+			if height == model.Log2EpochComputationHashLeafCount {
+				adapter.On("Standing", opts).Return(TournamentStanding{AcceptsJoins: true}, nil).Once()
+				adapter.On("BondValue", opts).Return(big.NewInt(0), nil).Once()
+			}
+			call, err := f.d.planAction(t.Context(), f.app, joinTournament, f.block, observerFacts(100))
+			if height == model.Log2EpochComputationHashLeafCount {
+				require.NoError(t, err)
+				require.NotNil(t, call)
+				require.Equal(t, joinTournament, call.Key.Kind)
+			} else {
+				require.ErrorIs(t, err, txsender.ErrIneligible)
+				require.Nil(t, call)
+				require.Empty(t, f.backend.published)
+			}
+			assertPRTPlanDidNotWrite(t, f)
+			adapter.AssertExpectations(t)
+			f.repo.AssertExpectations(t)
 		})
 	}
 }

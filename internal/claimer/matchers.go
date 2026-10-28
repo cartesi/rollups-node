@@ -4,65 +4,9 @@
 package claimer
 
 import (
-	"fmt"
-
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 )
-
-func checkEpochConstraint(epoch *model.Epoch) error {
-	if epoch.FirstBlock > epoch.LastBlock {
-		return fmt.Errorf("unexpected epoch state. first_block: %v > last_block: %v",
-			epoch.FirstBlock, epoch.LastBlock)
-	}
-
-	mustHaveOutputsMerkleRoot := epoch.Status == model.EpochStatus_ClaimSubmitted ||
-		epoch.Status == model.EpochStatus_ClaimAccepted ||
-		epoch.Status == model.EpochStatus_ClaimComputed
-	if mustHaveOutputsMerkleRoot {
-		if epoch.TxBufferDataBlock == nil {
-			return fmt.Errorf("unexpected epoch state. missing outputs_merkle_root.")
-		}
-	}
-
-	// CLAIM_SUBMITTED must have claim_transaction_hash because the node always
-	// sets it before moving to that state.
-	//
-	// CLAIM_ACCEPTED may have a NULL transaction hash. Some recovery paths use
-	// getClaim(), which is a read-only call and does not return an event log or
-	// transaction hash. Paths that observe a ClaimAccepted event still store the
-	// hash when they have it.
-	if epoch.Status == model.EpochStatus_ClaimSubmitted {
-		if epoch.ClaimTransactionHash == nil {
-			return fmt.Errorf("unexpected epoch state. missing claim_transaction_hash.")
-		}
-	}
-	return nil
-}
-
-func checkEpochSequenceConstraint(prevEpoch *model.Epoch, currEpoch *model.Epoch) error {
-	var err error
-
-	err = checkEpochConstraint(currEpoch)
-	if err != nil {
-		return fmt.Errorf("%w on current epoch.", err)
-	}
-	err = checkEpochConstraint(prevEpoch)
-	if err != nil {
-		return fmt.Errorf("%w on previous epoch.", err)
-	}
-
-	if prevEpoch.LastBlock > currEpoch.LastBlock {
-		return fmt.Errorf("unexpected epochs sequence on field last_block: previous(%v) > current(%v)", prevEpoch.LastBlock, currEpoch.LastBlock)
-	}
-	if prevEpoch.FirstBlock > currEpoch.FirstBlock {
-		return fmt.Errorf("unexpected epochs sequence on field first_block: previous(%v) > current(%v)", prevEpoch.FirstBlock, currEpoch.FirstBlock)
-	}
-	if prevEpoch.Index > currEpoch.Index {
-		return fmt.Errorf("unexpected epochs sequence on field index: previous(%v) > current(%v)", prevEpoch.Index, currEpoch.Index)
-	}
-	return nil
-}
 
 // The full matchers return (matches, ok).
 //

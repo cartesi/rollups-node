@@ -117,8 +117,8 @@ func nodePortAvailable() bool {
 type nodeProcess struct {
 	*nodeSubprocess
 	logFile *os.File
-	tail    *exec.Cmd // tail -f process for live log streaming
-	tty     *os.File  // /dev/tty FD used by tail; closed in stop()
+	tail    *nodeSubprocess // tail -f process for live log streaming
+	tty     *os.File        // /dev/tty FD used by tail; closed in stop()
 }
 
 // startNodeWithLog starts the node binary as a subprocess, appending output
@@ -158,7 +158,7 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 		"CARTESI_CLAIMER_POLLING_INTERVAL=1",
 		"CARTESI_PRT_POLLING_INTERVAL=1",
 	)
-	cmd.Env = append(cmd.Env, extraEnv...)
+	cmd.Env = append(append(cmd.Env, developmentDeliveryEnv()...), extraEnv...)
 
 	proc, err := startNodeSubprocess(nodeBinary, cmd)
 	if err != nil {
@@ -178,12 +178,13 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 	tail := exec.Command("tail", "-f", logPath) //nolint:gosec
 	tail.Stdout = tty
 	tail.Stderr = tty
-	if err := tail.Start(); err != nil {
+	tailProcess, err := startNodeSubprocess("node-log-tail", tail)
+	if err != nil {
 		tty.Close()
 		return &nodeProcess{nodeSubprocess: proc, logFile: logFile}, nil
 	}
 
-	return &nodeProcess{nodeSubprocess: proc, logFile: logFile, tail: tail, tty: tty}, nil
+	return &nodeProcess{nodeSubprocess: proc, logFile: logFile, tail: tailProcess, tty: tty}, nil
 }
 
 // waitForHealth polls the node's readyz endpoint until it responds 200 OK
@@ -225,9 +226,11 @@ func (n *nodeProcess) stop(t testing.TB) {
 	}
 
 	// Stop the tail process first so it doesn't print shutdown logs.
-	if n.tail != nil && n.tail.Process != nil {
-		_ = n.tail.Process.Kill()
-		_ = n.tail.Wait()
+	if n.tail != nil && n.tail.cmd.Process != nil {
+		_ = n.tail.cmd.Process.Kill()
+		if !n.tail.wait(time.Second) && t != nil {
+			t.Errorf("log tail did not exit")
+		}
 	}
 	if n.tty != nil {
 		n.tty.Close()

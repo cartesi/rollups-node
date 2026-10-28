@@ -4,12 +4,14 @@
 package prt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
 
-	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/model"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -23,6 +25,7 @@ import (
 type DaveConsensusAdapterImpl struct {
 	consensus *idaveconsensus.IDaveConsensus
 	client    *ethclient.Client
+	address   common.Address
 }
 
 // NewDaveConsensusAdapter creates a new DaveConsensusAdapter backed by the IDaveConsensus contract.
@@ -30,15 +33,42 @@ func NewDaveConsensusAdapter(
 	addr common.Address,
 	client *ethclient.Client,
 ) (DaveConsensusAdapter, error) {
-	consensus, err := idaveconsensus.NewIDaveConsensus(addr, client)
+	consensus, err := idaveconsensus.NewIDaveConsensus(addr, readOnlyBackend{Client: client})
 	if err != nil {
 		return nil, err
 	}
-	return &DaveConsensusAdapterImpl{consensus: consensus, client: client}, nil
+	return &DaveConsensusAdapterImpl{consensus: consensus, client: client, address: addr}, nil
 }
 
 func (a *DaveConsensusAdapterImpl) ParseEpochSealed(log types.Log) (*idaveconsensus.IDaveConsensusEpochSealed, error) {
 	return a.consensus.ParseEpochSealed(log)
+}
+
+// Query only the exact accepting block, consensus and next-epoch event. A lost
+// publication race must not require one receipt RPC per unrelated transaction.
+func (a *DaveConsensusAdapterImpl) EpochSealedAt(
+	ctx context.Context, blockHash common.Hash, epoch uint64,
+) ([]*idaveconsensus.IDaveConsensusEpochSealed, error) {
+	contract, err := idaveconsensus.IDaveConsensusMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	logs, err := a.client.FilterLogs(ctx, ethereum.FilterQuery{BlockHash: &blockHash,
+		Addresses: []common.Address{a.address},
+		Topics:    [][]common.Hash{{contract.Events["EpochSealed"].ID}, {common.BigToHash(new(big.Int).SetUint64(epoch))}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	events := make([]*idaveconsensus.IDaveConsensusEpochSealed, 0, len(logs))
+	for _, log := range logs {
+		event, err := a.ParseEpochSealed(log)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, nil
 }
 
 func (a *DaveConsensusAdapterImpl) TournamentLevelCount(opts *bind.CallOpts) (uint64, error) {
@@ -46,7 +76,7 @@ func (a *DaveConsensusAdapterImpl) TournamentLevelCount(opts *bind.CallOpts) (ui
 	if err != nil {
 		return 0, err
 	}
-	factory, err := imultileveltournamentfactory.NewIMultiLevelTournamentFactory(factoryAddress, a.client)
+	factory, err := imultileveltournamentfactory.NewIMultiLevelTournamentFactory(factoryAddress, readOnlyBackend{Client: a.client})
 	if err != nil {
 		return 0, err
 	}
@@ -142,7 +172,7 @@ func (a *DaveConsensusAdapterImpl) CanAcceptStagedTournamentResult(
 	}, nil
 }
 
-func daveMachineValidityProof(proof StateProof) idaveconsensus.MachineValidityProof {
+func daveMachineValidityProof(proof model.StateProof) idaveconsensus.MachineValidityProof {
 	return idaveconsensus.MachineValidityProof{
 		IflagsYProof: idaveconsensus.LeafProof{
 			DataBlock: proof.IflagsYDataBlock,
@@ -157,19 +187,4 @@ func daveMachineValidityProof(proof StateProof) idaveconsensus.MachineValidityPr
 			Siblings:  append([][32]byte(nil), proof.TxBufferProof...),
 		},
 	}
-}
-
-func (a *DaveConsensusAdapterImpl) StageTournamentResult(
-	opts *bind.TransactOpts,
-	epochNumber uint64,
-	proof StateProof,
-) (*types.Transaction, error) {
-	return a.consensus.StageTournamentResult(opts, new(big.Int).SetUint64(epochNumber), daveMachineValidityProof(proof))
-}
-
-func (a *DaveConsensusAdapterImpl) AcceptStagedTournamentResult(
-	opts *bind.TransactOpts,
-	epochNumber uint64,
-) (*types.Transaction, error) {
-	return a.consensus.AcceptStagedTournamentResult(opts, new(big.Int).SetUint64(epochNumber))
 }

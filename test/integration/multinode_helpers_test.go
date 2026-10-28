@@ -63,8 +63,8 @@ type multiNode struct {
 	procs   []*nodeSubprocess
 	addrs   []string
 	logFile *os.File
-	tail    *exec.Cmd // tail -f process streaming the log to the terminal
-	tty     *os.File  // /dev/tty FD used by tail; closed in stop()
+	tail    *nodeSubprocess // tail -f process streaming the log to the terminal
+	tty     *os.File        // /dev/tty FD used by tail; closed in stop()
 }
 
 // startMultiNode starts each service binary as a host subprocess sharing the
@@ -95,10 +95,11 @@ func startMultiNode(logPath string, extraEnv ...string) (*multiNode, error) {
 		tail := exec.Command("tail", "-f", logPath) //nolint:gosec
 		tail.Stdout = tty
 		tail.Stderr = tty
-		if err := tail.Start(); err != nil {
+		tailProcess, err := startNodeSubprocess("node-log-tail", tail)
+		if err != nil {
 			tty.Close()
 		} else {
-			mn.tail = tail
+			mn.tail = tailProcess
 			mn.tty = tty
 		}
 	}
@@ -111,6 +112,7 @@ func startMultiNode(logPath string, extraEnv ...string) (*multiNode, error) {
 		"CARTESI_PRT_POLLING_INTERVAL=1",
 	)
 
+	base = append(base, developmentDeliveryEnv()...)
 	for _, svc := range multiNodeServices {
 		if _, err := exec.LookPath(svc.name); err != nil {
 			mn.stop(nil)
@@ -194,9 +196,11 @@ func (mn *multiNode) exitedProcessError() error {
 // for it to exit, then stops the log tail and closes the log file.
 func (mn *multiNode) stop(t testing.TB) {
 	// Stop the tail first so it does not print shutdown noise.
-	if mn.tail != nil && mn.tail.Process != nil {
-		_ = mn.tail.Process.Kill()
-		_ = mn.tail.Wait()
+	if mn.tail != nil && mn.tail.cmd.Process != nil {
+		_ = mn.tail.cmd.Process.Kill()
+		if !mn.tail.wait(time.Second) && t != nil {
+			t.Errorf("log tail did not exit")
+		}
 	}
 	if mn.tty != nil {
 		mn.tty.Close()

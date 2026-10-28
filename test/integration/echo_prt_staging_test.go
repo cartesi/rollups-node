@@ -106,7 +106,10 @@ func (s *EchoPrtSuite) finalizeEpochAfterStagingPeriod(
 	sealed, err = consensus.GetCurrentSealedEpoch(callOpts)
 	r.NoError(err, "read current epoch at the recovery block")
 	r.Zero(sealed.EpochNumber.Cmp(new(big.Int).SetUint64(epochIndex)))
-	r.True(sealed.IsTournamentResultStaged)
+	// Recovery does not require staging. The dispatcher can recover the bond
+	// before its stage transaction, while this historical snapshot stays exact.
+	r.Equal(recovered.Raw.BlockNumber >= *staged.StagedAtBlock, sealed.IsTournamentResultStaged,
+		"the recovery block's staging view must agree with the recorded stage block")
 	canAccept, err = consensus.CanAcceptStagedTournamentResult(callOpts)
 	r.NoError(err, "read acceptance conditions at the recovery block")
 	r.False(canAccept.IsClaimStagingPeriodOver)

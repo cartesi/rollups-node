@@ -76,7 +76,7 @@ func TestFlagHelpersKeepLiveValuesOutOfMetadata(t *testing.T) {
 			require.Equal(t, "finalized", block)
 			require.Equal(t, "info", level)
 			require.True(t, color)
-			require.Zero(t, maxRange)
+			require.Equal(t, uint64(2000), maxRange)
 			// Application resolution still consumes the environment after registration.
 			require.Equal(t, marker, viper.GetString(config.DATABASE_CONNECTION))
 			require.Equal(t, uint64(918273645), viper.GetUint64(config.BLOCKCHAIN_MAX_BLOCK_RANGE))

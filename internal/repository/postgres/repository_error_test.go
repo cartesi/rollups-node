@@ -100,9 +100,14 @@ func TestNewPostgresRepository_UnreachableHostRetriesExhausted(t *testing.T) {
 	// Port 1 on localhost is almost certainly not running PostgreSQL.
 	// With maxRetries=2 and minimal delay the retries exhaust quickly.
 	_, err := postgres.NewPostgresRepository(
-		ctx, "postgres://user:pass@localhost:1/testdb?connect_timeout=1", 2, time.Millisecond)
+		ctx, "postgres://DATABASE_SETTINGS_SECRET:DATABASE_SETTINGS_SECRET@127.0.0.1:1/DATABASE_SETTINGS_SECRET?connect_timeout=1",
+		2, time.Millisecond)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to ping Postgres after 2 retries")
+	require.Contains(t, err.Error(), "connection refused")
+	for _, verb := range []string{"%v", "%+v", "%#v"} {
+		require.NotContains(t, fmt.Sprintf(verb, err), "DATABASE_SETTINGS_SECRET")
+	}
 }
 
 func TestNewPostgresRepository_ContextCancelledDuringRetry(t *testing.T) {
