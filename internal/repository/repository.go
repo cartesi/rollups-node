@@ -238,6 +238,15 @@ type EpochRepository interface {
 	// foreclosed IApplication, so waiting would stall forever.
 	HasUndrainedEpochsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
 
+	// HasUnpublishedEpochBeforeBlock keeps the machine available while a healthy,
+	// enabled, foreclosed Authority/Quorum application still has a CLOSED epoch
+	// before both blockBound and foreclosure, within its publication cutoff.
+	// CLOSED -> INPUTS_PROCESSED needs the resident machine's accepted-state proof
+	// even when no NONE inputs remain. INPUTS_PROCESSED validation uses stored
+	// data and does not keep the machine. The caller separately gates on the
+	// input scanner reaching foreclosure and on HasUndrainedEpochsBeforeBlock.
+	HasUnpublishedEpochBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
+
 	// HasUnreconciledClaimsBeforeBlock is the broader gate used by the
 	// Authority/Quorum claimer: it returns true while any epoch for the
 	// given application is still in OPEN/CLOSED/INPUTS_PROCESSED OR in
@@ -389,8 +398,19 @@ type NodeConfigReader interface {
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
 
+// ClaimRoots is the result of one coherent local prefix read. Ready requires
+// input coverage and validation of every stored predecessor, including CF rows.
+type ClaimRoots struct {
+	Ready       bool
+	MachineHash common.Hash
+	OutputsRoot common.Hash
+	ReasonClass string // Stable warning class; numeric details belong in Reason.
+	Reason      string
+}
+
 // TODO: migrate ClaimRow -> Application + Epoch and use the other interfaces
 type ClaimerRepository interface {
+	ReadClaimRoots(ctx context.Context, appID int64, covered uint64) (ClaimRoots, error)
 	SelectClaimsToSubmitPage(ctx context.Context, cursor ClaimCursor, limit uint64) (ClaimPage, error)
 	SelectClaimsToStagePage(ctx context.Context, cursor ClaimCursor, limit uint64) (ClaimPage, error)
 	SelectClaimsToAcceptPage(ctx context.Context, cursor ClaimCursor, limit uint64) (ClaimPage, error)

@@ -125,6 +125,8 @@ CREATE TABLE "application"
     ),
     "last_epoch_check_block" uint64 NOT NULL,
     "last_input_check_block" uint64 NOT NULL,
+    -- Safe prefix for independent ClaimStaged/ClaimAccepted processing.
+    "last_claim_check_block" uint64 NOT NULL DEFAULT 0,
     "last_output_check_block" uint64 NOT NULL,
     "last_tournament_check_block" uint64 NOT NULL,
     "last_foreclose_check_block" uint64 NOT NULL DEFAULT 0,
@@ -290,6 +292,8 @@ CREATE TABLE "epoch"
     "tournament_address" ethereum_address,
     "claim_transaction_hash" hash,
     "status" "EpochStatus" NOT NULL,
+    -- Validation survives lifecycle completion through CLAIM_FORECLOSED.
+    "claim_validated" BOOLEAN NOT NULL DEFAULT false,
     "staged_at_block" uint64,
     "virtual_index" uint64 NOT NULL,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -330,11 +334,13 @@ CREATE TABLE "epoch"
     ),
     -- Every published claim candidate carries the complete accepted-state
     -- machine proof. CLAIM_FORECLOSED is excluded because foreclosure
-    -- may terminalize an epoch before the machine can publish a proof.
+    -- may terminalize an epoch before the machine can publish a proof. A
+    -- previously validated epoch must retain its complete proof after that.
     CONSTRAINT "epoch_published_validity_proof_check" CHECK (
         "status" NOT IN ('INPUTS_PROCESSED', 'CLAIM_COMPUTED',
                          'CLAIM_SUBMITTED', 'CLAIM_STAGED',
                          'CLAIM_ACCEPTED', 'CLAIM_REJECTED')
+        AND NOT "claim_validated"
         OR (
             "machine_hash" IS NOT NULL
             AND "tx_buffer_data_block" IS NOT NULL
@@ -358,6 +364,13 @@ CREATE TABLE "epoch"
 
 CREATE INDEX "epoch_last_block_idx" ON "epoch"("application_id", "last_block");
 CREATE INDEX "epoch_status_idx" ON "epoch"("application_id", "status");
+-- Seek an unvalidated predecessor without scanning a future suffix.
+CREATE INDEX "epoch_unvalidated_idx" ON "epoch"("application_id", "first_block")
+    WHERE NOT "claim_validated";
+-- Seek unpublished epochs without walking an INPUTS_PROCESSED prefix. At the
+-- caught-up A/Q foreclosure frontier there is at most one OPEN boundary epoch.
+CREATE INDEX "epoch_unpublished_idx" ON "epoch"("application_id", "first_block")
+    WHERE "status" IN ('OPEN','CLOSED');
 -- Supports HasUnreconciledClaimsBeforeBlock: the broad Authority/Quorum drain
 -- gate scans epoch rows for (application_id, first_block <= $foreclose_block)
 -- restricted to the set of actionable pre-terminal statuses. A partial index keyed on
@@ -425,6 +438,7 @@ DECLARE
     is_valid boolean := false;
     app_consensus text;
 BEGIN
+    NEW.claim_validated := OLD.claim_validated;
     IF OLD.status = NEW.status THEN
         RETURN NEW;
     END IF;
@@ -438,6 +452,10 @@ BEGIN
     IF NOT is_valid THEN
         RAISE EXCEPTION 'invalid epoch status transition: % -> %',
             OLD.status, NEW.status;
+    END IF;
+
+    IF OLD.status = 'INPUTS_PROCESSED' AND NEW.status = 'CLAIM_COMPUTED' THEN
+        NEW.claim_validated := true;
     END IF;
 
     -- Enforce PRT-specific claim fields when entering CLAIM_COMPUTED.

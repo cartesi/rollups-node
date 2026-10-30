@@ -38,6 +38,7 @@ type MachineRepository interface {
 		descending bool,
 	) ([]*model.Application, uint64, error)
 	HasUndrainedEpochsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
+	HasUnpublishedEpochBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
 
 	// GetLastSnapshot retrieves the most recent input with a snapshot for the given application
 	GetLastSnapshot(ctx context.Context, nameOrAddress string) (*model.Input, error)
@@ -683,6 +684,18 @@ func getMachineApplications(ctx context.Context, repo MachineRepository) ([]*mod
 		}
 		if undrained {
 			apps = append(apps, app)
+			continue
+		}
+		if app.ConsensusType == model.Consensus_Authority || app.ConsensusType == model.Consensus_Quorum {
+			// Accepted inputs can precede reader closure or a failed IP write.
+			// Keep the runtime only through proof publication; IP needs no VM.
+			unpublished, err := repo.HasUnpublishedEpochBeforeBlock(ctx, app.ID, app.ForecloseBlock)
+			if err != nil {
+				return nil, err
+			}
+			if unpublished {
+				apps = append(apps, app)
+			}
 		}
 	}
 	return apps, nil

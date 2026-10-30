@@ -96,5 +96,7 @@ func TestCreateReaderUsesRegisteredPolicy(t *testing.T) {
 	require.Equal(t, model.DefaultBlock_Latest, impl.blockchain.(*claimerBlockchain).defaultBlock)
 	require.True(t, impl.Ready())
 	require.Nil(t, impl.publisher)
+	require.NotNil(t, impl.claimObserver, "reader mode must observe claims independently of local publication")
+	require.Equal(t, model.DefaultBlock_Latest, impl.claimObserver.policy)
 	repo.AssertExpectations(t)
 }

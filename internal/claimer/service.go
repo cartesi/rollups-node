@@ -34,8 +34,9 @@ type CreateInfo struct {
 type Service struct {
 	service.TickServiceTemplate
 
-	repository iclaimerRepository
-	blockchain iclaimerBlockchain
+	repository    iclaimerRepository
+	blockchain    iclaimerBlockchain
+	claimObserver *independentClaimObserver
 
 	// publisher owns all volatile transaction state. PostgreSQL is the only
 	// handoff to the observer's independent domain traversal.
@@ -168,13 +169,16 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	}
 
 	s.repository = c.Repository
-	s.blockchain = &claimerBlockchain{
+	blockchain := &claimerBlockchain{
 		logger:        s.Logger,
 		client:        ethClient,
 		txOptsFactory: txOptsFactory,
 		defaultBlock:  nodeConfig.DefaultBlock,
 		backend:       backend,
 	}
+	s.blockchain = blockchain
+	s.claimObserver = &independentClaimObserver{repository: c.Repository, blockchain: blockchain, logger: s.Logger,
+		policy: nodeConfig.DefaultBlock, maxRange: c.Config.BlockchainMaxBlockRange, budget: tickCfg.PollInterval}
 
 	s.Logger.Info("Created", "config", c.Config)
 

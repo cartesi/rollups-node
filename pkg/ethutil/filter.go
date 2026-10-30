@@ -135,12 +135,16 @@ func (f *Filter) ChunkedFilterLogs(
 
 			if queryBlockRangeTooLarge(err) {
 				f.Logger.Debug("ChunkedFilterLogs range is too large", "from", q.FromBlock, "to", q.ToBlock)
-				if delta.Cmp(f.MinChunkSize) < 0 {
+				if delta.Sign() == 0 || delta.Cmp(f.MinChunkSize) < 0 {
 					yield(nil, err)
 					return
 				}
-				// ToBlock -= delta/2
-				q.ToBlock.Sub(q.ToBlock, delta.Rsh(delta, 1))
+				// Inclusive two-block ranges must still shrink to one block.
+				shrink := new(big.Int).Rsh(delta, 1)
+				if shrink.Sign() == 0 {
+					shrink.SetInt64(1)
+				}
+				q.ToBlock.Sub(q.ToBlock, shrink)
 				continue
 			} else if err != nil {
 				yield(nil, err)
