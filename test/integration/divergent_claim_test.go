@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"regexp"
 	"testing"
 	"time"
 
@@ -40,11 +39,9 @@ import (
 //	     emits ClaimSubmitted + ClaimStaged with the divergent machine root.
 //	     acceptClaim is intentionally NOT called — this models the realistic
 //	     attacker who pushes a single divergent claim and disappears.
-//	  6. Restart the node. It detects input 2, computes the legitimate claim
-//	     locally, scans the chain via findClaimSubmittedEventAndSucc (the
-//	     accepted-scan returns nil because no ClaimAccepted exists), and
-//	     marks the application DIVERGED with reason
-//	     `authority_divergence_at_submission`.
+//	  6. Restart the node. It executes input 2 and validates the legitimate
+//	     roots. The independent watcher or legacy claim observer detects
+//	     the mismatch and marks the application DIVERGED.
 //
 //	Phase 2 — replay against a now-divergent chain, in reader mode:
 //	  7. Remove app A.
@@ -117,32 +114,10 @@ func (s *DivergentClaimSuite) TearDownTest() {
 func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	r := s.Require()
 
-	// Both apps end the test in DIVERGED with one of the two Authority
-	// divergence reasons — Authority's submit-stage-accept lifecycle means
-	// whichever scan (ClaimSubmitted or ClaimAccepted) lands first wins,
-	// and both are terminal. The claimer's tick wraps the transition error
-	// and re-logs it, so we allow-list that too. Rapid mining can race the
-	// EVM reader's block fetcher; tolerate transient BlockOutOfRangeError.
-	s.SetExpectedLogs(s.T(),
-		ExpectedLog{
-			Pattern: regexp.MustCompile(
-				`marking application as diverged.*authority_divergence_at_(submission|acceptance)`),
-			Level: LevelError,
-			Reason: "expected DIVERGED transition for both the attacked original app and " +
-				"the re-registered replay app (compromised-owner-key attack scenario)",
-		},
-		ExpectedLog{
-			Pattern: regexp.MustCompile(
-				`Tick service=claimer.*authority_divergence_at_(submission|acceptance)`),
-			Level:  LevelError,
-			Reason: "claimer Tick wraps and re-logs the divergence-induced DIVERGED error",
-		},
-		ExpectedLog{
-			Pattern: regexp.MustCompile(`BlockOutOfRangeError`),
-			Level:   LevelError,
-			Reason:  "transient EVM reader race against Anvil during rapid block mining",
-		},
-	)
+	// Either observer can prove the mismatch first. Once the fixture knows
+	// the actual target roots, require its diagnostic and validate the reason.
+	// Historical-read errors remain a separate, narrow Anvil allowance.
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 
 	endpoint := envOrDefault("CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "http://localhost:8545")
 	client, err := ethclient.Dial(endpoint)
@@ -304,8 +279,13 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	stateCancel()
 	statusA, err := readApplicationStatus(s.ctx, appAName)
 	r.NoError(err)
-	r.Regexp(`authority_divergence_at_(submission|acceptance)`, statusA,
-		"A's DIVERGED reason must reference one of the two Authority divergence buckets")
+	targetEpoch, err := readEpoch(s.ctx, appAName, targetEpochIndex)
+	r.NoError(err, "read locally validated target epoch")
+	expectedA := expectClaimDivergence(s.T(), appAName, appAddr, consensusAddr,
+		model.Consensus_Authority, proofSourceEpoch, targetEpoch)
+	firstReason := expectedA.requireReason(s.T(), statusA)
+	expectedLogs := append([]ExpectedLog{anvilBlockOutOfRangeAllowlist}, expectedA.expectedLogs(true)...)
+	s.SetExpectedLogs(s.T(), expectedLogs...)
 	s.T().Logf("=== Phase 1 complete: %s is DIVERGED ===\n%s", appAName, statusA)
 
 	s.T().Log("--- Phase 1.6: guardian forecloses the already-DIVERGED app ---")
@@ -317,8 +297,9 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 	forecloseCancel()
 	statusA, err = readApplicationStatus(s.ctx, appAName)
 	r.NoError(err, "read A status after foreclosure")
-	r.Equal("DIVERGED", firstStatusLine(statusA),
-		"foreclosure after divergence should not erase the DIVERGED reason")
+	r.Equal("DIVERGED", firstStatusLine(statusA))
+	r.Equal(firstReason, expectedA.requireReason(s.T(), statusA),
+		"foreclosure must preserve the first DIVERGED reason")
 	r.Contains(statusA, "Foreclose block:",
 		"DIVERGED app should still surface the recorded foreclose block")
 
@@ -355,9 +336,31 @@ func (s *DivergentClaimSuite) TestDivergentClaimReplay() {
 
 	statusB, err := readApplicationStatus(s.ctx, appBName)
 	r.NoError(err)
-	r.Regexp(`authority_divergence_at_(submission|acceptance)`, statusB,
-		"B's DIVERGED reason must reference one of the Authority divergence buckets "+
-			"(the read-only scan path proves the divergence even with submission disabled)")
+	replayedTarget, err := readEpoch(s.ctx, appBName, targetEpochIndex)
+	r.NoError(err, "read replayed target epoch")
+	r.Equal(targetEpoch.MachineHash, replayedTarget.MachineHash)
+	r.Equal(targetEpoch.TxBufferDataBlock, replayedTarget.TxBufferDataBlock)
+	expectedB := expectClaimDivergence(s.T(), appBName, appAddr, consensusAddr,
+		model.Consensus_Authority, proofSourceEpoch, replayedTarget)
+	expectedB.requireReason(s.T(), statusB)
+	r.Contains(statusB, "Foreclose block:", "B must have observed the already closed intervention window")
+	claim, err := authorityBinding.GetClaim(&bind.CallOpts{Context: s.ctx}, appAddr,
+		new(big.Int).SetUint64(targetEpochLastBlock), machineRoot)
+	r.NoError(err, "read the false target claim after foreclosure")
+	const claimStaged uint8 = 1
+	r.Equal(claimStaged, claim.Status, "the false target remains staged and unaccepted after foreclosure")
+	r.Equal(*proofSourceEpoch.TxBufferDataBlock, common.Hash(claim.StagedOutputsMerkleRoot))
+	// B replays a chain already foreclosed. Require its correct verdict, not
+	// a staging-window alarm after that window has closed. Keep A's required
+	// alarm while allowing only B's claim-specific legacy diagnostics.
+	expectedLogs = append(expectedLogs, expectedB.expectedLogs(false)...)
+	s.SetExpectedLogs(s.T(), expectedLogs...)
+	for _, index := range inputEpochs {
+		acceptedCtx, acceptedCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
+		_, err := waitForEpochStatus(acceptedCtx, s.T(), appBName, index, model.EpochStatus_ClaimAccepted)
+		acceptedCancel()
+		r.NoError(err, "B must reconcile the legitimately accepted prefix epoch %d", index)
+	}
 	s.T().Logf("=== Phase 2 complete: %s is DIVERGED in reader mode ===\n%s", appBName, statusB)
 }
 

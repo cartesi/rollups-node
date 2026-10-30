@@ -369,6 +369,80 @@ Measure observation lag, provider latency, signing time and inclusion time again
 the deployed tournament allowance. Independent loops and urgent replacement do not
 guarantee meeting a deadline.
 
+## Observe Authority and Quorum claims
+
+Claimer checks `ClaimStaged` and `ClaimAccepted` events for each enabled
+Authority or Quorum application. This check also runs in reader mode, after an
+execution stop, and after foreclosure. It does not need a local epoch row.
+An empty Authority or Quorum epoch has no local row. A claim that covers such an
+epoch still needs a check.
+
+For a covered block B, the node first confirms that input discovery reached B
+and that all local execution through B passed validation. It then compares both
+the machine root and the cumulative outputs root. The last validated roots also
+cover later empty epochs. Before the first input, the expected roots come from
+the application template and the empty outputs tree. This requires a supported
+template whose initial accepted yield declares that empty tree. A claim for a later epoch
+alone does not prove a mismatch.
+
+A proved mismatch emits `Divergent on-chain claim observed` at ERROR level, with
+`source=independent_claim_observer`. The record gives the application, covered
+block, both on-chain roots, both validated roots, phase and staging deadline.
+The node then confirms a durable `DIVERGED` or `CORRUPTED` status before it marks
+that claim as checked. An existing integrity finding keeps its first reason.
+
+Without enough local evidence, the node emits
+`Independent claim verification is incomplete` at WARN level. The record gives
+the cause, the number of pending claims, an example and its acceptance threshold.
+Warnings use a stable cause class per application. Changing block numbers or
+queue order does not reset the rate limit. This warning does not prove a false
+claim. RPC and database failures retain the work. A failed claim check moves to
+the end of the pending order so that other claims can be checked. A proved
+mismatch remains a barrier until its durable status is confirmed.
+
+The private `application.last_claim_check_block` column records the completed
+prefix of claim checks. Pending claims hold this checkpoint before their source
+block. Discovery can continue in memory beyond that point. A restart reads the
+chain again from the checkpoint, with no limit based on claim age. The private
+`epoch.claim_validated` marker preserves completed validation after an epoch
+becomes `CLAIM_FORECLOSED`; proof bytes alone do not set this marker. Neither
+column adds a JSON-RPC field or permits publication of a foreclosed epoch.
+
+The provider must serve canonical headers, logs and contract state at the oldest
+claim checkpoint needed for replay. A pending claim can hold that checkpoint
+for an unlimited time, including after a different claim caused `DIVERGED`.
+Use a provider with the required historical state. Missing state stops discovery
+for the affected application and causes a warning; it is not an empty history.
+The scanner reduces the block range when the sum of staged and accepted event
+deltas exceeds an internal target of 256 events. One block is indivisible and must be read whole,
+even above that target. A long replay or a dense block can delay new discovery
+and local lifecycle observation. The target does not give a fixed time or memory
+limit. The separate publisher can still check its current transaction. A repeated
+head skips event discovery but still permits local comparison and status retries.
+
+An unaccepted claim can leave the pending set only when the event stream is
+complete through block d and `isForeclosed()` is true at that exact finalized
+block hash. A newer head or the recorded foreclosure height alone is not proof.
+No transaction receipt is required. This retirement assumes that application
+foreclosure is permanent. It is disabled under `latest` and `safe`. Accepted
+claims still need comparison.
+
+Run the Claimer service for this protection, including on reader or guardian
+nodes with claim submission disabled. Disabling or removing an application
+stops its protection and alerts. It can also stop observation needed for
+withdrawals.
+
+| Signal | Required action |
+| --- | --- |
+| ERROR with `independent_claim_mismatch` | Check both roots and the named application. Use the guardian procedure before the acceptance threshold when time remains. |
+| WARN with pending local validation | Check input discovery and local execution. A pending claim is not a confirmed mismatch. |
+| WARN with an RPC or database failure | Restore the dependency. Check that the provider serves state at the retained checkpoint and range endpoints. |
+
+Detection before acceptance needs enough time for observation and validation.
+A zero staging period, node downtime or unavailable evidence can remove that
+opportunity. The node reports pending verification; it does not declare a false
+claim without validated evidence or promise a guardian response deadline.
+
 ## Execution stops and integrity findings
 
 An execution stop (`GUEST_EXCEPTION`, `MACHINE_HALTED`, `MCYCLE_OVERFLOW` or
@@ -422,12 +496,13 @@ does not revoke already distributed bytes. If the validator cannot build a PRT
 commitment proof under a stop, it retries the epoch, which can keep foreclosure
 drain pending.
 
-The node may not discover other parties' claims at or after P. After foreclosure,
-Authority/Quorum can mark those epochs `CLAIM_FORECLOSED` even if a foreign claim
-was accepted. PRT leaves an epoch pending when it has seen a claim transaction
-but has no validated local claim to compare, so drain can remain pending.
-Neither case authorizes publication of that epoch. Earlier validated epochs
-retain their normal reconciliation.
+The independent Authority/Quorum check still discovers claims at or after P.
+It warns when the covered execution cannot be validated. Foreclosure can mark
+their local epochs `CLAIM_FORECLOSED`; the private marker retains earlier
+validated evidence for comparison. PRT leaves an epoch pending when it has seen
+a claim transaction but has no validated local claim to compare, so drain can
+remain pending. Neither case authorizes publication of that epoch. Earlier
+validated epochs retain their normal reconciliation.
 
 Known limitations:
 

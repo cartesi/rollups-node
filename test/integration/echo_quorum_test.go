@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -247,19 +246,7 @@ func (s *EchoQuorumSuite) TestDivergentMinorityVoteDoesNotBlockAcceptance() {
 }
 
 func (s *EchoQuorumSuite) TestDivergentMajorityMarksApplicationDiverged() {
-	s.SetExpectedLogs(s.T(),
-		anvilBlockOutOfRangeAllowlist,
-		ExpectedLog{
-			Pattern: regexp.MustCompile(`claim divergence detected.*quorum_divergence_at_staging`),
-			Level:   LevelError,
-			Reason:  "expected DIVERGED transition after a divergent Quorum majority stages a different claim",
-		},
-		ExpectedLog{
-			Pattern: regexp.MustCompile(`Tick service=claimer.*quorum_divergence_at_staging`),
-			Level:   LevelError,
-			Reason:  "claimer Tick wraps and re-logs the divergence-induced DIVERGED error",
-		},
-	)
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist)
 
 	app := s.deployQuorumEchoApp("echo-quorum-outvoted")
 	staleEpoch, epoch := s.prepareQuorumDivergence(
@@ -283,10 +270,13 @@ func (s *EchoQuorumSuite) TestDivergentMajorityMarksApplicationDiverged() {
 
 	status, err := readApplicationStatus(s.ctx, app.appName)
 	s.Require().NoError(err, "read app status after quorum divergence")
-	s.Require().Contains(status, "quorum_divergence_at_staging")
-
-	// DIVERGED is terminal, and disableApplication rejects terminal states.
-	s.appName = ""
+	expected := expectClaimDivergence(s.T(), app.appName, app.appAddress, app.consensusAddress,
+		model.Consensus_Quorum, staleEpoch, epoch)
+	expected.requireReason(s.T(), status)
+	expectedLogs := append([]ExpectedLog{anvilBlockOutOfRangeAllowlist}, expected.expectedLogs(true)...)
+	s.SetExpectedLogs(s.T(), expectedLogs...)
+	// Keep appName so TearDownTest disables this divergent application's
+	// monitoring before the next test begins collecting node logs.
 }
 
 func (s *EchoQuorumSuite) TestForecloseQuorumClaimBeforeAcceptanceMarksClaimForeclosed() {
