@@ -117,6 +117,8 @@ func TestStoreClaimAndProofsDoesNotLockApplicationAcrossProofBatch(t *testing.T)
 			require.Equal(t, stop, state.Application.Status)
 			require.Equal(t, model.EpochStatus_ClaimComputed, state.Epoch.Status,
 				"valid local work can commit after a concurrent stop")
+			require.True(t, claimValidated(t, repo.(*PostgresRepository), app.ID, epoch.Index),
+				"a completed validation remains qualified after the concurrent application stop")
 			require.Equal(t, epoch.Commitment, state.Epoch.Commitment)
 			storedOutput, err := repo.GetOutput(ctx, app.Name, output.Index)
 			require.NoError(t, err)

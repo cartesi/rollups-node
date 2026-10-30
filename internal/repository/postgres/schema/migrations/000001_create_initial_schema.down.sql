@@ -59,6 +59,7 @@ DROP FUNCTION IF EXISTS "enforce_input_completion_immutability";
 
 DROP TRIGGER IF EXISTS "epoch_status_transition_check" ON "epoch";
 DROP TRIGGER IF EXISTS "epoch_set_updated_at" ON "epoch";
+DROP INDEX IF EXISTS "epoch_unvalidated_idx";
 DROP INDEX IF EXISTS "epoch_status_idx";
 DROP INDEX IF EXISTS "epoch_last_block_idx";
 DROP INDEX IF EXISTS "epoch_unreconciled_idx";

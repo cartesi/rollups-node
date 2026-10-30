@@ -29,7 +29,7 @@ func TestGetColumnForEvent(t *testing.T) {
 		{MonitoredEvent_PartialBondRefund, table.Application.LastTournamentCheckBlock},
 		{MonitoredEvent_BondRecovered, table.Application.LastTournamentCheckBlock},
 		{MonitoredEvent_ClaimSubmitted, nil},
-		{MonitoredEvent_ClaimAccepted, nil},
+		{MonitoredEvent_ClaimAccepted, table.Application.LastClaimCheckBlock},
 		{MonitoredEvent_Foreclosure, nil},
 		{MonitoredEvent_Withdrawal, nil},
 		{MonitoredEvent_AccountsDriveMerkleRootProved, nil},

@@ -983,14 +983,17 @@ func (s *ApplicationSuite) TestEventLastCheckBlock() {
 			s.Equal(uint64(30), block)
 		}
 
-		// ClaimSubmitted and ClaimAccepted should return errors
+		// Submitted votes do not have an independent claim cursor.
 		_, err = s.Repo.GetEventLastCheckBlock(
 			s.Ctx, app.ID, MonitoredEvent_ClaimSubmitted)
 		s.Require().Error(err)
 
-		_, err = s.Repo.GetEventLastCheckBlock(
-			s.Ctx, app.ID, MonitoredEvent_ClaimAccepted)
-		s.Require().Error(err)
+		const claimBlock = uint64(40)
+		err = s.Repo.UpdateEventLastCheckBlock(s.Ctx, []int64{app.ID}, MonitoredEvent_ClaimAccepted, claimBlock)
+		s.Require().NoError(err)
+		block, err = s.Repo.GetEventLastCheckBlock(s.Ctx, app.ID, MonitoredEvent_ClaimAccepted)
+		s.Require().NoError(err)
+		s.Equal(claimBlock, block)
 	})
 
 	s.Run("UpdateMultipleAppIDs", func() {

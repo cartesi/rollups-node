@@ -72,6 +72,13 @@ func (s *Service) Tick(ctx context.Context) (reschedule bool, err error) {
 	if err != nil {
 		return false, err
 	}
+	if s.claimObserver != nil {
+		reschedule, err = s.claimObserver.observe(ctx, block.Uint64())
+		if err != nil {
+			return false, err
+		}
+	}
+
 	s.consensusAddressChecks = map[consensusAddressCheckKey]error{}
 	defer func() { s.consensusAddressChecks = nil }()
 	for kind := claimSubmitPage; kind <= claimAcceptPage; kind++ {

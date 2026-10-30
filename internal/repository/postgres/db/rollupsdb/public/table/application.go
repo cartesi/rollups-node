@@ -41,6 +41,7 @@ type applicationTable struct {
 	ProblemInputIndex                 postgres.ColumnFloat
 	LastEpochCheckBlock               postgres.ColumnFloat
 	LastInputCheckBlock               postgres.ColumnFloat
+	LastClaimCheckBlock               postgres.ColumnFloat
 	LastOutputCheckBlock              postgres.ColumnFloat
 	LastTournamentCheckBlock          postgres.ColumnFloat
 	LastForecloseCheckBlock           postgres.ColumnFloat
@@ -119,6 +120,7 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		ProblemInputIndexColumn                 = postgres.FloatColumn("problem_input_index")
 		LastEpochCheckBlockColumn               = postgres.FloatColumn("last_epoch_check_block")
 		LastInputCheckBlockColumn               = postgres.FloatColumn("last_input_check_block")
+		LastClaimCheckBlockColumn               = postgres.FloatColumn("last_claim_check_block")
 		LastOutputCheckBlockColumn              = postgres.FloatColumn("last_output_check_block")
 		LastTournamentCheckBlockColumn          = postgres.FloatColumn("last_tournament_check_block")
 		LastForecloseCheckBlockColumn           = postgres.FloatColumn("last_foreclose_check_block")
@@ -132,9 +134,9 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		AccountsDriveMerkleRootColumn           = postgres.ByteaColumn("accounts_drive_merkle_root")
 		CreatedAtColumn                         = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn                         = postgres.TimestampzColumn("updated_at")
-		allColumns                              = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, ProblemEpochIndexColumn, ProblemKindColumn, ProblemInputIndexColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns                          = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, ProblemEpochIndexColumn, ProblemKindColumn, ProblemInputIndexColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
-		defaultColumns                          = postgres.ColumnList{ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, EnabledColumn, StatusColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ForecloseBlockColumn, AccountsDriveProvedBlockColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns                              = postgres.ColumnList{IDColumn, NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, ProblemEpochIndexColumn, ProblemKindColumn, ProblemInputIndexColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastClaimCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns                          = postgres.ColumnList{NameColumn, IapplicationAddressColumn, IconsensusAddressColumn, IinputboxAddressColumn, IinputboxBlockColumn, TemplateHashColumn, TemplateURIColumn, EpochLengthColumn, ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, ConsensusTypeColumn, EnabledColumn, StatusColumn, ReasonColumn, ProblemEpochIndexColumn, ProblemKindColumn, ProblemInputIndexColumn, LastEpochCheckBlockColumn, LastInputCheckBlockColumn, LastClaimCheckBlockColumn, LastOutputCheckBlockColumn, LastTournamentCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ProcessedInputsColumn, ForecloseBlockColumn, ForecloseTransactionColumn, AccountsDriveProvedBlockColumn, AccountsDriveProvedTransactionColumn, AccountsDriveMerkleRootColumn, CreatedAtColumn, UpdatedAtColumn}
+		defaultColumns                          = postgres.ColumnList{ClaimStagingPeriodColumn, WithdrawalGuardianColumn, WithdrawalLog2LeavesPerAccountColumn, WithdrawalLog2MaxNumOfAccountsColumn, WithdrawalAccountsDriveStartIndexColumn, WithdrawalOutputBuilderColumn, EnabledColumn, StatusColumn, LastClaimCheckBlockColumn, LastForecloseCheckBlockColumn, LastAccountsDriveProvedCheckBlockColumn, LastWithdrawalCheckBlockColumn, ForecloseBlockColumn, AccountsDriveProvedBlockColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
 	return applicationTable{
@@ -165,6 +167,7 @@ func newApplicationTableImpl(schemaName, tableName, alias string) applicationTab
 		ProblemInputIndex:                 ProblemInputIndexColumn,
 		LastEpochCheckBlock:               LastEpochCheckBlockColumn,
 		LastInputCheckBlock:               LastInputCheckBlockColumn,
+		LastClaimCheckBlock:               LastClaimCheckBlockColumn,
 		LastOutputCheckBlock:              LastOutputCheckBlockColumn,
 		LastTournamentCheckBlock:          LastTournamentCheckBlockColumn,
 		LastForecloseCheckBlock:           LastForecloseCheckBlockColumn,

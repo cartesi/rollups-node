@@ -665,7 +665,10 @@ func getColumnForEvent(event model.MonitoredEvent) (postgres.ColumnFloat, error)
 		model.MonitoredEvent_MatchCreated, model.MonitoredEvent_MatchDeleted, model.MonitoredEvent_NewInnerTournament,
 		model.MonitoredEvent_LeafMatchSealed, model.MonitoredEvent_PartialBondRefund, model.MonitoredEvent_BondRecovered:
 		return table.Application.LastTournamentCheckBlock, nil
-	case model.MonitoredEvent_ClaimSubmitted, model.MonitoredEvent_ClaimAccepted,
+	case model.MonitoredEvent_ClaimAccepted:
+		// This safe cursor covers both staged and accepted claims.
+		return table.Application.LastClaimCheckBlock, nil
+	case model.MonitoredEvent_ClaimSubmitted,
 		model.MonitoredEvent_Foreclosure, model.MonitoredEvent_Withdrawal, model.MonitoredEvent_AccountsDriveMerkleRootProved:
 		// These events use their own claim reconciliation or atomic marker writes.
 	}

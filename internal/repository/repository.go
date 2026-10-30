@@ -398,8 +398,19 @@ type NodeConfigReader interface {
 	LoadNodeConfigRaw(ctx context.Context, key string) (rawJSON []byte, createdAt, updatedAt time.Time, err error)
 }
 
+// ClaimRoots is the result of one coherent local prefix read. Ready requires
+// input coverage and validation of every stored predecessor, including CF rows.
+type ClaimRoots struct {
+	Ready       bool
+	MachineHash common.Hash
+	OutputsRoot common.Hash
+	ReasonClass string // Stable warning class; numeric details belong in Reason.
+	Reason      string
+}
+
 // TODO: migrate ClaimRow -> Application + Epoch and use the other interfaces
 type ClaimerRepository interface {
+	ReadClaimRoots(ctx context.Context, appID int64, covered uint64) (ClaimRoots, error)
 	SelectClaimsToSubmitPage(ctx context.Context, cursor ClaimCursor, limit uint64) (ClaimPage, error)
 	SelectClaimsToStagePage(ctx context.Context, cursor ClaimCursor, limit uint64) (ClaimPage, error)
 	SelectClaimsToAcceptPage(ctx context.Context, cursor ClaimCursor, limit uint64) (ClaimPage, error)
