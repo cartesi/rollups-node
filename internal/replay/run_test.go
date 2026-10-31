@@ -188,7 +188,9 @@ func TestRunSelectsReplaySummaryByTypedAddress(t *testing.T) {
 
 func TestRunFullPRTComputesHashes(t *testing.T) {
 	record := replayRecords(1)[0]
-	record.StateHashes = []model.ReplayStateHash{{MachineHash: *record.Input.MachineHash, Repetitions: 1 << 24}}
+	record.StateHashes = []model.ReplayStateHash{{
+		MachineHash: model.FinalStateEntry(*record.Input.MachineHash), Repetitions: model.InputHashCollectionCapacity,
+	}}
 	source := &fakeSource{
 		summary: model.ReplaySummary{ApplicationID: 7, ProcessedInputs: 1, Consensus: model.Consensus_PRT},
 		records: []*model.ReplayRecord{record},
@@ -274,7 +276,7 @@ func TestRunInvalidOutputsRoot(t *testing.T) {
 			record := replayRecords(1)[0]
 			record.Input.Status = storedStatus
 			record.StateHashes = []model.ReplayStateHash{{
-				MachineHash: *record.Input.MachineHash,
+				MachineHash: model.FinalStateEntry(*record.Input.MachineHash),
 				Repetitions: model.InputHashCollectionCapacity,
 			}}
 			source := &fakeSource{

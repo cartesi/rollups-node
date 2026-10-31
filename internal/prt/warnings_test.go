@@ -46,6 +46,7 @@ func TestTournamentObservationWarnsOnlyForActiveDisputes(t *testing.T) {
 					if update {
 						require.NoError(t, s.refreshTournament(t.Context(), app, epoch, RootLevel, adapter, tournament, 20))
 					} else {
+						adapter.On("BondValue", mock.Anything).Return(big.NewInt(1), nil).Once()
 						_, err := s.readTournament(t.Context(), app, epoch, RootLevel, nil, nil, tournament.Address, adapter, 2, 20)
 						require.NoError(t, err)
 					}

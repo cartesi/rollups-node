@@ -11,6 +11,9 @@ import (
 	"math/bits"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
 
@@ -18,8 +21,11 @@ import (
 type RemoteMachineInterface interface {
 	SetTimeout(timeoutMs int64) error
 	Load(dir string, runtimeConfig string) error
+	GetInitialConfig() (string, error)
 	Run(mcycleEnd uint64) (emulator.BreakReason, error)
 	GetRootHash() (emulator.Hash, error)
+	GetNodeHash(address uint64, log2Size int32) (emulator.Hash, error)
+	GetUarchPristineHash() (emulator.Hash, error)
 	GetProof(address uint64, log2TargetSize, log2RootSize int32) (string, error)
 	ReadReg(reg emulator.RegID) (uint64, error)
 	SendCmioResponse(reason uint16, data []byte, revertRootHash *emulator.Hash) error
@@ -103,12 +109,46 @@ func (p *proofJSON) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func NewLibCartesiBackend(address string, timeout time.Duration) (Backend, string, uint32, error) {
-	// Keep this defensive check even though the advancer validates the constants
-	// at startup. Other callers can construct a backend directly.
-	if err := ValidateEmulatorComputationHashLimits(); err != nil {
-		return nil, "", 0, err
+// EmulatorIdentity reports compiled-header and linked-library identity facts.
+type EmulatorIdentity struct {
+	HeaderMarchID          uint64
+	RuntimeMarchID         uint64
+	UarchPristineStateHash common.Hash
+}
+
+// LinkedEmulatorIdentity reads all identity facts, retaining available values and independent read errors.
+func LinkedEmulatorIdentity() (EmulatorIdentity, error) {
+	marchID, marchErr := emulator.DefaultMarchID()
+	pristine, pristineErr := emulator.GetUarchPristineHash()
+	identity := EmulatorIdentity{
+		HeaderMarchID:          emulator.MarchID,
+		RuntimeMarchID:         marchID,
+		UarchPristineStateHash: common.Hash(pristine),
 	}
+	if marchErr != nil {
+		marchErr = fmt.Errorf("could not read linked emulator runtime marchid: %w", marchErr)
+	}
+	if pristineErr != nil {
+		pristineErr = fmt.Errorf("could not read linked emulator pristine uarch hash: %w", pristineErr)
+	}
+	return identity, errors.Join(marchErr, pristineErr)
+}
+
+// ValidateEmulatorMarchID checks the compiled header and linked runtime architecture.
+func ValidateEmulatorMarchID() error {
+	if err := model.CheckMarchID("emulator header", emulator.MarchID); err != nil {
+		return err
+	}
+	marchID, err := emulator.DefaultMarchID()
+	if err != nil {
+		return fmt.Errorf("could not read linked emulator runtime marchid: %w", err)
+	}
+	return model.CheckMarchID("linked emulator runtime", marchID)
+}
+
+// NewLibCartesiBackend starts a server. Direct callers must first validate
+// SDK architecture and computation-hash limits with the exported validators.
+func NewLibCartesiBackend(address string, timeout time.Duration) (Backend, string, uint32, error) {
 	rm, address, pid, err := emulator.SpawnServer(address, timeout)
 	if err != nil {
 		return nil, address, pid, err
@@ -175,6 +215,44 @@ func (e *LibCartesiBackend) Load(dir string, runtimeConfig string, timeout time.
 	return e.inner.Load(dir, runtimeConfig)
 }
 
+func (e *LibCartesiBackend) HashFunction(timeout time.Duration) (string, error) {
+	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
+		return "", fmt.Errorf("failed to set operation timeout: %w", err)
+	}
+	config, err := e.inner.GetInitialConfig()
+	if err != nil {
+		return "", fmt.Errorf("failed to get initial configuration: %w", err)
+	}
+	var initial struct {
+		HashTree struct {
+			HashFunction string `json:"hash_function"`
+		} `json:"hash_tree"`
+	}
+	if err := json.Unmarshal([]byte(config), &initial); err != nil {
+		return "", fmt.Errorf("failed to decode initial configuration: %w", err)
+	}
+	return initial.HashTree.HashFunction, nil
+}
+
+func (e *LibCartesiBackend) MachineIdentity(timeout time.Duration) (Identity, error) {
+	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
+		return Identity{}, fmt.Errorf("failed to set operation timeout: %w", err)
+	}
+	marchID, err := e.inner.ReadReg(emulator.REG_MARCHID)
+	if err != nil {
+		return Identity{}, fmt.Errorf("failed to read loaded machine marchid: %w", err)
+	}
+	uarch, err := e.inner.GetNodeHash(emulator.UarchStateStartAddress, emulator.UarchStateLog2Size)
+	if err != nil {
+		return Identity{}, fmt.Errorf("failed to read loaded uarch state hash: %w", err)
+	}
+	pristine, err := e.inner.GetUarchPristineHash()
+	if err != nil {
+		return Identity{}, fmt.Errorf("failed to read server pristine uarch hash: %w", err)
+	}
+	return Identity{MarchID: marchID, UarchStateHash: uarch, UarchPristineStateHash: pristine}, nil
+}
+
 func (e *LibCartesiBackend) Run(mcycleEnd uint64, timeout time.Duration) (BreakReason, error) {
 	if err := e.inner.SetTimeout(timeout.Milliseconds()); err != nil {
 		return Failed, fmt.Errorf("failed to set operation timeout: %w", err)
@@ -226,7 +304,7 @@ func (e *LibCartesiBackend) IsAtManualYield(timeout time.Duration) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	return iflagsY == uint64(emulator.ManualYieldReasonAccepted), nil
+	return iflagsY != 0, nil
 }
 
 func (e *LibCartesiBackend) ReadMCycle(timeout time.Duration) (uint64, error) {

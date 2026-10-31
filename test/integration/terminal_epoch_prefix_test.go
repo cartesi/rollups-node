@@ -367,6 +367,12 @@ func (s *EchoPrtSuite) TestEarlierEpochCompletesAfterLaterMachineHalt() {
 	s.Require().NoError(err)
 	s.Require().Nil(stopped.Commitment)
 	s.Require().Nil(stopped.ClaimTransactionHash)
+	app, err = repo.GetApplication(s.ctx, s.appName)
+	s.Require().NoError(err)
+	s.Require().NotNil(app.Reason)
+	root, closeBlock := prtProtectionEnd(s.ctx, s.T(), s.ethClient, app.IConsensusAddress, terminal.EpochIndex)
+	requirePrtProtectionLogs(s.ctx, s.T(), &s.LogChecker, prtProtectionStopLog(s.appName, app.IApplicationAddress,
+		terminal.EpochIndex, root, closeBlock, *app.Reason, prtPinnedClockSource))
 }
 
 // The real emulator returns a malformed accepted-root length in epoch 1.
@@ -417,4 +423,9 @@ func (s *EchoPrtSuite) TestEarlierEpochCompletesAfterInvalidOutputsRoot() {
 	s.Require().Equal(terminal.EpochIndex, stopped.Problem.EpochIndex)
 	s.Require().Nil(stopped.Epoch.Commitment)
 	s.Require().Nil(stopped.Epoch.ClaimTransactionHash)
+	app := stopped.Application
+	s.Require().NotNil(app.Reason)
+	problemRoot, closeBlock := prtProtectionEnd(s.ctx, s.T(), s.ethClient, app.IConsensusAddress, terminal.EpochIndex)
+	requirePrtProtectionLogs(s.ctx, s.T(), &s.LogChecker, prtProtectionStopLog(s.appName, app.IApplicationAddress,
+		terminal.EpochIndex, problemRoot, closeBlock, *app.Reason, prtPinnedClockSource))
 }

@@ -25,6 +25,8 @@ func TestDeliveryFirstRootDiscoveredAfterEmptyObserveDoesNotNeedAnotherBlock(t *
 	f.repo.publishedRoots = nil
 	f.d.repository = &initialRootRepository{f.repo}
 	f.checkpoint.epochs()
+	f.consensus.On("GetCurrentSealedEpoch", protectionOpts(f.facts)).Return(CurrentSealedEpoch{}, nil).Once()
+	expectProtectionReads(t, f.factory, f.consensus, f.facts)
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.facts))
 	require.Zero(t, f.app.LastTournamentCheckBlock, "an empty initial observation cannot suppress same-head root discovery")
 	require.Empty(t, f.repo.windows)
@@ -47,10 +49,14 @@ func TestDeliveryFirstRootDiscoveredAfterEmptyObserveDoesNotNeedAnotherBlock(t *
 	adapter := &tournamentAdapterMock{}
 	f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil)
 	opts := mock.MatchedBy(resultCallOptsAtBlock(f.facts.Number))
-	adapter.On("Descriptor", opts).Return(TournamentDescriptor{
+	descriptor := TournamentDescriptor{
 		BaseCycle: big.NewInt(0), Kind: model.TournamentKindLeaf, Level: 0,
-		Height: model.Log2EpochComputationHashLeafCount, StartInstant: f.facts.Number, Allowance: 300,
-	}, nil).Twice()
+		Height:       model.Log2EpochComputationHashLeafCount,
+		Log2Stride:   model.Log2RootTournamentStride,
+		StartInstant: f.facts.Number, Allowance: 300,
+	}
+	adapter.On("Descriptor", opts).Return(descriptor, nil).Twice()
+	adapter.On("BondValue", opts).Return(big.NewInt(1), nil).Once()
 	adapter.On("Standing", opts).Return(TournamentStanding{
 		State: model.TournamentStandingAwaitingClosure, AcceptsJoins: true,
 	}, nil).Twice()
@@ -60,6 +66,7 @@ func TestDeliveryFirstRootDiscoveredAfterEmptyObserveDoesNotNeedAnotherBlock(t *
 	})).Return(&TournamentEvents{}, nil).Once()
 	adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 	f.checkpoint.emptyParticipants(f.epoch, address)
+	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.facts))
 	require.Len(t, f.repo.windows, 1)
 	window := f.repo.windows[0]
@@ -117,10 +124,14 @@ func TestDeliveryInitialRootIsObservedAtItsSealingBlockWithoutLocalProof(t *test
 				adapter := &tournamentAdapterMock{}
 				f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()
 				opts := mock.MatchedBy(resultCallOptsAtBlock(f.facts.Number))
-				adapter.On("Descriptor", opts).Return(TournamentDescriptor{
+				descriptor := TournamentDescriptor{
 					BaseCycle: big.NewInt(0), Kind: model.TournamentKindLeaf, Level: 0,
-					Height: model.Log2EpochComputationHashLeafCount, StartInstant: f.facts.Number, Allowance: 300,
-				}, nil).Once()
+					Height:       model.Log2EpochComputationHashLeafCount,
+					Log2Stride:   model.Log2RootTournamentStride,
+					StartInstant: f.facts.Number, Allowance: 300,
+				}
+				adapter.On("Descriptor", opts).Return(descriptor, nil).Once()
+				adapter.On("BondValue", opts).Return(big.NewInt(1), nil).Once()
 				adapter.On("Standing", opts).Return(TournamentStanding{
 					State: model.TournamentStandingAwaitingClosure, AcceptsJoins: true,
 				}, nil).Once()

@@ -20,7 +20,7 @@ func (s *delivery) tick(ctx context.Context) (err error) {
 	defer func() {
 		if txsender.HardFailure(err) {
 			s.stopPublication(err)
-			s.reportHardPublicationFailure(err)
+			s.reportHardPublicationFailure(ctx, err)
 		}
 	}()
 	if s.publicationStopped() {
@@ -91,7 +91,7 @@ func (s *deliveryPass) Next(ctx context.Context, block txsender.BlockRef,
 	var heldEligibility txsender.Eligibility
 	if current != nil && !current.Neutral {
 		held, heldEligibility, heldErr = s.decide(ctx, block, current.Action)
-		if heldErr != nil {
+		if heldErr != nil && (txsender.PassInvalid(heldErr) || !txsender.WaitOnly(heldErr) || ctx.Err() != nil) {
 			return txsender.Decision[actionID]{}, heldErr
 		}
 	}
@@ -120,9 +120,8 @@ func (s *deliveryPass) Next(ctx context.Context, block txsender.BlockRef,
 		if time.Now().Before(s.candidateCooldown[candidate.Key]) {
 			continue
 		}
-		// Useful held work keeps its nonce unless a verified join has an earlier
-		// deadline. Unknown held evidence does not itself authorize substitution.
-		if current != nil && !current.Neutral && heldEligibility != txsender.Obsolete {
+		// Healthy held work keeps its nonce unless a verified join has an earlier deadline.
+		if current != nil && !current.Neutral && heldErr == nil && heldEligibility != txsender.Obsolete {
 			if candidate.Key == current.Action || candidate.Deadline == 0 ||
 				current.Action.Deadline != 0 && candidate.Deadline >= current.Action.Deadline {
 				continue
@@ -140,6 +139,9 @@ func (s *deliveryPass) Next(ctx context.Context, block txsender.BlockRef,
 		return txsender.Publish(held.Key, held.Request), nil
 	}
 	if current != nil && !current.Neutral {
+		if heldErr != nil {
+			return txsender.Decision[actionID]{}, heldErr
+		}
 		if heldEligibility == txsender.Obsolete {
 			return txsender.Cancel[actionID]("current PRT action is no longer useful"), nil
 		}

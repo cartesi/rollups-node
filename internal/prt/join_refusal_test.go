@@ -53,7 +53,9 @@ func TestJoinPlanningRefusalsWarnWithApplicationAndTournamentContext(t *testing.
 			adapter := &tournamentAdapterMock{}
 			adapter.On("CommitmentStanding", mock.Anything, [32]byte(*f.epoch.Commitment)).Return(CommitmentStanding{}, nil)
 			descriptor := TournamentDescriptor{
-				Height: model.Log2EpochComputationHashLeafCount, StartInstant: 100, Allowance: 30,
+				Height:       model.Log2EpochComputationHashLeafCount,
+				Log2Stride:   model.Log2RootTournamentStride,
+				StartInstant: 100, Allowance: 30,
 			}
 			if refusal == "geometry" {
 				descriptor.Height++

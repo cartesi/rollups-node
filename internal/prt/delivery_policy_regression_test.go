@@ -43,6 +43,7 @@ func TestInconsistentConsensusSnapshotDoesNotPublishObservation(t *testing.T) {
 	f.consensus.On("GetCurrentSealedEpoch", mock.Anything).Return(view.sealed, nil).Once()
 	f.consensus.On("CanStageTournamentResult", mock.Anything).Return(view.stage, nil).Once()
 	f.consensus.On("CanAcceptStagedTournamentResult", mock.Anything).Return(view.accept, nil).Once()
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), f.epoch)
 	err := f.d.observeApplication(t.Context(), f.app, observerFacts(100))
 	require.ErrorIs(t, err, txsender.ErrInconclusive)
 	require.Contains(t, err.Error(), f.app.Name)

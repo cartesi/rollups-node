@@ -150,7 +150,7 @@ func TestTournamentObservationHealthKeepsHealthyApplicationsRunning(t *testing.T
 	healthy.IConsensusAddress = common.HexToAddress("0x998")
 	f.repo.apps = append(f.repo.apps, &healthy)
 	ready := resultTestSnapshot(f.epoch, false)
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock(healthy.IConsensusAddress)
 	consensus.On("GetCurrentSealedEpoch", mock.Anything).Return(ready.sealed, nil)
 	consensus.On("CanStageTournamentResult", mock.Anything).Return(ready.stage, nil)
 	consensus.On("CanAcceptStagedTournamentResult", mock.Anything).Return(ready.accept, nil)
@@ -166,6 +166,8 @@ func TestTournamentObservationHealthKeepsHealthyApplicationsRunning(t *testing.T
 	f.consensus.On("TournamentLevelCount", mock.Anything).Return(uint64(0), errors.New("invalid descriptor"))
 	for head := uint64(101); head < 107; head++ {
 		tickHead(client, head)
+		expectProtectionReads(t, f.factory, f.consensus, observerFacts(head), f.epoch)
+		expectProtectionReads(t, f.factory, consensus, observerFacts(head))
 		_, err := f.d.Tick(t.Context())
 		require.ErrorContains(t, err, "invalid descriptor")
 		require.Equal(t, uint64(100), healthy.LastTournamentCheckBlock, "a healthy app with no tournament has no new coverage to record")

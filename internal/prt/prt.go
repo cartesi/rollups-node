@@ -20,15 +20,14 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/appstatus"
 	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/prtprotection"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/txsender"
-	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 type prtRepository interface {
 	repository.DeliveryRepository
+	repository.DeploymentRepository
 	GetApplication(ctx context.Context, address string) (*Application, error)
 	ListApplications(ctx context.Context, f repository.ApplicationFilter,
 		p repository.Pagination, descending bool) ([]*Application, uint64, error)
@@ -47,6 +46,7 @@ type prtRepository interface {
 	UpdateEpochWithAcceptedClaim(ctx context.Context, applicationID int64, index uint64, txHash *common.Hash) error
 
 	GetTournament(ctx context.Context, nameOrAddress string, address string) (*Tournament, error)
+	GetMatch(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress, idHash string) (*Match, error)
 	ListTournaments(ctx context.Context, nameOrAddress string, f repository.TournamentFilter,
 		p repository.Pagination, descending bool) ([]*Tournament, uint64, error)
 	GetCommitment(ctx context.Context, nameOrAddress string, epochIndex uint64,
@@ -140,11 +140,17 @@ func getAllSubTournaments(
 }
 
 func (s *Service) setApplicationDiverged(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetDivergedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
+	reason := fmt.Sprintf(reasonFmt, args...)
+	err := appstatus.SetDiverged(ctx, s.Logger, s.repository, app, reason)
+	prtprotection.ReportStop(ctx, s.Logger, s.repository, app, 0, errors.New(reason))
+	return err
 }
 
 func (s *Service) setApplicationCorrupted(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetCorruptedf(ctx, s.Logger, s.repository, app, reasonFmt, args...)
+	reason := fmt.Sprintf(reasonFmt, args...)
+	err := appstatus.SetCorrupted(ctx, s.Logger, s.repository, app, reason)
+	prtprotection.ReportStop(ctx, s.Logger, s.repository, app, 0, errors.New(reason))
+	return err
 }
 
 func (s *Service) readTournament(
@@ -193,6 +199,17 @@ func (s *Service) readTournament(
 		Kind:                    descriptor.Kind,
 		StartInstant:            descriptor.StartInstant,
 		Allowance:               descriptor.Allowance,
+	}
+	bond, err := adapter.BondValue(callOpts)
+	if err != nil {
+		return nil, fmt.Errorf("reading tournament bond: %w", err)
+	}
+	t.BondValue, err = Uint256FromBig(bond)
+	if err != nil {
+		return nil, fmt.Errorf("tournament %s bond: %w", tournamentAddress, err)
+	}
+	if t.BondValue.ToBig().Sign() == 0 {
+		return nil, fmt.Errorf("tournament %s has zero bond", tournamentAddress)
 	}
 	if err := s.updateTournamentStanding(ctx, app, epoch, level, adapter, t, mostRecentBlock); err != nil {
 		return nil, err
@@ -399,6 +416,13 @@ func (s *Service) reconcileAcceptedEpochs(
 		if epoch == nil {
 			continue
 		}
+		state, _, gateErr := s.deploymentVerdictState(ctx, app)
+		if gateErr != nil {
+			return true, gateErr
+		}
+		if !deploymentAllowsVerdict(state) {
+			return true, nil
+		}
 		if epoch.TournamentAddress == nil || epoch.Commitment == nil ||
 			epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
 			return true, s.setApplicationCorrupted(ctx, app,
@@ -419,76 +443,31 @@ func (s *Service) reconcileAcceptedEpochs(
 			tournament.Snapshot.AsOfBlock > mostRecentBlock {
 			return false, nil
 		}
-		if tournament.Snapshot.WinnerCommitment != nil && *tournament.Snapshot.WinnerCommitment != *epoch.Commitment {
+		if tournament.Snapshot.FinalStateHash != nil && *tournament.Snapshot.FinalStateHash != *epoch.MachineHash {
 			return true, s.setApplicationDiverged(ctx, app,
-				"Epoch %d has inconsistent commitment between off-chain (%s) and on-chain (%s)",
-				epoch.Index, epoch.Commitment, tournament.Snapshot.WinnerCommitment)
+				"Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
+				epoch.Index, epoch.MachineHash, tournament.Snapshot.FinalStateHash)
 		}
 		if epoch.ClaimTransactionHash == nil { // no accepting EpochSealed event observed yet
 			break
 		}
 
-		receipt, err := s.client.TransactionReceipt(ctx, *epoch.ClaimTransactionHash)
-		if err != nil {
-			s.logErrorUnlessShutdown(ctx, "failed to fetch transaction receipt for epoch", err, "application", app.Name,
-				"epoch", epoch.Index, "tx", epoch.ClaimTransactionHash)
-			return true, err
-		}
-		if receipt == nil {
-			return true, fmt.Errorf("epoch %d: acceptance transaction receipt is nil", epoch.Index)
-		}
-		if receipt.TxHash != *epoch.ClaimTransactionHash {
-			return true, fmt.Errorf("epoch %d: acceptance receipt transaction hash %s differs from observed hash %s",
-				epoch.Index, receipt.TxHash, epoch.ClaimTransactionHash)
-		}
-		receiptBlock, err := checkedUint64(receipt.BlockNumber, "acceptance receipt block")
-		if err != nil {
-			return true, fmt.Errorf("epoch %d: %w", epoch.Index, err)
-		}
 		observedBlock := min(mostRecentBlock, tournament.Snapshot.AsOfBlock)
-		// A retired root's winner is immutable. Its older certificate remains
-		// sufficient while DaveConsensus stages and accepts the result later.
 		if tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, mostRecentBlock) {
 			observedBlock = mostRecentBlock
 		}
-		if receiptBlock > observedBlock {
-			s.Logger.Debug("Acceptance transaction is newer than the published tournament window",
-				"application", app.Name,
-				"epoch", epoch.Index,
-				"tx", epoch.ClaimTransactionHash,
-				"receipt_block", receiptBlock,
-				"snapshot_block", observedBlock)
+		event, err := s.readEpochAcceptance(ctx, app, epoch, consensus, observedBlock)
+		if err != nil || event == nil {
+			return true, err
+		}
+
+		state, _, gateErr = s.deploymentVerdictState(ctx, app)
+		if gateErr != nil {
+			return true, gateErr
+		}
+		if !deploymentAllowsVerdict(state) {
 			return true, nil
 		}
-		if err := s.validateAcceptanceReceipt(ctx, receipt); err != nil {
-			return true, fmt.Errorf("epoch %d: %w", epoch.Index, err)
-		}
-
-		if receipt.Status != types.ReceiptStatusSuccessful {
-			return true, fmt.Errorf("epoch %d: EpochSealed transaction hash points to failed transaction", epoch.Index)
-		}
-
-		var event *idaveconsensus.IDaveConsensusEpochSealed
-		expectedEventEpoch := new(big.Int).SetUint64(epoch.Index)
-		expectedEventEpoch.Add(expectedEventEpoch, common.Big1)
-		for _, vLog := range receipt.Logs {
-			if vLog == nil || vLog.Address != app.IConsensusAddress ||
-				vLog.TxHash != *epoch.ClaimTransactionHash || vLog.BlockNumber != receiptBlock ||
-				vLog.BlockHash != receipt.BlockHash || vLog.Removed {
-				continue
-			}
-			candidate, parseErr := consensus.ParseEpochSealed(*vLog)
-			if parseErr != nil || candidate == nil || candidate.EpochNumber == nil ||
-				candidate.EpochNumber.Cmp(expectedEventEpoch) != 0 {
-				continue // Skip logs that don't match
-			}
-			event = candidate
-			break
-		}
-		if event == nil {
-			return true, fmt.Errorf("%w: epoch %d: failed to find EpochSealed event in receipt logs", txsender.ErrInconclusive, epoch.Index)
-		}
-
 		if *epoch.MachineHash != event.InitialMachineStateHash {
 			return true, s.setApplicationDiverged(ctx, app,
 				"Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
@@ -523,7 +502,7 @@ func (s *Service) reconcileAcceptedEpochs(
 func (s *Service) gatherTournamentData(
 	ctx context.Context, app *Application, epoch *Epoch, level TournamentLevel,
 	parentMatchIDHash *common.Hash, parentTournamentAddress *common.Address,
-	tournamentAddress common.Address, levelCount, mostRecentBlock uint64,
+	tournamentAddress common.Address, levelCount, mostRecentBlock uint64, creation *TournamentCreation, parent *Match,
 ) ([]*repository.TournamentEventBatch, error) {
 	t, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), tournamentAddress.Hex())
 	if err != nil {
@@ -560,6 +539,17 @@ func (s *Service) gatherTournamentData(
 				"level", level, "application", app.Name,
 				"epoch", epoch.Index, "tournament_address", tournamentAddress.String())
 			return nil, err
+		}
+	}
+	if created {
+		if level == RootLevel && t.StartInstant != epoch.LastBlock {
+			return nil, fmt.Errorf("root creation start does not match observed epoch seal block")
+		}
+		if level != RootLevel {
+			if err := applyTournamentCreationEvent(t, creation); err != nil {
+				return nil, err
+			}
+			t.ContestedFinalStateOne, t.ContestedFinalStateTwo = creation.ContestedFinalStateOne, creation.ContestedFinalStateTwo
 		}
 	}
 	if !created {
@@ -623,6 +613,9 @@ func (s *Service) gatherTournamentData(
 		if countErr != nil {
 			return nil, fmt.Errorf("reading committed tournament event counts: %w", countErr)
 		}
+		if err := validateStoredStandingCount(counts); err != nil {
+			return nil, err
+		}
 		previousCounts = structuralEventCounts(counts)
 	}
 	currentCounts, err := adapter.StructuralEventCounts(pinnedCallOpts(ctx, endBlock))
@@ -635,11 +628,11 @@ func (s *Service) gatherTournamentData(
 	if err := validateTournamentFinancialEvents(previousBondDisposition, t.Snapshot.BondRecovery.Disposition, events); err != nil {
 		return nil, fmt.Errorf("tournament %s: %w", tournamentAddress, err)
 	}
-	batch, err := s.tournamentEventBatch(ctx, app, epoch, t, adapter, events, endBlock)
+	batch, err := s.tournamentEventBatch(ctx, app, epoch, t, adapter, events, endBlock, parent)
 	if err != nil {
 		return nil, fmt.Errorf("projecting tournament %s events: %w", tournamentAddress, err)
 	}
-	children, err := s.gatherInnerTournamentData(ctx, app, epoch, t, events, mostRecentBlock)
+	children, err := s.gatherInnerTournamentData(ctx, app, epoch, batch, events, mostRecentBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -662,7 +655,7 @@ func tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
 	snapshot := t.Snapshot
 	if snapshot.FinishedAtBlock == 0 || snapshot.FinishedAtBlock > snapshot.AsOfBlock ||
 		snapshot.AsOfBlock > cursor || snapshot.AsOfBlock > head ||
-		(t.Level != uint64(RootLevel) && t.CreationEvent == nil) {
+		(t.Level != 0 && t.CreationEvent == nil) {
 		return false
 	}
 	switch snapshot.Standing {
@@ -678,10 +671,11 @@ func tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
 }
 
 func (s *Service) gatherInnerTournamentData(
-	ctx context.Context, app *Application, epoch *Epoch, t *Tournament, events *TournamentEvents, head uint64,
+	ctx context.Context, app *Application, epoch *Epoch, batch *repository.TournamentEventBatch, events *TournamentEvents, head uint64,
 ) ([]*repository.TournamentEventBatch, error) {
-	if t.Level+1 >= t.MaxLevel {
-		return nil, nil
+	t := batch.Tournament
+	if len(events.NewInnerTournament) > 0 && (t.Kind != TournamentKindNonLeaf || t.Level+1 >= t.MaxLevel) {
+		return nil, fmt.Errorf("child creation requires a non-leaf tournament")
 	}
 	seen := make(map[common.Address]bool)
 	var batches []*repository.TournamentEventBatch
@@ -690,45 +684,53 @@ func (s *Service) gatherInnerTournamentData(
 			return nil, fmt.Errorf("duplicate child creation for %s", event.ChildTournament)
 		}
 		seen[event.ChildTournament] = true
+		var parent *Match
+		for _, match := range batch.Matches {
+			if match.IDHash == event.MatchIdHash {
+				parent = match
+				break
+			}
+		}
+		if parent == nil {
+			return nil, fmt.Errorf("child creation has no parent match")
+		}
+		creation, err := childTournamentCreation(t, parent, event)
+		if err != nil {
+			return nil, err
+		}
 		stored, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), event.ChildTournament.Hex())
 		if err != nil {
 			return nil, err
 		}
 		if stored != nil {
 			projection := *stored
-			if err = applyTournamentCreationEvent(&projection, event); err != nil {
+			if err = applyTournamentCreationEvent(&projection, creation); err != nil {
+				return nil, err
+			}
+			if projection.ContestedFinalStateOne == nil || projection.ContestedFinalStateTwo == nil ||
+				*projection.ContestedFinalStateOne != *creation.ContestedFinalStateOne ||
+				*projection.ContestedFinalStateTwo != *creation.ContestedFinalStateTwo {
+				return nil, fmt.Errorf("child has conflicting contested states")
+			}
+			if err = validateChildContestedStates(&projection, parent); err != nil {
 				return nil, err
 			}
 			continue
 		}
 		hash := common.Hash(event.MatchIdHash)
 		children, err := s.gatherTournamentData(ctx, app, epoch, TournamentLevel(t.Level+1), &hash, &t.Address,
-			event.ChildTournament, t.MaxLevel, head)
+			event.ChildTournament, t.MaxLevel, head, creation, parent)
 		if err != nil {
 			return nil, err
 		}
 		if len(children) == 0 {
 			return nil, fmt.Errorf("new child tournament %s has no initial observation", event.ChildTournament)
 		}
-		if err = applyTournamentCreationEvent(children[0].Tournament, event); err != nil {
+		child := children[0].Tournament
+		if err = validateChildContestedStates(child, parent); err != nil {
 			return nil, err
 		}
 		batches = append(batches, children...)
 	}
 	return batches, nil
-}
-
-func applyTournamentCreationEvent(child *Tournament, event *itournament.ITournamentNewInnerTournament) error {
-	if child.Address != event.ChildTournament || child.ParentMatchIDHash == nil || *child.ParentMatchIDHash != event.MatchIdHash ||
-		child.StartInstant != event.Raw.BlockNumber {
-		return fmt.Errorf("child tournament %s descriptor does not match its creation event", child.Address)
-	}
-	creation := &TournamentCreationEvent{
-		BlockNumber: event.Raw.BlockNumber, TxHash: event.Raw.TxHash, LogIndex: uint64(event.Raw.Index),
-	}
-	if child.CreationEvent != nil && *child.CreationEvent != *creation {
-		return fmt.Errorf("child tournament %s has conflicting creation events", child.Address)
-	}
-	child.CreationEvent = creation
-	return nil
 }

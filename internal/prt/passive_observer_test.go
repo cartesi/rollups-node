@@ -73,6 +73,7 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 					f.consensus.On("CanAcceptStagedTournamentResult", opts).Return(snapshot.accept, nil).Once()
 					f.repo.On("GetEpoch", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).Return(epoch, nil).Once()
 				}
+				expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
 				err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 				require.NoError(t, err)
 				require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
@@ -86,7 +87,7 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 				if status != model.ApplicationStatus_OK {
 					// Tick must stop after observation, before any result-action
 					// query. An unexpected broadcast also fails the strict mocks.
-					f.consensus.AssertNotCalled(t, "GetCurrentSealedEpoch", mock.Anything)
+					f.consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 1)
 					f.consensus.AssertNotCalled(t, "CanStageTournamentResult", mock.Anything)
 					f.consensus.AssertNotCalled(t, "CanAcceptStagedTournamentResult", mock.Anything)
 				}
@@ -118,6 +119,9 @@ func TestForeclosedInvalidOutputsRootObservesWhileInputDrainPending(t *testing.T
 		}), uint64(100)).Return(nil).Once()
 
 	f.repo.On("HasUndrainedEpochsBeforeBlock", mock.Anything, f.app.ID, f.app.ForecloseBlock).Return(true, nil).Once()
+	f.repo.On("GetEpochCompletionState", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).
+		Return(&repository.EpochCompletionState{Application: f.app, Epoch: epoch, Problem: prtTestProblem(f.app.Status, 0)}, nil).Once()
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
 	err = f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 
 	require.NoError(t, err)
@@ -133,7 +137,7 @@ func TestForeclosedInvalidOutputsRootObservesWhileInputDrainPending(t *testing.T
 	// The strict tournament mocks permit observation only. A join or recovery
 	// broadcast would fail, as would a new latest-block read for either action.
 	f.client.AssertNotCalled(t, "BlockNumber", mock.Anything)
-	f.consensus.AssertNotCalled(t, "GetCurrentSealedEpoch", mock.Anything)
+	f.consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 1)
 }
 
 func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
@@ -160,6 +164,7 @@ func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
 	f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, epoch.Index, uint64(95)).
 		Run(func(mock.Arguments) { require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock) }).Return(nil).Once()
 
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
 	err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 	require.NoError(t, err)
 	require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
@@ -171,10 +176,11 @@ func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
 	f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
-func TestLosingRootPublishesBeforeLocalDivergence(t *testing.T) {
+func TestFalseFinalStatePublishesBeforeLocalDivergence(t *testing.T) {
 	f := newObserverCheckpointFixture(t)
 	epoch := checkpointEpoch(0, "0x100")
 	foreign := common.HexToHash("0xbad")
+	falseState := common.HexToHash("0xdead")
 	address := *epoch.TournamentAddress
 	f.epochs(epoch)
 	opts := mock.MatchedBy(resultCallOptsAtBlock(100))
@@ -182,11 +188,13 @@ func TestLosingRootPublishesBeforeLocalDivergence(t *testing.T) {
 	adapter := &tournamentAdapterMock{}
 	f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), address.Hex()).Return((*model.Tournament)(nil), nil).Once()
-	adapter.On("Descriptor", opts).Return(TournamentDescriptor{
+	descriptor := TournamentDescriptor{
 		BaseCycle: big.NewInt(0), Kind: model.TournamentKindLeaf, StartInstant: 10,
-	}, nil).Once()
+	}
+	adapter.On("Descriptor", opts).Return(descriptor, nil).Once()
+	adapter.On("BondValue", opts).Return(big.NewInt(1), nil).Once()
 	adapter.On("Standing", opts).Return(TournamentStanding{
-		State: model.TournamentStandingRootWinner, HasCandidate: true, Candidate: foreign, FinishedAt: 90,
+		State: model.TournamentStandingRootWinner, HasCandidate: true, Candidate: foreign, FinalState: falseState, FinishedAt: 90,
 	}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, model.TournamentStandingRootWinner)
 	adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
@@ -205,14 +213,17 @@ func TestLosingRootPublishesBeforeLocalDivergence(t *testing.T) {
 			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
 		}).Return(nil).Once()
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), address.Hex()).
-		Return(&model.Tournament{Snapshot: model.TournamentSnapshot{FinishedAtBlock: 90, WinnerCommitment: &foreign}}, nil).Once()
+		Return(&model.Tournament{Snapshot: model.TournamentSnapshot{
+			FinishedAtBlock: 90, WinnerCommitment: &foreign, FinalStateHash: &falseState,
+		}}, nil).Once()
 	f.repo.On("UpdateApplicationStatus", mock.Anything, f.app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 		Run(func(mock.Arguments) {
 			require.NotNil(t, published)
 			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
 		}).Return(nil).Once()
+	expectStoredProtection(t, f.repo, f.app, epoch)
 	deferActions, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
-	require.ErrorContains(t, err, "inconsistent commitment")
+	require.ErrorContains(t, err, "inconsistent machine hash")
 	require.True(t, deferActions)
 	require.Equal(t, model.ApplicationStatus_Diverged, f.app.Status)
 	require.Empty(t, f.s.delivery.sender)

@@ -3,11 +3,16 @@
 
 BEGIN;
 
-DROP TRIGGER IF EXISTS "state_hashes_set_updated_at" ON "state_hashes";
+DROP TRIGGER IF EXISTS "state_hashes_immutability_check" ON "state_hashes";
 DROP INDEX IF EXISTS "state_hashes_input_index_idx";
 DROP TABLE IF EXISTS "state_hashes";
+DROP FUNCTION IF EXISTS "enforce_state_hash_immutability";
 
 DROP TABLE IF EXISTS "bond_events";
+
+DROP TRIGGER IF EXISTS "standing_changes_set_updated_at" ON "standing_changes";
+DROP INDEX IF EXISTS "standing_changes_tournament_order_idx";
+DROP TABLE IF EXISTS "standing_changes";
 
 DROP TRIGGER IF EXISTS "match_advances_set_updated_at" ON "match_advances";
 DROP INDEX IF EXISTS "match_advances_block_number_idx";
@@ -41,12 +46,14 @@ DROP INDEX IF EXISTS "withdrawal_block_number_idx";
 DROP TABLE IF EXISTS "withdrawal";
 
 DROP TRIGGER IF EXISTS "output_set_updated_at" ON "output";
+DROP TRIGGER IF EXISTS "output_immutability_check" ON "output";
 DROP INDEX IF EXISTS "output_input_index_idx";
 DROP INDEX IF EXISTS "output_pending_voucher_idx";
 DROP INDEX IF EXISTS "output_executed_idx";
 DROP INDEX IF EXISTS "output_raw_data_address_idx";
 DROP INDEX IF EXISTS "output_raw_data_type_idx";
 DROP TABLE IF EXISTS "output";
+DROP FUNCTION IF EXISTS "enforce_output_immutability";
 
 DROP TRIGGER IF EXISTS "input_set_updated_at" ON "input";
 DROP TRIGGER IF EXISTS "input_completion_immutability_check" ON "input";
@@ -70,6 +77,8 @@ DROP FUNCTION IF EXISTS "enforce_epoch_status_transition";
 
 DROP TRIGGER IF EXISTS "execution_parameters_set_updated_at" ON "execution_parameters";
 DROP TABLE IF EXISTS "execution_parameters";
+
+DROP TABLE IF EXISTS "deployment_admission_state";
 
 DROP TRIGGER IF EXISTS "application_validate_status_transition" ON "application";
 DROP TRIGGER IF EXISTS "application_set_updated_at" ON "application";

@@ -165,6 +165,7 @@ func TestPRTObserverStagesValidPrefixAfterExecutionStop(t *testing.T) {
 			f.expectResultBoundarySnapshot(epoch, view, 100)
 			f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, epoch.Index, uint64(100)).Return(nil).Once()
 
+			expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
 			require.NoError(t, f.s.observeApplication(t.Context(), f.app, observerFacts(100)))
 			require.Equal(t, uint64(100), tournament.Snapshot.AsOfBlock)
 			require.Equal(t, model.EpochStatus_ClaimStaged, epoch.Status)
@@ -198,6 +199,7 @@ func TestPRTStopReadFailurePreservesPassiveRootObservation(t *testing.T) {
 			f.tournament(epoch, *epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
 			f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, uint64(100)).Return(nil).Once()
 
+			expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
 			err := f.s.observeApplication(t.Context(), f.app, observerFacts(100))
 
 			if fault == missingBoundaryCase {

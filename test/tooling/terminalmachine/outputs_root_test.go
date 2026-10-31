@@ -45,6 +45,7 @@ func TestInvalidOutputsRootFixtureAdvance(t *testing.T) {
 				require.NotEqual(t, before, proof.MachineHash)
 				require.Equal(t, pkgmachine.Hash{}, proof.TxBufferProof.DataBlock)
 				if collect {
+					require.Equal(t, pkgmachine.Hash(model.FinalStateEntry(proof.MachineHash)), response.FinalStateEntry)
 					require.NoError(t, model.ValidateInputHashCollectionSpan(
 						uint64(len(response.PeriodicStateHashes)), response.PaddingRepetitions))
 				}

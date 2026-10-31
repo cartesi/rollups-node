@@ -15,6 +15,8 @@ import (
 )
 
 var (
+	// ErrLockTimeout means a database lock wait exceeded its transaction-local bound.
+	ErrLockTimeout        = errors.New("database lock wait timed out")
 	ErrNotFound           = errors.New("not found")
 	ErrNoUpdate           = errors.New("update did not take effect")
 	ErrApplicationEnabled = errors.New("application must be disabled before removal")
@@ -114,10 +116,6 @@ type ReportFilter struct {
 	IndexRange *Range
 }
 
-type StateHashFilter struct {
-	EpochIndex *uint64
-}
-
 type TournamentFilter struct {
 	EpochIndex              *uint64
 	Level                   *uint64
@@ -157,7 +155,9 @@ type ApplicationRepository interface {
 	GetProcessedInputCount(ctx context.Context, nameOrAddress string) (uint64, error)
 	UpdateApplication(ctx context.Context, app *Application) error
 	UpdateApplicationEnabled(ctx context.Context, appID int64, enabled bool) error
-	EnableApplicationAndClearFailed(ctx context.Context, appID int64) error
+	// EnableApplicationAndResetDeployment atomically enables and resets deployment admission.
+	// clearFailed requires observed FAILED status and operator recovery consent.
+	EnableApplicationAndResetDeployment(ctx context.Context, appID int64, clearFailed bool) error
 	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 	// UpdateApplicationForeclosure records the one-shot Foreclosure() event
 	// and advances the foreclosure scan cursor in
@@ -278,7 +278,24 @@ type InputRepository interface {
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
 }
 
+const MaxOutputRangeRows uint64 = 65_536
+
+// EpochOutputRange describes one epoch's accepted outputs in one database snapshot.
+type EpochOutputRange struct {
+	Count uint64
+	First uint64
+	Last  uint64
+}
+
+// OutputScanFunc handles one output. rawData is valid only during the call;
+// fn must not keep it after returning.
+type OutputScanFunc func(index uint64, rawData []byte) error
+
 type OutputRepository interface {
+	GetEpochOutputRange(ctx context.Context, appID int64, epochIndex uint64) (EpochOutputRange, error)
+	// ScanOutputs streams both inclusive bounds in ascending index order.
+	// The range must contain between 1 and MaxOutputRangeRows indexes.
+	ScanOutputs(ctx context.Context, appID int64, first, last uint64, fn OutputScanFunc) error
 	GetOutput(ctx context.Context, nameOrAddress string, outputIndex uint64) (*Output, error)
 	UpdateOutputsExecution(ctx context.Context, nameOrAddress string, executedOutputs []*Output, blockNumber uint64) error
 	ListOutputs(ctx context.Context, nameOrAddress string, f OutputFilter, p Pagination, descending bool) ([]*Output, uint64, error)
@@ -332,8 +349,16 @@ type WithdrawalRepository interface {
 	ListWithdrawals(ctx context.Context, nameOrAddress string, f WithdrawalFilter, p Pagination, descending bool) ([]*Withdrawal, uint64, error)
 }
 
+const MaxStateHashPageSize uint64 = 100_000
+
 type StateHashRepository interface {
-	ListStateHashes(ctx context.Context, nameOrAddress string, f StateHashFilter, p Pagination, descending bool) ([]*StateHash, uint64, error)
+	// CountEpochStateHashes returns the number of stored rows in one epoch.
+	CountEpochStateHashes(ctx context.Context, appID int64, epochIndex uint64) (uint64, error)
+	// ListEpochStateHashes returns rows in ascending index order, exclusive of
+	// afterIndex. A nil cursor starts at the first row. The limit controls the
+	// caller's memory and must be between 1 and MaxStateHashPageSize.
+	// Processed epochs have immutable rows and can be read in separate pages.
+	ListEpochStateHashes(ctx context.Context, appID int64, epochIndex uint64, afterIndex *uint64, limit uint64) ([]EpochStateHash, error)
 }
 
 type TournamentRepository interface {
@@ -373,6 +398,13 @@ type MatchAdvancedRepository interface {
 		idHashHex string, p Pagination, descending bool) ([]*MatchAdvanced, uint64, error)
 }
 
+type StandingChangedRepository interface {
+	GetStandingChange(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string,
+		txHash common.Hash, logIndex uint64) (*StandingChanged, error)
+	ListStandingChanges(ctx context.Context, nameOrAddress string, epochIndex uint64, tournamentAddress string,
+		p Pagination, descending bool) ([]*StandingChanged, uint64, error)
+}
+
 type BondEventRepository interface {
 	GetBondEvent(ctx context.Context, nameOrAddress string, txHash common.Hash, logIndex uint64) (*BondEvent, error)
 	ListBondEvents(ctx context.Context, nameOrAddress string, f BondEventFilter, p Pagination, descending bool) ([]*BondEvent, uint64, error)
@@ -382,16 +414,17 @@ type BondEventRepository interface {
 // a completed scan window. Batches are ordered with parents before children:
 // a child tournament references a match written in its parent's batch.
 type TournamentEventBatch struct {
-	Tournament    *Tournament
-	Commitments   []*Commitment
-	Matches       []*Match
-	MatchAdvances []*MatchAdvanced
-	BondEvents    []*BondEvent
+	Tournament      *Tournament
+	Commitments     []*Commitment
+	Matches         []*Match
+	MatchAdvances   []*MatchAdvanced
+	StandingChanges []*StandingChanged
+	BondEvents      []*BondEvent
 }
 
 type BulkOperationsRepository interface {
 	StoreAdvanceResult(ctx context.Context, appID int64, result *AdvanceResult) error
-	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, outputs []*Output) error
+	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, write ClaimProofWriteFunc) error
 }
 
 type NodeConfigReader interface {
@@ -486,6 +519,7 @@ type RejectEpochAndDivergeResult struct {
 }
 
 type Repository interface {
+	DeploymentRepository
 	DeliveryRepository
 	ReplayRepository
 	ApplicationRepository
@@ -498,6 +532,7 @@ type Repository interface {
 	CommitmentRepository
 	MatchRepository
 	MatchAdvancedRepository
+	StandingChangedRepository
 	BondEventRepository
 	BulkOperationsRepository
 	NodeConfigReader

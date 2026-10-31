@@ -116,7 +116,7 @@ func TestStoreClaimAndProofsConcurrentOutputExecution(t *testing.T) {
 			writers.Add(1)
 			go func() {
 				defer writers.Done()
-				err := repo.StoreClaimAndProofs(ctx, epoch, []*model.Output{&proofOutput})
+				err := repo.StoreClaimAndProofs(ctx, epoch, repotest.WriteProofs(&proofOutput))
 				results <- result{writer: "StoreClaimAndProofs", err: err}
 			}()
 			require.Eventually(t, func() bool {

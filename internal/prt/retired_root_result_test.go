@@ -22,6 +22,7 @@ func TestRetiredRootDoesNotHideLaterStaging(t *testing.T) {
 	root.Snapshot.Standing = model.TournamentStandingRootWinner
 	root.Snapshot.AcceptsJoins = false
 	root.Snapshot.WinnerCommitment = epoch.Commitment
+	root.CreationEvent = &model.TournamentCreationEvent{BlockNumber: 10}
 	root.Snapshot.BondRecovery.Disposition = model.BondDispositionRecovered
 	require.True(t, tournamentObservationComplete(root, 90, 100))
 	f.repo.storedTournaments = []*model.Tournament{root}
@@ -31,6 +32,7 @@ func TestRetiredRootDoesNotHideLaterStaging(t *testing.T) {
 	f.expectResultBoundarySnapshot(epoch, snapshot, 100)
 	f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, epoch.Index, uint64(100)).Return(nil).Once()
 
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
 	require.NoError(t, f.s.observeApplication(t.Context(), f.app, observerFacts(100)))
 	require.Equal(t, model.EpochStatus_ClaimStaged, epoch.Status)
 	require.Equal(t, uint64(90), root.Snapshot.AsOfBlock, "an immutable root needs no new tournament scan")
@@ -41,6 +43,7 @@ func TestRetiredRootDoesNotHideLaterAcceptance(t *testing.T) {
 	root := f.repo.ExpectedCalls[0].ReturnArguments.Get(0).(*model.Tournament)
 	root.Snapshot.AsOfBlock = 90
 	root.Snapshot.Standing = model.TournamentStandingRootWinner
+	root.CreationEvent = &model.TournamentCreationEvent{BlockNumber: 10}
 	root.Snapshot.BondRecovery.Disposition = model.BondDispositionRecovered
 	require.True(t, tournamentObservationComplete(root, 90, 100))
 	f.expectReceipt()

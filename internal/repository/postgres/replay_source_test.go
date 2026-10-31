@@ -14,6 +14,7 @@ import (
 	"github.com/cartesi/rollups-node/test/tooling/db"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -313,18 +314,58 @@ func TestPostgresReplayRejectsInvalidStateHashOrdering(t *testing.T) {
 	_, err = repo.ReplaySummary(ctx, app.IApplicationAddress, repository.ReplayVerificationFull)
 	require.NoError(t, err)
 
-	_, err = conn.Exec(ctx, `UPDATE state_hashes SET index = 2 WHERE index = 1`)
+	_, err = conn.Exec(ctx, `WITH d AS (DELETE FROM state_hashes WHERE index = 1 RETURNING *)
+		INSERT INTO state_hashes SELECT input_epoch_application_id, epoch_index, input_index,
+			2, machine_hash, repetitions, created_at, updated_at FROM d`)
 	require.NoError(t, err)
 	_, err = repo.ReplaySummary(ctx, app.IApplicationAddress, repository.ReplayVerificationFull)
 	_ = requireReplayViolationKind(t, err, repository.ReplayStructureStateHashIndexSequence)
-	_, err = conn.Exec(ctx, `UPDATE state_hashes SET index = 1 WHERE index = 2`)
+	_, err = conn.Exec(ctx, `WITH d AS (DELETE FROM state_hashes WHERE index = 2 RETURNING *)
+		INSERT INTO state_hashes SELECT input_epoch_application_id, epoch_index, input_index,
+			1, machine_hash, repetitions, created_at, updated_at FROM d`)
 	require.NoError(t, err)
 
-	_, err = conn.Exec(ctx, `UPDATE state_hashes
-		SET input_index = CASE index WHEN 0 THEN 1 ELSE 0 END`)
+	_, err = conn.Exec(ctx, `WITH d AS (DELETE FROM state_hashes RETURNING *)
+		INSERT INTO state_hashes SELECT input_epoch_application_id, epoch_index,
+			CASE index WHEN 0 THEN 1 ELSE 0 END, index, machine_hash, repetitions, created_at, updated_at FROM d`)
 	require.NoError(t, err)
 	_, err = repo.ReplaySummary(ctx, app.IApplicationAddress, repository.ReplayVerificationFull)
 	_ = requireReplayViolationKind(t, err, repository.ReplayStructureStateHashInputOrder)
+}
+
+func TestPostgresStateHashesRefuseUpdate(t *testing.T) {
+	endpoint, err := db.GetTestDatabaseEndpoint()
+	if err != nil {
+		t.Skipf("Skipping: %v", err)
+	}
+	require.NoError(t, db.SetupTestPostgres(endpoint))
+	ctx := t.Context()
+	repo, err := factory.NewRepositoryFromConnectionString(ctx, endpoint)
+	require.NoError(t, err)
+	t.Cleanup(repo.Close)
+	conn, err := pgx.Connect(ctx, endpoint)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close(ctx)) })
+	seed := repotest.Seed(ctx, t, repo)
+	require.NoError(t, repo.StoreAdvanceResult(ctx, seed.App.ID, &model.AdvanceResult{
+		EpochIndex: 0, InputIndex: 0, Status: model.InputCompletionStatus_Accepted,
+		StateProof: *repotest.DummyStateProof(), IsDaveConsensus: true,
+		PaddingRepetitions: model.InputHashCollectionCapacity,
+	}))
+	for _, column := range []string{"index", "input_index", "epoch_index", "input_epoch_application_id",
+		"machine_hash", "repetitions", "created_at", "updated_at"} {
+		identifier := pgx.Identifier{column}.Sanitize()
+		_, err := conn.Exec(ctx, "UPDATE state_hashes SET "+identifier+" = "+identifier+
+			" WHERE input_epoch_application_id = $1", seed.App.ID)
+		var pgErr *pgconn.PgError
+		require.ErrorAs(t, err, &pgErr)
+		require.Equal(t, "23001", pgErr.Code)
+		require.Equal(t, "state_hashes row is immutable", pgErr.Message)
+	}
+	command, err := conn.Exec(ctx, `UPDATE state_hashes SET repetitions = 2
+		WHERE input_epoch_application_id = $1 AND index = 99`, seed.App.ID)
+	require.NoError(t, err)
+	require.Zero(t, command.RowsAffected())
 }
 
 func requireReplayViolationKind(

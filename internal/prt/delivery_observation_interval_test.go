@@ -29,6 +29,7 @@ func newDeliveryIntervalFixture(t *testing.T) *deliveryIntervalFixture {
 	f.app.LastEpochCheckBlock = 40 // The EVM Reader has stopped before this tournament interval.
 	f.epoch.LastBlock = 10
 	client := &ethClientMock{}
+	expectNumericWindowHeaders(client)
 	header := &types.Header{Number: big.NewInt(100)}
 	client.On("HeaderByNumber", mock.Anything, big.NewInt(100)).Return(header, nil).Maybe()
 	f.d.client = client
@@ -85,9 +86,11 @@ func TestDeliveryIntervalIncludesNewRootHistoryBeforeCursor(t *testing.T) {
 	adapter := &tournamentAdapterMock{}
 	f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()
 	opts := mock.MatchedBy(resultCallOptsAtBlock(100))
-	adapter.On("Descriptor", opts).Return(TournamentDescriptor{
+	descriptor := TournamentDescriptor{
 		BaseCycle: big.NewInt(0), Kind: model.TournamentKindLeaf, StartInstant: f.epoch.LastBlock,
-	}, nil).Once()
+	}
+	adapter.On("Descriptor", opts).Return(descriptor, nil).Once()
+	adapter.On("BondValue", opts).Return(big.NewInt(1), nil).Once()
 	adapter.On("Standing", opts).Return(TournamentStanding{
 		State: model.TournamentStandingRootWinner, HasCandidate: true, Candidate: *f.epoch.Commitment,
 		FinalState: *f.epoch.MachineHash, FinishedAt: 49,
@@ -188,6 +191,7 @@ func TestDeliveryObservesEnabledTerminalApplicationButStopsDisabledApplication(t
 			f.checkpoint.epochs(f.epoch)
 			f.levels(1)
 			f.checkpoint.tournament(f.epoch, *f.epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
+			expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
 			require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.facts))
 			require.Len(t, f.repo.windows, 1)
 			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)

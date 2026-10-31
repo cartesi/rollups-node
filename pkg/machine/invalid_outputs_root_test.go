@@ -23,6 +23,7 @@ func (s *ImplementationSuite) TestAdvanceOutputsRootLength() {
 			s.Run(fmt.Sprintf("length=%d/collect=%t", length, collect), func() {
 				backend := NewMockBackend()
 				backend.On("CmioRxBufferSize").Return(uint64(1024))
+				backend.SetupRequestYield()
 				backend.On("SendCmioResponse", uint16(AdvanceStateRequest), []byte("input"), Hash{}, mock.Anything).
 					Return(nil).Once()
 				backend.On("ReadMCycle", mock.Anything).Return(uint64(0), nil).Once()
@@ -32,7 +33,7 @@ func (s *ImplementationSuite) TestAdvanceOutputsRootLength() {
 					backend.On("RunAndCollectRootHashes", mock.Anything, mock.Anything, mock.Anything).
 						Run(func(args mock.Arguments) {
 							collector := args.Get(1).(*HashCollectorState)
-							collector.Hashes = []Hash{periodic, {0x22}}
+							collectTestEntries(collector, 1, true, periodic, Hash{0x22})
 						}).Return(YieldedManually, nil).Once()
 				} else {
 					backend.On("Run", mock.Anything, mock.Anything).Return(YieldedManually, nil).Once()
@@ -53,8 +54,9 @@ func (s *ImplementationSuite) TestAdvanceOutputsRootLength() {
 				s.Equal(want, result.Status)
 				s.Nil(result.ExceptionData)
 				if collect {
-					s.Equal([]Hash{periodic}, result.PeriodicStateHashes)
-					s.Equal(InputEntryCapacity-1, result.PaddingRepetitions)
+					s.Empty(result.PeriodicStateHashes)
+					s.Equal(InputEntryCapacity, result.PaddingRepetitions)
+					s.Equal(Hash(model.FinalStateEntry(Hash{0x22})), result.FinalStateEntry)
 				} else {
 					s.Empty(result.PeriodicStateHashes)
 					s.Zero(result.PaddingRepetitions)
@@ -122,7 +124,9 @@ func (s *ImplementationSuite) TestAdvanceRootRuleRequiresAcceptedManualYield() {
 func (s *ImplementationSuite) TestInspectAcceptedPayloadDoesNotDeclareOutputsRoot() {
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
-	backend.On("SendCmioResponse", uint16(InspectStateRequest), []byte("query"), nil, mock.Anything).Return(nil).Once()
+	admissionRead := backend.SetupRequestYield()
+	backend.On("SendCmioResponse", uint16(InspectStateRequest), []byte("query"), nil, mock.Anything).
+		Return(nil).Once().NotBefore(admissionRead)
 	backend.On("ReadMCycle", mock.Anything).Return(uint64(0), nil)
 	backend.On("Run", mock.Anything, mock.Anything).Return(YieldedManually, nil).Once()
 	backend.On("ReceiveCmioRequest", mock.Anything).
@@ -134,6 +138,6 @@ func (s *ImplementationSuite) TestInspectAcceptedPayloadDoesNotDeclareOutputsRoo
 	result, err := machine.Inspect(context.Background(), []byte("query"))
 	s.Require().NoError(err)
 	s.Equal(CompletionStatusAccepted, result.Status)
-	backend.AssertNotCalled(s.T(), "ReadMemory", mock.Anything, mock.Anything, mock.Anything)
+	backend.AssertNumberOfCalls(s.T(), "ReadMemory", 1)
 	backend.AssertExpectations(s.T())
 }

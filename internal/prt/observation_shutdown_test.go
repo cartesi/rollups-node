@@ -76,7 +76,7 @@ func TestTournamentObservationShutdownLogs(t *testing.T) {
 			t.Run(test.name+"/"+operation, func(t *testing.T) {
 				s, repo := newPRTServiceMock()
 				f := &observerCheckpointFixture{t: t, s: s, repo: repo, factory: &adapterFactoryMock{},
-					consensus: &daveConsensusAdapterMock{}, client: &ethClientMock{}, app: prtRevertTestApp()}
+					consensus: newCompatibleDaveConsensusAdapterMock(), client: &ethClientMock{}, app: prtRevertTestApp()}
 				f.app.LastTournamentCheckBlock = 50
 				f.s.adapterFactory, f.s.client = f.factory, f.client
 				t.Cleanup(func() {
@@ -157,6 +157,9 @@ func runObservationWithIOError(ctx context.Context, t *testing.T, f *observerChe
 		}
 		adapter.On("Descriptor", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(descriptor, descriptorError).Once()
 		if descriptorError == nil {
+			if stored == nil {
+				adapter.On("BondValue", mock.Anything).Return(big.NewInt(1), nil).Once()
+			}
 			var standingError error
 			if strings.HasSuffix(operation, standingReadName) {
 				standingError = cause
@@ -183,7 +186,7 @@ func runObservationWithIOError(ctx context.Context, t *testing.T, f *observerChe
 				Return([]*model.Match{}, uint64(0), cause).Once()
 		}
 	}
-	_, err := f.s.gatherTournamentData(ctx, f.app, epoch, 1, nil, nil, address, 3, 100)
+	_, err := f.s.gatherTournamentData(ctx, f.app, epoch, 1, nil, nil, address, 3, 100, nil, nil)
 	return err
 }
 
@@ -207,6 +210,7 @@ func TestTournamentJoinReadsPreserveDependencyErrors(t *testing.T) {
 						readErr = cause
 					}
 					adapter.On("Descriptor", mock.Anything).Return(TournamentDescriptor{Height: model.Log2EpochComputationHashLeafCount,
+						Log2Stride:   model.Log2RootTournamentStride,
 						StartInstant: 100, Allowance: 30}, readErr)
 				}
 				if readErr == nil {

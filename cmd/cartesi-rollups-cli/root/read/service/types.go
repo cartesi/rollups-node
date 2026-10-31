@@ -37,6 +37,8 @@ type ReadService interface {
 	ListMatches(ctx context.Context, params api.ListMatchesParams) (json.RawMessage, error)
 	GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (json.RawMessage, error)
 	ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (json.RawMessage, error)
+	GetStandingChange(ctx context.Context, params api.GetStandingChangeParams) (json.RawMessage, error)
+	ListStandingChanges(ctx context.Context, params api.ListStandingChangesParams) (json.RawMessage, error)
 	Close()
 }
 

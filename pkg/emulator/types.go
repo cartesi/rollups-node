@@ -74,6 +74,15 @@ const (
 	CM_JSONRPC_SHUTDOWN = C.CM_JSONRPC_SHUTDOWN
 )
 
+const (
+	// MarchID identifies the architecture supported by the compiled header.
+	MarchID uint64 = C.CM_MARCHID
+	// UarchStateStartAddress is the start of the complete uarch state.
+	UarchStateStartAddress uint64 = C.CM_UARCH_STATE_START_ADDRESS
+	// UarchStateLog2Size is the uarch state's size exponent in bytes.
+	UarchStateLog2Size int32 = C.CM_UARCH_STATE_LOG2_SIZE
+)
+
 // BreakReason
 type BreakReason int32
 
@@ -234,6 +243,7 @@ const (
 	REG_MARCHID       RegID = C.CM_REG_MARCHID
 	REG_MIMPID        RegID = C.CM_REG_MIMPID
 	REG_MCYCLE        RegID = C.CM_REG_MCYCLE
+	REG_IMCYCLEMAX    RegID = C.CM_REG_IMCYCLEMAX
 	REG_ICYCLEINSTRET RegID = C.CM_REG_ICYCLEINSTRET
 	REG_MSTATUS       RegID = C.CM_REG_MSTATUS
 	REG_MTVEC         RegID = C.CM_REG_MTVEC
@@ -338,34 +348,22 @@ const (
 )
 
 type MachineRuntimeConfig struct {
-	Concurrency       *ConcurrencyRuntimeConfig `json:"concurrency,omitempty"`
-	Htif              *HtifRuntimeConfig        `json:"htif,omitempty"`
-	SkipRootHashCheck bool                      `json:"skip_root_hash_check"`
-	SkipRootHashStore bool                      `json:"skip_root_hash_store"`
-	SkipVersionCheck  bool                      `json:"skip_version_check"`
-	SoftYield         bool                      `json:"soft_yield"`
-}
-
-type HtifRuntimeConfig struct {
-	NoConsolePutchar bool `json:"no_console_putchar"`
+	Concurrency      *ConcurrencyRuntimeConfig `json:"concurrency,omitempty"`
+	SkipVersionCheck bool                      `json:"skip_version_check"`
+	SoftYield        bool                      `json:"soft_yield"`
 }
 
 type ConcurrencyRuntimeConfig struct {
-	UpdateMerkleTree uint64 `json:"update_merkle_tree"`
+	UpdateHashTree uint64 `json:"update_hash_tree"`
 }
 
 func NewMachineRuntimeConfig() *MachineRuntimeConfig {
 	return &MachineRuntimeConfig{
 		Concurrency: &ConcurrencyRuntimeConfig{
-			UpdateMerkleTree: 0,
+			UpdateHashTree: 0,
 		},
-		Htif: &HtifRuntimeConfig{
-			NoConsolePutchar: false,
-		},
-		SkipRootHashCheck: false,
-		SkipRootHashStore: false,
-		SkipVersionCheck:  false,
-		SoftYield:         false,
+		SkipVersionCheck: false,
+		SoftYield:        false,
 	}
 }
 

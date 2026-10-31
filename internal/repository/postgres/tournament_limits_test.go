@@ -19,6 +19,7 @@ func newRootEventInterval(t *testing.T) (*PostgresRepository, *model.Application
 	r := newEpochPublicationRepository(t).(*PostgresRepository)
 	app := repotest.NewApplicationBuilder().WithConsensus(model.Consensus_PRT).Create(t.Context(), t, r)
 	root := repotest.NewTournamentBuilder(app.ID).Build()
+	root.StartInstant = 99
 	epoch := repotest.NewEpochBuilder(app.ID).WithStatus(model.EpochStatus_Closed).WithBlocks(0, 99).Build()
 	epoch.TournamentAddress = &root.Address
 	require.NoError(t, r.CreateEpochsAndInputs(t.Context(), app.Name, map[*model.Epoch][]*model.Input{epoch: {}}, 100))
@@ -58,8 +59,8 @@ func TestTournamentIntervalStatementsAbovePreviousBindLimits(t *testing.T) {
 			}
 		}, table.Matches},
 		{"advances", 5958, func(batch *repository.TournamentEventBatch, count int) {
-			match := addIntervalMatch(batch)
 			for range count {
+				match := addIntervalMatch(batch)
 				batch.MatchAdvances = append(batch.MatchAdvances, repotest.NewMatchAdvancedBuilder(match.ApplicationID).
 					WithTournamentAddress(match.TournamentAddress).WithIDHash(match.IDHash).Build())
 			}
@@ -106,9 +107,10 @@ func TestTournamentIntervalStatementsAbovePreviousBindLimits(t *testing.T) {
 func TestTournamentIntervalLateChunkConflictRollsBack(t *testing.T) {
 	r, app, batch := newRootEventInterval(t)
 	match := addIntervalMatch(batch)
-	for range tournamentRowsPerStatement + 1 {
+	for index := range tournamentRowsPerStatement + 1 {
 		batch.MatchAdvances = append(batch.MatchAdvances, repotest.NewMatchAdvancedBuilder(app.ID).
 			WithTournamentAddress(batch.Tournament.Address).WithIDHash(match.IDHash).Build())
+		batch.MatchAdvances[index].CurrentHeight = uint64(index) + 1
 	}
 	duplicate := *batch.MatchAdvances[0]
 	batch.MatchAdvances[len(batch.MatchAdvances)-1] = &duplicate
@@ -123,9 +125,10 @@ func TestTournamentIntervalLateChunkConflictRollsBack(t *testing.T) {
 	root := *batch.Tournament
 	root.Snapshot.AsOfBlock = 110
 	next := &repository.TournamentEventBatch{Tournament: &root}
-	for range tournamentRowsPerStatement {
+	for index := range tournamentRowsPerStatement {
 		advance := repotest.NewMatchAdvancedBuilder(app.ID).WithTournamentAddress(root.Address).WithIDHash(match.IDHash).Build()
 		advance.BlockNumber = 105
+		advance.CurrentHeight = uint64(index) + uint64(tournamentRowsPerStatement) + 2
 		next.MatchAdvances = append(next.MatchAdvances, advance)
 	}
 	conflict := *next.MatchAdvances[0]

@@ -56,7 +56,7 @@ func TestValidateInvalidOutputsRoot(t *testing.T) {
 					require.Equal(t, model.InputCompletionStatus_Accepted, input.Status)
 					require.Equal(t, model.EpochStatus_InputsProcessed, epoch.Status)
 					repo.AssertNotCalled(t, "StoreClaimAndProofs", mock.Anything, mock.Anything, mock.Anything)
-					repo.AssertNotCalled(t, "ListStateHashes", mock.Anything, mock.Anything, mock.Anything, mock.Anything, false)
+					repo.AssertNotCalled(t, "CountEpochStateHashes", mock.Anything, app.ID, epoch.Index)
 					repo.AssertExpectations(t)
 				})
 			}
@@ -147,12 +147,12 @@ func rootValidationFixture() (*Mockrepo, *Service, *model.Application, *model.Ep
 func expectRootValidationReads(
 	repo *Mockrepo, app *model.Application, epoch *model.Epoch, input *model.Input, outputs []*model.Output,
 ) {
+	expectNoStoredProtectionRoots(repo, app)
 	appAddress := app.IApplicationAddress.String()
 	// A later epoch must remain unprocessed after the first finding.
 	epochs := []*model.Epoch{epoch, {ApplicationID: app.ID, Index: 1, VirtualIndex: 1}}
 	repo.On("ListEpochs", mock.Anything, appAddress, mock.Anything, repository.Pagination{}, false).
 		Return(epochs, uint64(len(epochs)), nil).Once()
-	repo.On("ListOutputs", mock.Anything, appAddress, repository.OutputFilter{EpochIndex: &epoch.Index},
-		repository.Pagination{}, false).Return(outputs, uint64(len(outputs)), nil).Once()
+	expectEpochOutputs(repo, app, epoch, outputs)
 	repo.On("GetLastInput", mock.Anything, appAddress, epoch.Index).Return(input, nil).Once()
 }

@@ -295,6 +295,8 @@ func (p *claimFixturePlanner) Next(context.Context, txsender.BlockRef, *txsender
 ) {
 	return txsender.Publish(p.candidate.action, p.candidate.request), nil
 }
-func (p *claimFixturePlanner) Recheck(ctx context.Context, block txsender.BlockRef, action claimAction) (txsender.Eligibility, error) {
+func (p *claimFixturePlanner) Recheck(ctx context.Context, block txsender.BlockRef, action claimAction) (
+	txsender.Eligibility, error,
+) {
 	return p.publisher.Recheck(ctx, block, action)
 }

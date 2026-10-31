@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/merkle"
+	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
@@ -53,8 +54,9 @@ func TestSparseDisputeCommitmentMatchesDenseTrees(t *testing.T) {
 
 func TestSparseDisputeCommitmentCanonicalGeometry(t *testing.T) {
 	repeated, changed := common.HexToHash("0x1234"), common.HexToHash("0xabcd")
-	// Canonical ArbitrationConstants.sol heights, in root-to-leaf order.
-	for _, height := range []uint64{48, 17, 27} {
+	for level := uint64(0); level < model.TournamentLevelCount; level++ {
+		_, height, err := model.TournamentLevelGeometry(level)
+		require.NoError(t, err)
 		t.Run(strconv.FormatUint(height, 10), func(t *testing.T) {
 			one, err := newSparseDisputeCommitment(height, repeated, repeated)
 			require.NoError(t, err)

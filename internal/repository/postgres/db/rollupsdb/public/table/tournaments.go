@@ -31,6 +31,9 @@ type tournamentsTable struct {
 	Kind                    postgres.ColumnString
 	StartInstant            postgres.ColumnFloat
 	Allowance               postgres.ColumnFloat
+	BondValue               postgres.ColumnFloat
+	ContestedFinalStateOne  postgres.ColumnBytea
+	ContestedFinalStateTwo  postgres.ColumnBytea
 	CreationBlockNumber     postgres.ColumnFloat
 	CreationTxHash          postgres.ColumnBytea
 	CreationLogIndex        postgres.ColumnFloat
@@ -106,6 +109,9 @@ func newTournamentsTableImpl(schemaName, tableName, alias string) tournamentsTab
 		KindColumn                    = postgres.StringColumn("kind")
 		StartInstantColumn            = postgres.FloatColumn("start_instant")
 		AllowanceColumn               = postgres.FloatColumn("allowance")
+		BondValueColumn               = postgres.FloatColumn("bond_value")
+		ContestedFinalStateOneColumn  = postgres.ByteaColumn("contested_final_state_one")
+		ContestedFinalStateTwoColumn  = postgres.ByteaColumn("contested_final_state_two")
 		CreationBlockNumberColumn     = postgres.FloatColumn("creation_block_number")
 		CreationTxHashColumn          = postgres.ByteaColumn("creation_tx_hash")
 		CreationLogIndexColumn        = postgres.FloatColumn("creation_log_index")
@@ -126,8 +132,8 @@ func newTournamentsTableImpl(schemaName, tableName, alias string) tournamentsTab
 		BondPaymentColumn             = postgres.FloatColumn("bond_payment")
 		CreatedAtColumn               = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn               = postgres.TimestampzColumn("updated_at")
-		allColumns                    = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, AddressColumn, ParentTournamentAddressColumn, ParentMatchIDHashColumn, MaxLevelColumn, LevelColumn, Log2stepColumn, HeightColumn, InitialHashColumn, BaseCycleColumn, KindColumn, StartInstantColumn, AllowanceColumn, CreationBlockNumberColumn, CreationTxHashColumn, CreationLogIndexColumn, AsOfBlockColumn, StandingColumn, AcceptsJoinsColumn, CandidateColumn, WinnerCommitmentColumn, FinalStateHashColumn, FinishedAtBlockColumn, ParentCommitmentColumn, WinnerExpiresAtColumn, InnerDispositionColumn, InnerParentCommitmentColumn, InnerPausedAllowanceColumn, BondDispositionColumn, BondClaimerColumn, BondPaymentColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns                = postgres.ColumnList{ParentTournamentAddressColumn, ParentMatchIDHashColumn, MaxLevelColumn, LevelColumn, Log2stepColumn, HeightColumn, InitialHashColumn, BaseCycleColumn, KindColumn, StartInstantColumn, AllowanceColumn, CreationBlockNumberColumn, CreationTxHashColumn, CreationLogIndexColumn, AsOfBlockColumn, StandingColumn, AcceptsJoinsColumn, CandidateColumn, WinnerCommitmentColumn, FinalStateHashColumn, FinishedAtBlockColumn, ParentCommitmentColumn, WinnerExpiresAtColumn, InnerDispositionColumn, InnerParentCommitmentColumn, InnerPausedAllowanceColumn, BondDispositionColumn, BondClaimerColumn, BondPaymentColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns                    = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, AddressColumn, ParentTournamentAddressColumn, ParentMatchIDHashColumn, MaxLevelColumn, LevelColumn, Log2stepColumn, HeightColumn, InitialHashColumn, BaseCycleColumn, KindColumn, StartInstantColumn, AllowanceColumn, BondValueColumn, ContestedFinalStateOneColumn, ContestedFinalStateTwoColumn, CreationBlockNumberColumn, CreationTxHashColumn, CreationLogIndexColumn, AsOfBlockColumn, StandingColumn, AcceptsJoinsColumn, CandidateColumn, WinnerCommitmentColumn, FinalStateHashColumn, FinishedAtBlockColumn, ParentCommitmentColumn, WinnerExpiresAtColumn, InnerDispositionColumn, InnerParentCommitmentColumn, InnerPausedAllowanceColumn, BondDispositionColumn, BondClaimerColumn, BondPaymentColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns                = postgres.ColumnList{ParentTournamentAddressColumn, ParentMatchIDHashColumn, MaxLevelColumn, LevelColumn, Log2stepColumn, HeightColumn, InitialHashColumn, BaseCycleColumn, KindColumn, StartInstantColumn, AllowanceColumn, BondValueColumn, ContestedFinalStateOneColumn, ContestedFinalStateTwoColumn, CreationBlockNumberColumn, CreationTxHashColumn, CreationLogIndexColumn, AsOfBlockColumn, StandingColumn, AcceptsJoinsColumn, CandidateColumn, WinnerCommitmentColumn, FinalStateHashColumn, FinishedAtBlockColumn, ParentCommitmentColumn, WinnerExpiresAtColumn, InnerDispositionColumn, InnerParentCommitmentColumn, InnerPausedAllowanceColumn, BondDispositionColumn, BondClaimerColumn, BondPaymentColumn, CreatedAtColumn, UpdatedAtColumn}
 		defaultColumns                = postgres.ColumnList{FinishedAtBlockColumn, CreatedAtColumn, UpdatedAtColumn}
 	)
 
@@ -149,6 +155,9 @@ func newTournamentsTableImpl(schemaName, tableName, alias string) tournamentsTab
 		Kind:                    KindColumn,
 		StartInstant:            StartInstantColumn,
 		Allowance:               AllowanceColumn,
+		BondValue:               BondValueColumn,
+		ContestedFinalStateOne:  ContestedFinalStateOneColumn,
+		ContestedFinalStateTwo:  ContestedFinalStateTwoColumn,
 		CreationBlockNumber:     CreationBlockNumberColumn,
 		CreationTxHash:          CreationTxHashColumn,
 		CreationLogIndex:        CreationLogIndexColumn,

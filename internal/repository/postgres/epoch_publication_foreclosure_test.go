@@ -31,8 +31,11 @@ func newEpochPublicationRepository(t *testing.T) repository.Repository {
 	return repo
 }
 
-func seedEpochPublication(t *testing.T, repo repository.Repository) (*Application, *Epoch) {
+func seedEpochPublication(t *testing.T, repo repository.Repository, outputs ...[]byte) (*Application, *Epoch) {
 	t.Helper()
+	if len(outputs) == 0 {
+		outputs = [][]byte{[]byte("output")}
+	}
 	app := repotest.NewApplicationBuilder().WithConsensus(Consensus_PRT).Create(t.Context(), t, repo)
 	epoch := repotest.NewEpochBuilder(app.ID).WithStatus(EpochStatus_Closed).
 		WithBlocks(0, 9).WithInputBounds(0, 1).Build()
@@ -40,7 +43,7 @@ func seedEpochPublication(t *testing.T, repo repository.Repository) (*Applicatio
 	require.NoError(t, repo.CreateEpochsAndInputs(t.Context(), app.Name, map[*Epoch][]*Input{epoch: {input}}, 10))
 	require.NoError(t, repo.StoreAdvanceResult(t.Context(), app.ID, &AdvanceResult{
 		EpochIndex: epoch.Index, InputIndex: input.Index, Status: InputCompletionStatus_Accepted,
-		StateProof: *repotest.DummyStateProof(), Outputs: [][]byte{[]byte("output")},
+		StateProof: *repotest.DummyStateProof(), Outputs: outputs,
 	}))
 	return app, epoch
 }
@@ -74,7 +77,12 @@ func TestEpochPublicationLosesToForeclosureWithoutWrites(t *testing.T) {
 				output := *outputsBefore[0]
 				output.Hash = new(repotest.UniqueHash())
 				output.OutputHashesSiblings = []common.Hash{repotest.UniqueHash()}
-				err = repo.StoreClaimAndProofs(t.Context(), stale, []*Output{&output})
+				called := false
+				err = repo.StoreClaimAndProofs(t.Context(), stale, func(ctx context.Context, writer repository.ClaimProofWriter) error {
+					called = true
+					return repotest.WriteProofs(&output)(ctx, writer)
+				})
+				require.False(t, called, "a rejected epoch must not invoke its proof writer")
 			} else {
 				proof := repotest.DummyStateProof()
 				proof.MachineHash = repotest.UniqueHash()

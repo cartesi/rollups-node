@@ -13,7 +13,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	jsonrpcclient "github.com/cartesi/rollups-node/pkg/jsonrpc/client"
 	"github.com/ethereum/go-ethereum/common"
@@ -21,7 +20,7 @@ import (
 
 // The public API does not expose the execution hash collection. Check its
 // persisted rows directly while the proof and completion are checked via API.
-func (s *TerminalMachineStatesSuite) terminalStateHashes(input *model.Input) []*model.StateHash {
+func (s *TerminalMachineStatesSuite) terminalStateHashes(input *model.Input) []model.EpochStateHash {
 	s.T().Helper()
 	r := s.Require()
 	dsn, err := config.GetDatabaseConnection()
@@ -29,9 +28,21 @@ func (s *TerminalMachineStatesSuite) terminalStateHashes(input *model.Input) []*
 	repo, err := factory.NewRepositoryFromConnectionString(s.ctx, dsn.Raw())
 	r.NoError(err)
 	defer repo.Close()
-	rows, _, err := repo.ListStateHashes(s.ctx, s.appName,
-		repository.StateHashFilter{EpochIndex: &input.EpochIndex}, repository.Pagination{}, false)
+	app, err := repo.GetApplication(s.ctx, s.appName)
 	r.NoError(err)
+	var rows []model.EpochStateHash
+	var cursor *uint64
+	const pageSize = 10_000
+	for {
+		page, err := repo.ListEpochStateHashes(s.ctx, app.ID, input.EpochIndex, cursor, pageSize)
+		r.NoError(err)
+		rows = append(rows, page...)
+		if len(page) < pageSize {
+			break
+		}
+		last := page[len(page)-1].Index
+		cursor = &last
+	}
 	r.NotEmpty(rows)
 	var span uint64
 	for _, row := range rows {
@@ -40,7 +51,7 @@ func (s *TerminalMachineStatesSuite) terminalStateHashes(input *model.Input) []*
 	}
 	r.Equal(model.InputHashCollectionCapacity, span)
 	r.NotNil(input.MachineHash)
-	r.Equal(*input.MachineHash, rows[len(rows)-1].MachineHash)
+	r.Equal(model.FinalStateEntry(*input.MachineHash), rows[len(rows)-1].MachineHash)
 	return rows
 }
 
@@ -106,6 +117,16 @@ func (s *TerminalMachineStatesSuite) TestInvalidTemplateOutputsRootInFirstPrtEpo
 	s.Require().NoError(err)
 	s.Require().Zero(epoch.InputIndexLowerBound)
 	s.Require().Zero(epoch.InputIndexUpperBound, "the first sealed epoch must contain no inputs")
+	rpc := jsonrpcclient.NewClient(envOrDefault("CARTESI_JSONRPC_API_URL", "http://localhost:10011/rpc"))
+	app := s.getApplication(rpc)
+	s.Require().NotNil(app.Reason)
+	client := newIntegrationEthClient(ctx, s.T())
+	defer client.Close()
+	root, closeBlock := prtProtectionEnd(ctx, s.T(), client, app.IConsensusAddress, 0)
+	for _, source := range []string{prtStoredClockSource, prtPinnedClockSource} {
+		requirePrtProtectionLogs(ctx, s.T(), &s.LogChecker, prtProtectionStopLog(s.appName, app.IApplicationAddress,
+			0, root, closeBlock, *app.Reason, source))
+	}
 }
 
 func (s *TerminalMachineStatesSuite) requireInvalidOutputsRoot(ctx context.Context, epochIndex, processed uint64) {

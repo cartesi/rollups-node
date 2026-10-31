@@ -18,13 +18,14 @@ func addSecondStageApplication(f *deliveryFixture) *model.Application {
 	app.ID, app.Name = 8, secondApplicationName
 	app.IApplicationAddress, app.IConsensusAddress = common.HexToAddress("0x801"), common.HexToAddress("0x802")
 	f.repo.apps = append(f.repo.apps, &app)
+	admitTestDeployment(f.d.Service, f.repo.prtRepositoryMock, &app)
 	f.backend.apps = f.repo.apps
 	epoch := *f.epoch
 	epoch.ApplicationID = app.ID
 	f.repo.On("GetEpoch", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index).Return(&epoch, nil)
 	f.repo.publishRoot(&app, &epoch, app.LastTournamentCheckBlock)
 	view := resultTestSnapshot(&epoch, false)
-	adapter := &daveConsensusAdapterMock{}
+	adapter := newCompatibleDaveConsensusAdapterMock()
 	adapter.On("GetCurrentSealedEpoch", mock.Anything).Return(view.sealed, nil)
 	adapter.On("CanStageTournamentResult", mock.Anything).Return(view.stage, nil)
 	adapter.On("CanAcceptStagedTournamentResult", mock.Anything).Return(view.accept, nil)
@@ -48,6 +49,9 @@ func TestDeliveryHardPublicationFailureLatchesReadiness(t *testing.T) {
 			f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).Return([]*model.Epoch{}, uint64(0), nil)
 			tickHead(client, 100)
 			f.backend.headerError = cause
+			if errors.Is(cause, txsender.ErrFinality) || errors.Is(cause, txsender.ErrContent) {
+				expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
+			}
 			err := f.d.tick(t.Context())
 			require.ErrorIs(t, err, cause)
 			hard := errors.Is(cause, txsender.ErrFinality) || errors.Is(cause, txsender.ErrContent)
@@ -69,6 +73,7 @@ func TestDeliveryHardObservationFailureBlocksSamePassPublication(t *testing.T) {
 	f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).
 		Return([]*model.Epoch(nil), uint64(0), txsender.ErrUnsupported)
 	tickHead(client, 100)
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
 	_, err := f.d.Tick(t.Context())
 	require.ErrorIs(t, err, txsender.ErrUnsupported)
 	require.False(t, f.d.publicationStopped())

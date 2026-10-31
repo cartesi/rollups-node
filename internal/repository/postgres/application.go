@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-jet/jet/v2/postgres"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -106,7 +107,20 @@ func (r *PostgresRepository) CreateApplication(
 		return 0, fmt.Errorf("unable to create database application: %w", err)
 	}
 
-	if !withExecutionParameters {
+	switch {
+	case !withExecutionParameters && app.ConsensusType == model.Consensus_PRT:
+		sqlStr, args = table.ExecutionParameters.
+			INSERT(
+				table.ExecutionParameters.ApplicationID,
+				table.ExecutionParameters.AdvanceIncDeadline,
+				table.ExecutionParameters.AdvanceMaxDeadline,
+			).
+			VALUES(
+				newID,
+				model.PrtAdvanceIncDeadline,
+				model.PrtAdvanceMaxDeadline,
+			).Sql()
+	case !withExecutionParameters:
 		sqlStr, args = table.ExecutionParameters.
 			INSERT(
 				table.ExecutionParameters.ApplicationID,
@@ -114,7 +128,7 @@ func (r *PostgresRepository) CreateApplication(
 			VALUES(
 				newID,
 			).Sql()
-	} else {
+	default:
 		sqlStr, args = table.ExecutionParameters.
 			INSERT(
 				table.ExecutionParameters.ApplicationID,
@@ -152,6 +166,11 @@ func (r *PostgresRepository) CreateApplication(
 
 	_, err = tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
+		return 0, err
+	}
+
+	sqlStr, args = table.DeploymentAdmissionState.INSERT(table.DeploymentAdmissionState.ApplicationID).VALUES(newID).Sql()
+	if _, err := tx.Exec(ctx, sqlStr, args...); err != nil {
 		return 0, err
 	}
 
@@ -415,41 +434,57 @@ func (r *PostgresRepository) UpdateApplicationEnabled(
 	return nil
 }
 
-// EnableApplicationAndClearFailed re-enables an application and clears FAILED
-// in one statement. DIVERGED/CORRUPTED statuses are left unchanged; enabling a
-// foreclosed app records operator intent but does not make it executable.
-func (r *PostgresRepository) EnableApplicationAndClearFailed(
+// EnableApplicationAndResetDeployment enables and resets deployment admission.
+// It clears current FAILED health only with observed recovery authorization.
+// Terminal health stays unchanged. Foreclosed apps remain ineligible for execution.
+func (r *PostgresRepository) EnableApplicationAndResetDeployment(
 	ctx context.Context,
 	appID int64,
+	clearFailed bool,
 ) error {
+	ctx, cancel := beginDatabaseOperation(ctx)
+	defer cancel()
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	if err != nil {
+		return err
+	}
+	defer rollbackDeliveryTx(tx)
+	failedRecovery := postgres.Bool(clearFailed).AND(
+		table.Application.Status.EQ(postgres.NewEnumValue(model.ApplicationStatus_Failed.String())),
+	)
 	updateStmt := table.Application.
 		UPDATE(
 			table.Application.Enabled,
 			table.Application.Status,
-			table.Application.Reason,
 		).
 		SET(
 			true,
 			postgres.CASE().
-				WHEN(table.Application.Status.EQ(postgres.NewEnumValue(model.ApplicationStatus_Failed.String()))).
+				WHEN(failedRecovery).
 				THEN(postgres.NewEnumValue(model.ApplicationStatus_OK.String())).
 				ELSE(table.Application.Status),
-			postgres.CASE().
-				WHEN(table.Application.Status.EQ(postgres.NewEnumValue(model.ApplicationStatus_Failed.String()))).
-				THEN(postgres.NULL).
-				ELSE(table.Application.Reason),
 		).
 		WHERE(table.Application.ID.EQ(postgres.Int(appID)))
 
 	sqlStr, args := updateStmt.Sql()
-	cmd, err := r.db.Exec(ctx, sqlStr, args...)
+	cmd, err := tx.Exec(ctx, sqlStr, args...)
 	if err != nil {
 		return err
 	}
 	if cmd.RowsAffected() == 0 {
 		return repository.ErrNotFound
 	}
-	return nil
+	// Lock application before control. Every explicit enable starts a fresh episode.
+	control := table.DeploymentAdmissionState
+	sqlStr, args = control.INSERT(control.ApplicationID, control.ResetGeneration).
+		VALUES(appID, int64(1)).ON_CONFLICT(control.ApplicationID).DO_UPDATE(
+		postgres.SET(control.ResetGeneration.SET(control.ResetGeneration.ADD(postgres.Int64(1))),
+			control.ConfirmedTier.SET(postgres.StringExp(postgres.NULL)), control.DeploymentReason.SET(postgres.StringExp(postgres.NULL))),
+	).Sql()
+	if _, err := tx.Exec(ctx, sqlStr, args...); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // UpdateApplicationLastForecloseCheckBlock advances the per-app record
@@ -663,7 +698,8 @@ func getColumnForEvent(event model.MonitoredEvent) (postgres.ColumnFloat, error)
 		return table.Application.LastOutputCheckBlock, nil
 	case model.MonitoredEvent_CommitmentJoined, model.MonitoredEvent_MatchAdvanced,
 		model.MonitoredEvent_MatchCreated, model.MonitoredEvent_MatchDeleted, model.MonitoredEvent_NewInnerTournament,
-		model.MonitoredEvent_LeafMatchSealed, model.MonitoredEvent_PartialBondRefund, model.MonitoredEvent_BondRecovered:
+		model.MonitoredEvent_LeafMatchSealed, model.MonitoredEvent_PartialBondRefund, model.MonitoredEvent_BondRecovered,
+		model.MonitoredEvent_StandingChanged:
 		return table.Application.LastTournamentCheckBlock, nil
 	case model.MonitoredEvent_ClaimAccepted:
 		// This safe cursor covers both staged and accepted claims.

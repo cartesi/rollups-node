@@ -22,10 +22,10 @@ ROLLUPS_CONTRACTS_VERSION := 3.0.0-alpha.10
 ROLLUPS_CONTRACTS_URL:=https://github.com/cartesi/rollups-contracts/releases/download/
 ROLLUPS_CONTRACTS_ARTIFACT:=cartesi-rollups-contracts-$(ROLLUPS_CONTRACTS_VERSION)-artifacts.tar.gz
 ROLLUPS_CONTRACTS_SHA256:=5213ce59d0f5a1c4fef4ebf17b6ef999be709c32b4b94511c320729bb2afa959
-ROLLUPS_PRT_CONTRACTS_VERSION := 3.0.0-alpha.5
+ROLLUPS_PRT_CONTRACTS_VERSION := 3.0.0-alpha.6
 ROLLUPS_PRT_CONTRACTS_URL:=https://github.com/cartesi/dave/releases/download/
 ROLLUPS_PRT_CONTRACTS_ARTIFACT:=cartesi-rollups-prt-$(ROLLUPS_PRT_CONTRACTS_VERSION)-contract-artifacts.tar.gz
-ROLLUPS_PRT_CONTRACTS_SHA256:=10673f0d8cf83988e172b1b4baebb9c74a0dda0d6b3f77c89950638b63dae4ee
+ROLLUPS_PRT_CONTRACTS_SHA256:=6938b679cddeef51becc5ca512fa9e2d0dfb0a55686985b2803e1ce7ba004ad4
 
 IMAGE_TAG ?= devel
 
@@ -167,7 +167,7 @@ env:
 	@echo export CARTESI_CONTRACTS_QUORUM_FACTORY_ADDRESS="0x0754D5Eb680c71bf469B39e48C5b64AB0813fdb9"
 	@echo export CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS="0x35Cd91f13141Bb6A6FC69E1eeDD241bbA1Ddd45F"
 	@echo export CARTESI_CONTRACTS_SELF_HOSTED_APPLICATION_FACTORY_ADDRESS="0x9e6866A965dC5f99f95EF6B0d8399dad18eEf98b"
-	@echo export CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS="0xd34BEC37Fa5816ABA2f87BdaD2E13dd1B161370f"
+	@echo export CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS="0xF8f6dFA3A3e40C10926839FFd8a221C87C8b2ccD"
 	@echo export CARTESI_DEVNET_ERC20_PORTAL_ADDRESS="0x3332DE61a8BB9aC84893b2f552Fe81C9a6dC5419"
 	@echo export CARTESI_DEVNET_TEST_USDC_ADDRESS="0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81"
 	@echo export CARTESI_DEVNET_WITHDRAWAL_OUTPUT_BUILDER_ADDRESS="0xB4D253c7a110241561B3eD6d632846dF7d4e9Af7"
@@ -374,17 +374,17 @@ exception-dapp: applications/exception-dapp ## Exception dapp
 applications/echo-dapp: ## Create echo-dapp test application
 	@echo "Creating echo-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/echo-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --delegate-call-vouchers=1 --notices=1 --reports=1 --verbose=1
+	@cartesi-machine --ram-length=128Mi --store=applications/echo-dapp --final-hash --assert-rolling-template -- ioctl-echo-loop --vouchers=1 --delegate-call-vouchers=1 --notices=1 --reports=1 --verbose=1 || { rm -rf "$@"; exit 1; }
 
 applications/reject-dapp: ## Create reject-dapp test application
 	@echo "Creating reject-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/reject-dapp --final-hash -- "rollup accept && echo '{\"payload\": \"0x726561736f6e20666f722072656a656374696e67\" }' | rollup report && rollup reject"
+	@cartesi-machine --ram-length=128Mi --store=applications/reject-dapp --final-hash --assert-rolling-template -- "rollup accept && echo '{\"payload\": \"0x726561736f6e20666f722072656a656374696e67\" }' | rollup report && rollup reject" || { rm -rf "$@"; exit 1; }
 
 applications/exception-dapp: ## Create exception-dapp test application
 	@echo "Creating exception-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/exception-dapp --final-hash -- "rollup accept && echo '{\"payload\": \"0x7468697320697320612064756d6d7920657863657074696f6e2074657874\"}' | rollup exception"
+	@cartesi-machine --ram-length=128Mi --store=applications/exception-dapp --final-hash --assert-rolling-template -- "rollup accept && echo '{\"payload\": \"0x7468697320697320612064756d6d7920657863657074696f6e2074657874\"}' | rollup exception" || { rm -rf "$@"; exit 1; }
 
 reject-loop-dapp: applications/reject-loop-dapp ## Reject loop dapp
 
@@ -405,17 +405,17 @@ erc20-withdrawal-nvram-dapp: applications/erc20-withdrawal-nvram-dapp ## ERC-20 
 applications/reject-loop-dapp: ## Create reject-loop-dapp test application
 	@echo "Creating reject-loop-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/reject-loop-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1 --verbose=1
+	@cartesi-machine --ram-length=128Mi --store=applications/reject-loop-dapp --final-hash --assert-rolling-template -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1 --verbose=1 || { rm -rf "$@"; exit 1; }
 
 applications/exception-loop-dapp: ## Create exception-loop-dapp test application
 	@echo "Creating exception-loop-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/exception-loop-dapp --final-hash -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --exception=1 --verbose=1
+	@cartesi-machine --ram-length=128Mi --store=applications/exception-loop-dapp --final-hash --assert-rolling-template -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --exception=1 --verbose=1 || { rm -rf "$@"; exit 1; }
 
 applications/halt-loop-dapp: ## Create halt-loop-dapp test application
 	@echo "Creating halt-loop-dapp test application"
 	@mkdir -p applications
-	@cartesi-machine --ram-length=128Mi --store=applications/halt-loop-dapp --final-hash -- "rollup accept && rollup accept"
+	@cartesi-machine --ram-length=128Mi --store=applications/halt-loop-dapp --final-hash --assert-rolling-template -- "rollup accept && rollup accept" || { rm -rf "$@"; exit 1; }
 
 applications/mcycle-overflow-dapp: applications/echo-dapp ## Create MCYCLE overflow test application
 	@echo "Creating mcycle-overflow-dapp test application"
@@ -444,7 +444,7 @@ applications/erc20-withdrawal-dapp: test/dapps/erc20-withdrawal/install.sh ## Cr
 		--env=TRUSTED_ERC20_PORTAL=$$PORTAL \
 		--env=TRUSTED_ERC20_TOKEN=$$TOKEN \
 		--append-init-file=test/dapps/erc20-withdrawal/install.sh \
-		--store=applications/erc20-withdrawal-dapp --final-hash -- /usr/local/bin/erc20-withdrawal-dapp
+		--store=applications/erc20-withdrawal-dapp --final-hash --assert-rolling-template -- /usr/local/bin/erc20-withdrawal-dapp || { rm -rf "$@"; exit 1; }
 
 applications/erc20-withdrawal-nvram-dapp: test/dapps/erc20-withdrawal/install.sh ## Create ERC-20 withdrawal NVRAM test application
 	@echo "Creating ERC-20 withdrawal NVRAM test application"
@@ -457,7 +457,7 @@ applications/erc20-withdrawal-nvram-dapp: test/dapps/erc20-withdrawal/install.sh
 		--env=TRUSTED_ERC20_PORTAL=$$PORTAL \
 		--env=TRUSTED_ERC20_TOKEN=$$TOKEN \
 		--append-init-file=test/dapps/erc20-withdrawal/install.sh \
-		--store=applications/erc20-withdrawal-nvram-dapp --final-hash -- /usr/local/bin/erc20-withdrawal-dapp
+		--store=applications/erc20-withdrawal-nvram-dapp --final-hash --assert-rolling-template -- /usr/local/bin/erc20-withdrawal-dapp || { rm -rf "$@"; exit 1; }
 
 deploy-echo-dapp: applications/echo-dapp ## Deploy echo-dapp test application
 	@echo "Deploying echo-dapp test application"
@@ -682,7 +682,7 @@ INTEGRATION_SHARDS := basic quorum prt replay restart withdrawal awskms
 
 INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMachineStates|MultiApp|EchoAuthorityStaging|IntegrationCLI|IntegrationLogScanner|TransactionFeeReplacement)$$
 INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
-INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt|PrtPassiveDisputeObserver|PrtRecoveryFixtureConfig|ReaderConfigClearsSignerAndCanRestoreExactSubmittingRecord|RecoveryFixturePreservesFinalizedProfileAndParentLimits|SparseDisputeCommitment(MatchesDenseTrees|CanonicalGeometry|RejectsOutOfRangeRequests)|PassiveObserver(CleanupPreservesRestoreOrder|Config(PreservesOriginalAndUnrelatedFields|RejectsMissingFieldsAndInvalidJSON)))$$
+INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt|PrtPassiveDisputeObserver|PrtRecoveryFixtureConfig|ReaderConfigClearsSignerAndCanRestoreExactSubmittingRecord|RecoveryFixturePreservesFinalizedProfileAndParentLimits|SparseDisputeCommitment(MatchesDenseTrees|CanonicalGeometry|RejectsOutOfRangeRequests)|PassiveObserver(CleanupPreservesRestoreOrder|Config(PreservesOriginalAndUnrelatedFields|RejectsMissingFieldsAndInvalidJSON))|PrtCommitmentMatchesMachineCLI)$$
 INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim|IndependentClaimWatch|IndependentClaimObserverCorrectClaims)$$
 INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess|ManagedNodeDeadlineStopsChildrenBeforeProcessExit)$$
 INTEGRATION_SHARD_withdrawal := ^Test(WithdrawalLifecycle|RefundLifecycle|AccountsDriveStartIndex_MemoryRanges_ReturnsStartIndex)$$

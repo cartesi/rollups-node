@@ -559,13 +559,14 @@ type rawCommitmentJoined struct {
 }
 
 type rawMatchCreated struct {
-	matchIDHash  [32]byte
-	one          [32]byte
-	two          [32]byte
-	leftOfTwo    [32]byte
-	eliminableAt uint64
-	blockNumber  uint64
-	txHash       common.Hash
+	matchIDHash       [32]byte
+	one               [32]byte
+	two               [32]byte
+	leftOfTwo         [32]byte
+	responderDeadline uint64
+	eliminableAt      uint64
+	blockNumber       uint64
+	txHash            common.Hash
 }
 
 type rawMatchAdvanced struct {
@@ -573,6 +574,8 @@ type rawMatchAdvanced struct {
 	otherParent          [32]byte
 	leftNode             [32]byte
 	segmentStartPosition *big.Int
+	currentHeight        uint64
+	responderDeadline    uint64
 	eliminableAt         uint64
 	blockNumber          uint64
 	txHash               common.Hash
@@ -647,13 +650,14 @@ func (c *chainClient) fetchTournamentEvents(
 				return false, pErr
 			}
 			events.matchesCreated = append(events.matchesCreated, rawMatchCreated{
-				matchIDHash:  ev.MatchIdHash,
-				one:          ev.One,
-				two:          ev.Two,
-				leftOfTwo:    ev.LeftOfTwo,
-				eliminableAt: ev.EliminableAt,
-				blockNumber:  log.BlockNumber,
-				txHash:       log.TxHash,
+				matchIDHash:       ev.MatchIdHash,
+				one:               ev.One,
+				two:               ev.Two,
+				leftOfTwo:         ev.LeftOfTwo,
+				responderDeadline: ev.ResponderDeadline,
+				eliminableAt:      ev.EliminableAt,
+				blockNumber:       log.BlockNumber,
+				txHash:            log.TxHash,
 			})
 			return false, nil
 		},
@@ -680,6 +684,8 @@ func (c *chainClient) fetchTournamentEvents(
 				otherParent:          ev.OtherParent,
 				leftNode:             ev.LeftNode,
 				segmentStartPosition: ev.SegmentStartPosition,
+				currentHeight:        ev.CurrentHeight,
+				responderDeadline:    ev.ResponderDeadline,
 				eliminableAt:         ev.EliminableAt,
 				blockNumber:          log.BlockNumber,
 				txHash:               log.TxHash,
@@ -1011,15 +1017,16 @@ func formatMatchEvents(
 	out := make([]MatchEvent, len(created))
 	for i, r := range created {
 		me := MatchEvent{
-			MatchIDHash:   formatHash(r.matchIDHash),
-			CommitmentOne: formatHash(r.one),
-			CommitmentTwo: formatHash(r.two),
-			PlayerOneAddr: registry.resolve(r.one),
-			PlayerTwoAddr: registry.resolve(r.two),
-			LeftOfTwo:     formatHash(r.leftOfTwo),
-			EliminableAt:  r.eliminableAt,
-			BlockNumber:   r.blockNumber,
-			TxHash:        r.txHash.Hex(),
+			MatchIDHash:       formatHash(r.matchIDHash),
+			CommitmentOne:     formatHash(r.one),
+			CommitmentTwo:     formatHash(r.two),
+			PlayerOneAddr:     registry.resolve(r.one),
+			PlayerTwoAddr:     registry.resolve(r.two),
+			LeftOfTwo:         formatHash(r.leftOfTwo),
+			ResponderDeadline: r.responderDeadline,
+			EliminableAt:      r.eliminableAt,
+			BlockNumber:       r.blockNumber,
+			TxHash:            r.txHash.Hex(),
 		}
 
 		if d, ok := deletionMap[r.matchIDHash]; ok {
@@ -1058,6 +1065,8 @@ func formatAdvanceEvents(raw []rawMatchAdvanced) []MatchAdvanceEvent {
 			OtherParent:          formatHash(r.otherParent),
 			LeftNode:             formatHash(r.leftNode),
 			SegmentStartPosition: segmentStartPosition,
+			CurrentHeight:        r.currentHeight,
+			ResponderDeadline:    r.responderDeadline,
 			EliminableAt:         r.eliminableAt,
 			BlockNumber:          r.blockNumber,
 			TxHash:               r.txHash.Hex(),

@@ -3371,13 +3371,14 @@ func TestMethod(t *testing.T) {
 			limit := uint64(many / 2)
 			for nr := range many {
 				otherParent := common.HexToHash(hexutil.EncodeUint64(nr))
-				err = s.repository.CreateMatchAdvanced(ctx, numberToName(app),
-					repotest.NewMatchAdvancedBuilder(appID).
-						WithEpochIndex(enr).
-						WithTournamentAddress(tournamentAddress).
-						WithIDHash(idHash).
-						WithOtherParent(otherParent).
-						Build())
+				advance := repotest.NewMatchAdvancedBuilder(appID).
+					WithEpochIndex(enr).
+					WithTournamentAddress(tournamentAddress).
+					WithIDHash(idHash).
+					WithOtherParent(otherParent).
+					Build()
+				advance.CurrentHeight = many - nr
+				err = s.repository.CreateMatchAdvanced(ctx, numberToName(app), advance)
 				require.NoError(t, err, "failed to create match advance, app: %v, nr: %v", app, nr)
 			}
 
@@ -4018,6 +4019,54 @@ func TestMethod(t *testing.T) {
 		})
 	}
 
+	for _, method := range []string{observerListStandingChangesMethod, observerGetStandingChangeMethod} {
+		t.Run(method, func(t *testing.T) {
+			testHistogram.inc(method)
+			s := newTestService(t, t.Name())
+			ctx := t.Context()
+			app := uint64(1)
+			appID := s.newTestApplication(ctx, t, app)
+			tournament := repotest.NewTournamentBuilder(appID).Build()
+			epoch := repotest.NewEpochBuilder(appID).WithStatus(model.EpochStatus_Closed).Build()
+			epoch.TournamentAddress = &tournament.Address
+			epoch.LastBlock = tournament.StartInstant
+			s.createTestEpoch(ctx, t, numberToName(app), epoch)
+			txHash := repotest.UniqueHash()
+			first := &model.StandingChanged{ApplicationID: appID, EpochIndex: epoch.Index,
+				TournamentAddress: tournament.Address, MatchCount: model.Uint256{1},
+				BlockNumber: tournament.Snapshot.AsOfBlock, TxHash: txHash}
+			second := *first
+			second.LogIndex, second.ResultAt, second.MatchCount = 1, tournament.StartInstant+tournament.Allowance, model.Uint256{}
+			require.NoError(t, s.repository.StoreTournamentInterval(ctx, appID, nil, []*repository.TournamentEventBatch{{
+				Tournament: tournament, StandingChanges: []*model.StandingChanged{first, &second},
+			}}))
+			params := map[string]any{observerApplicationKey: numberToName(app), observerEpochIndexKey: hexutil.EncodeUint64(epoch.Index),
+				observerTournamentAddressKey: tournament.Address.Hex()}
+			if method == observerGetStandingChangeMethod {
+				params[observerTxHashKey], params[observerLogIndexKey] = txHash.Hex(), "0x1"
+			} else {
+				params["limit"], params["offset"], params["descending"] = 1, 1, false
+			}
+			request, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": params, "id": 0})
+			require.NoError(t, err)
+			body := s.doRequest(t, 0, request)
+			if method == observerGetStandingChangeMethod {
+				var response testRPCResponse[model.StandingChanged]
+				require.NoError(t, json.Unmarshal(body, &response))
+				require.Nil(t, response.Error)
+				require.Equal(t, uint64(1), response.Result.Data.LogIndex)
+				require.Equal(t, uint64(109), response.Result.Data.ResultAt)
+			} else {
+				var response testRPCResponse[[]model.StandingChanged]
+				require.NoError(t, json.Unmarshal(body, &response))
+				require.Nil(t, response.Error)
+				require.Len(t, response.Result.Data, 1)
+				require.Equal(t, uint64(1), response.Result.Data[0].LogIndex)
+				require.Equal(t, uint64(109), response.Result.Data[0].ResultAt)
+			}
+		})
+	}
+
 	// tested methods, implemented methods and discover methods must match:
 	data, err := discoverSpec.ReadFile("jsonrpc-discover.json")
 	require.NoError(t, err)
@@ -4118,6 +4167,7 @@ func TestListOffsetValidation(t *testing.T) {
 		"cartesi_listMatches",
 		"cartesi_listMatchAdvances",
 		"cartesi_listBondEvents",
+		observerListStandingChangesMethod,
 	} {
 		t.Run(method, func(t *testing.T) {
 			s := newBatchTestService()

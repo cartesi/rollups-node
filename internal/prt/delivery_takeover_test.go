@@ -19,10 +19,11 @@ func addDeliveryJoinCandidate(f *deliveryFixture, id int64, allowance uint64) *m
 	epoch := *f.epoch
 	epoch.ApplicationID, epoch.TournamentAddress = id, new(common.BigToAddress(big.NewInt(id*10+3)))
 	f.repo.apps = append(f.repo.apps, &app)
+	admitTestDeployment(f.d.Service, f.repo.prtRepositoryMock, &app)
 	f.backend.apps = f.repo.apps
 	f.repo.On("GetEpoch", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index).Return(&epoch, nil)
 	f.repo.publishRoot(&app, &epoch, app.LastTournamentCheckBlock)
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock()
 	view := resultTestSnapshot(&epoch, false)
 	view.stage.IsFinished = false
 	consensus.On("GetCurrentSealedEpoch", mock.Anything).Return(view.sealed, nil)
@@ -37,7 +38,9 @@ func deliveryJoinAdapter(f *deliveryFixture, epoch *model.Epoch, allowance uint6
 	adapter := &tournamentAdapterMock{}
 	adapter.On("CommitmentStanding", mock.Anything, [32]byte(*epoch.Commitment)).Return(CommitmentStanding{}, nil)
 	adapter.On("Descriptor", mock.Anything).Return(TournamentDescriptor{
-		Level: 0, Height: model.Log2EpochComputationHashLeafCount, StartInstant: 100, Allowance: allowance,
+		Level: 0, Height: model.Log2EpochComputationHashLeafCount,
+		Log2Stride:   model.Log2RootTournamentStride,
+		StartInstant: 100, Allowance: allowance,
 	}, nil)
 	adapter.On("Standing", mock.Anything).Return(TournamentStanding{AcceptsJoins: true}, nil)
 	adapter.On("BondValue", mock.Anything).Return(big.NewInt(50), nil)

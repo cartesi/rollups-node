@@ -24,6 +24,7 @@ type acceptanceReceiptFixture struct {
 	consensus *daveConsensusAdapterMock
 	app       *model.Application
 	epoch     *model.Epoch
+	root      *model.Tournament
 	header    *types.Header
 	headerErr error
 	receipt   *types.Receipt
@@ -44,12 +45,12 @@ func newAcceptanceReceiptFixture(t *testing.T) *acceptanceReceiptFixture {
 		Status: types.ReceiptStatusSuccessful, Logs: []*types.Log{raw}}
 	client := &ethClientMock{}
 	s.client = client
-	repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
-		Return(&model.Tournament{Snapshot: model.TournamentSnapshot{
-			AsOfBlock: 100, FinishedAtBlock: 90, WinnerCommitment: epoch.Commitment,
-		}}, nil)
+	root := &model.Tournament{Snapshot: model.TournamentSnapshot{
+		AsOfBlock: 100, FinishedAtBlock: 90, WinnerCommitment: epoch.Commitment, FinalStateHash: epoch.MachineHash,
+	}}
+	repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).Return(root, nil)
 	f := &acceptanceReceiptFixture{service: s, repo: repo, client: client,
-		consensus: &daveConsensusAdapterMock{}, app: app, epoch: epoch, header: header, receipt: receipt, log: raw}
+		consensus: newCompatibleDaveConsensusAdapterMock(), app: app, epoch: epoch, root: root, header: header, receipt: receipt, log: raw}
 	t.Cleanup(func() {
 		repo.AssertExpectations(t)
 		client.AssertExpectations(t)
@@ -177,6 +178,9 @@ func TestCanonicalAcceptanceReceiptStillDetectsDivergence(t *testing.T) {
 			f.consensus.On("ParseEpochSealed", *f.log).Return(event, nil).Once()
 			f.repo.On("UpdateApplicationStatus", mock.Anything, f.app.ID, model.ApplicationStatus_Diverged, mock.Anything).
 				Return(nil).Once()
+			f.repo.On("UpdateEpochWithAcceptedClaim", mock.Anything, f.app.ID, f.epoch.Index, f.epoch.ClaimTransactionHash).
+				Return(nil).Maybe()
+			expectStoredProtection(t, f.repo, f.app, f.epoch)
 			deferActions, err := f.service.reconcileAcceptedEpochs(t.Context(), f.app, []*model.Epoch{f.epoch}, f.consensus, 100)
 			require.ErrorContains(t, err, "inconsistent")
 			require.True(t, deferActions)

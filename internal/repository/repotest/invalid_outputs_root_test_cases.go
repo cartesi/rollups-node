@@ -88,7 +88,7 @@ func (s *ApplicationSuite) TestInvalidOutputsRootStatus() {
 		reason := diagnosis
 		s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, model.ApplicationStatus_InvalidOutputsRoot, &reason))
 		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
-		s.Require().NoError(s.Repo.EnableApplicationAndClearFailed(s.Ctx, app.ID))
+		s.Require().NoError(s.Repo.EnableApplicationAndResetDeployment(s.Ctx, app.ID, true))
 		stored, err := s.Repo.GetApplication(s.Ctx, app.Name)
 		s.Require().NoError(err)
 		s.True(stored.Enabled)
@@ -99,8 +99,9 @@ func (s *ApplicationSuite) TestInvalidOutputsRootStatus() {
 
 func (s *BulkOperationsSuite) TestInvalidOutputsRootAdvance() {
 	const (
-		epochLength = 10
-		inputBlock  = 5
+		stateHashPageSize = 10
+		epochLength       = 10
+		inputBlock        = 5
 	)
 	for _, consensus := range model.ConsensusAllValues {
 		s.Run(consensus.String(), func() {
@@ -154,19 +155,20 @@ func (s *BulkOperationsSuite) TestInvalidOutputsRootAdvance() {
 			s.Equal(&result.MachineHash, records[0].Input.MachineHash)
 			s.Equal(&result.TxBufferDataBlock, records[0].Input.TxBufferDataBlock)
 			if result.IsDaveConsensus {
-				hashes, total, err := s.Repo.ListStateHashes(s.Ctx, app.Name,
-					repository.StateHashFilter{EpochIndex: &epoch.Index}, repository.Pagination{}, false)
+				total, err := s.Repo.CountEpochStateHashes(s.Ctx, app.ID, epoch.Index)
+				s.Require().NoError(err)
+				hashes, err := s.Repo.ListEpochStateHashes(s.Ctx, app.ID, epoch.Index, nil, stateHashPageSize)
 				s.Require().NoError(err)
 				expectedHashRows := len(result.PeriodicStateHashes) + 1
 				s.Equal(uint64(expectedHashRows), total)
 				s.Require().Len(hashes, expectedHashRows)
 				s.Equal(common.Hash(result.PeriodicStateHashes[0]), hashes[0].MachineHash)
 				s.Equal(uint64(1), hashes[0].Repetitions)
-				s.Equal(result.MachineHash, hashes[1].MachineHash)
+				s.Equal(model.FinalStateEntry(result.MachineHash), hashes[1].MachineHash)
 				s.Equal(result.PaddingRepetitions, hashes[1].Repetitions)
 				s.Equal([]model.ReplayStateHash{
 					{Index: 0, MachineHash: common.Hash(result.PeriodicStateHashes[0]), Repetitions: 1},
-					{Index: 1, MachineHash: result.MachineHash, Repetitions: result.PaddingRepetitions},
+					{Index: 1, MachineHash: model.FinalStateEntry(result.MachineHash), Repetitions: result.PaddingRepetitions},
 				}, records[0].StateHashes)
 			} else {
 				s.Empty(records[0].StateHashes)

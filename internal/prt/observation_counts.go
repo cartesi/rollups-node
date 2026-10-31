@@ -30,6 +30,7 @@ const (
 	tournamentEventLeafMatchSealed    = "LeafMatchSealed"
 	tournamentEventMatchDeleted       = "MatchDeleted"
 	tournamentEventNewInnerTournament = "NewInnerTournament"
+	tournamentEventStandingChanged    = "StandingChanged"
 )
 
 func zeroStructuralEventCounts() StructuralEventCounts {
@@ -97,6 +98,20 @@ func validateTournamentEventCounts(before, after StructuralEventCounts, events *
 			return fmt.Errorf("%w: %s event count mismatch: expected %s, fetched %d",
 				txsender.ErrInconclusive, stream.name, expected, stream.fetched)
 		}
+	}
+	standingCount := len(events.CommitmentJoined) + len(events.MatchDeleted)
+	if len(events.StandingChanged) != standingCount {
+		return fmt.Errorf("%w: StandingChanged event count mismatch: expected %d, fetched %d",
+			txsender.ErrInconclusive, standingCount, len(events.StandingChanged))
+	}
+	return nil
+}
+
+// Stored standing history must have the same authenticated cumulative baseline.
+func validateStoredStandingCount(counts repository.TournamentEventCounts) error {
+	expected := new(big.Int).Add(new(big.Int).SetUint64(counts.CommitmentJoined), new(big.Int).SetUint64(counts.MatchDeleted))
+	if expected.Cmp(new(big.Int).SetUint64(counts.StandingChanged)) != 0 {
+		return fmt.Errorf("stored StandingChanged count mismatch: expected %s, stored %d", expected, counts.StandingChanged)
 	}
 	return nil
 }

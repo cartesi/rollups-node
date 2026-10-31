@@ -246,7 +246,7 @@ func insertStateHashes(
 		inputIndex:         inputIndex,
 		nextIndex:          nextIndex,
 		hashes:             hashes,
-		machineHash:        machineHash,
+		finalEntry:         model.FinalStateEntry(machineHash),
 		paddingRepetitions: paddingRepetitions,
 		rowCount:           rowCount,
 	}
@@ -282,7 +282,7 @@ type stateHashCopySource struct {
 	inputIndex         uint64
 	nextIndex          uint64
 	hashes             [][32]byte
-	machineHash        common.Hash
+	finalEntry         common.Hash
 	paddingRepetitions uint64
 	rowCount           uint64
 	nextRow            uint64
@@ -309,7 +309,7 @@ func (source *stateHashCopySource) Values() ([]any, error) {
 		source.values[5] = int64(1)
 		return source.values[:], nil
 	}
-	source.values[4] = source.machineHash[:]
+	source.values[4] = source.finalEntry[:]
 	source.values[5] = source.paddingRepetitions
 	return source.values[:], nil
 }
@@ -321,13 +321,13 @@ func stateHashInsertShape(
 	paddingRepetitions uint64,
 ) (rowCount uint64, err error) {
 	if err := model.ValidateInputHashCollectionSpan(hashCount, paddingRepetitions); err != nil {
-		return 0, fmt.Errorf("invalid input hash collection span: %w", err)
+		return 0, fmt.Errorf("invalid input hash collection shape: %w", err)
 	}
 	if paddingRepetitions == 0 {
-		return 0, errors.New("canonical input hash collection requires a positive final repetition tail")
+		return hashCount, nil
 	}
 	// Span validation bounds hashCount by the collection capacity, so appending the
-	// required canonical tail row cannot overflow uint64.
+	// padding row cannot overflow uint64.
 	return hashCount + 1, nil
 }
 
@@ -747,68 +747,24 @@ func updateEpochClaim(
 	return nil
 }
 
-func updateOutputs(
-	ctx context.Context,
-	tx pgx.Tx,
-	outputs []*model.Output,
+func (r *PostgresRepository) StoreClaimAndProofs(
+	ctx context.Context, epoch *model.Epoch, write repository.ClaimProofWriteFunc,
 ) error {
-	if len(outputs) == 0 {
-		return nil
-	}
-
-	batch := &pgx.Batch{}
-	for _, output := range outputs {
-		updStmt := table.Output.
-			UPDATE(
-				table.Output.Hash,
-				table.Output.OutputHashesSiblings,
-			).
-			SET(
-				hashToBytes(output.Hash),
-				encodeSiblings(output.OutputHashesSiblings),
-			).
-			WHERE(
-				table.Output.InputEpochApplicationID.EQ(postgres.Int64(output.InputEpochApplicationID)).
-					AND(table.Output.Index.EQ(uint64Expr(output.Index))),
-			)
-		sqlStr, args := updStmt.Sql()
-		batch.Queue(sqlStr, args...)
-	}
-
-	br := tx.SendBatch(ctx, batch)
-
-	for _, output := range outputs {
-		cmd, err := br.Exec()
-		if err != nil {
-			br.Close()
-			return fmt.Errorf("failed to insert proof for output '%d': %w", output.Index, err)
-		}
-		if cmd.RowsAffected() == 0 {
-			br.Close()
-			return fmt.Errorf("failed to insert proof for output '%d'. No rows affected", output.Index)
-		}
-	}
-	return br.Close()
-}
-
-func (r *PostgresRepository) StoreClaimAndProofs(ctx context.Context, epoch *model.Epoch, outputs []*model.Output) error {
-
-	tx, err := r.db.Begin(ctx)
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
 		return fmt.Errorf("SetEpochClaimAndInsertProofsTransaction failed: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	err = updateEpochClaim(ctx, tx, epoch)
-	if err != nil {
+	if err := updateEpochClaim(ctx, tx, epoch); err != nil {
 		return err
 	}
-
-	err = updateOutputs(ctx, tx, outputs)
-	if err != nil {
-		return err
+	if write != nil {
+		writer := &claimProofWriter{tx: tx, appID: epoch.ApplicationID}
+		if err := write(ctx, writer); err != nil {
+			return err
+		}
 	}
-
 	return tx.Commit(ctx)
 }
 

@@ -377,17 +377,24 @@ func TestNonceLowReplyDoesNotProveConsumption(t *testing.T) {
 }
 
 func TestLaggingCanonicalReplicaCannotDiscardCurrentNonce(t *testing.T) {
-	s, b, _ := testSender(t)
-	b.advance(2, 1)
-	_, err := s.PublishNext(t.Context(), newPlanner())
-	require.NoError(t, err)
-	current := s.current
-	b.head = b.headers[1]
-	report, err := s.PublishNext(t.Context(), newPlanner())
-	require.ErrorIs(t, err, ErrInconclusive)
-	require.False(t, report.Attempted)
-	require.Same(t, current, s.current)
-	require.Len(t, b.published, 1)
+	for _, sameNonce := range []bool{false, true} {
+		t.Run(map[bool]string{false: "lower nonce", true: "same nonce"}[sameNonce], func(t *testing.T) {
+			s, b, _ := testSender(t)
+			if sameNonce {
+				b.advance(1, 1)
+			}
+			b.advance(2, 1)
+			_, err := s.PublishNext(t.Context(), newPlanner())
+			require.NoError(t, err)
+			current := s.current
+			b.head = b.headers[1]
+			report, err := s.PublishNext(t.Context(), newPlanner())
+			require.ErrorIs(t, err, ErrInconclusive)
+			require.False(t, report.Attempted)
+			require.Same(t, current, s.current)
+			require.Len(t, b.published, 1)
+		})
+	}
 }
 
 func TestJoinedPublicationTransportFailureRetainsAmbiguousNewPreference(t *testing.T) {

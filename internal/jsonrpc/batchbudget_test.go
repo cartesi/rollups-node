@@ -56,6 +56,8 @@ func TestBatchListItemLimitSupportsNamedAndPositionalParams(t *testing.T) {
 		"cartesi_listBondEvents":    `["app",null,null,10000]`,
 	}
 
+	positionalAtLimit[observerListStandingChangesMethod] = `["app","0x0","tournament",10000]`
+
 	for method, positional := range positionalAtLimit {
 		t.Run(method, func(t *testing.T) {
 			requests := []json.RawMessage{

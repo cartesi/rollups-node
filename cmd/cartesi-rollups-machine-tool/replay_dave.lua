@@ -6,7 +6,7 @@ local cartesi = require("cartesi")
 local function usage(message)
     if message then io.stderr:write(message, "\n") end
     io.stderr:write(
-        "usage: replay_dave.lua --template <path> --store <path> --inputs-manifest <path>\n"
+        "usage: replay_dave.lua --template <path> --store <path> --inputs-manifest <path> --marchid <number>\n"
     )
     os.exit(2)
 end
@@ -23,6 +23,8 @@ local function parse_args(args)
             opts.store = value
         elseif key == "--inputs-manifest" then
             opts.inputs_manifest = value
+        elseif key == "--marchid" then
+            opts.marchid = value
         else
             usage("unknown argument: " .. tostring(key))
         end
@@ -32,6 +34,7 @@ local function parse_args(args)
     if not opts.template then usage("missing --template") end
     if not opts.store then usage("missing --store") end
     if not opts.inputs_manifest then usage("missing --inputs-manifest") end
+    if not opts.marchid then usage("missing --marchid") end
     return opts
 end
 
@@ -90,6 +93,11 @@ local function advance_one(machine, input_path, input_number)
 end
 
 local opts = parse_args(arg)
+assert(
+    cartesi.MARCHID == tonumber(opts.marchid),
+    string.format("Cartesi Lua module MARCHID %s does not match required MARCHID %s (module: %s)",
+        tostring(cartesi.MARCHID), tostring(opts.marchid), tostring(package.searchpath("cartesi", package.cpath)))
+)
 local machine <close> = cartesi.machine(opts.template)
 ensure_manual_yield(machine)
 
@@ -97,4 +105,5 @@ for index, input_path in ipairs(read_input_paths(opts.inputs_manifest)) do
     advance_one(machine, input_path, index - 1)
 end
 
+machine:get_root_hash()
 machine:store(opts.store)

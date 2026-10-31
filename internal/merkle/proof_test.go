@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/cartesi/rollups-node/internal/merkle/merkletest"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 )
@@ -46,7 +47,7 @@ func load(t *testing.T, fileName string) merkleDataPoint {
 //		common.HexToHash("0x00"),
 //		common.HexToHash("0x00"),
 //	}
-//	root, siblings, _ := CreateProofs(leaves, TREE_DEPTH)
+//	root, siblings, _ := merkletest.CreateProofs(leaves, TREE_DEPTH)
 //
 //	mdp := merkleDataPoint{
 //		Proof: merkleProof{
@@ -76,12 +77,12 @@ func TestRootHash(t *testing.T) {
 	leaves := []common.Hash{
 		common.HexToHash("0x00"),
 	}
-	root, siblings, _ := CreateProofs(leaves, TREE_DEPTH)
+	root, siblings, _ := merkletest.CreateProofs(leaves, TREE_DEPTH)
 
 	postContext := CreatePostContext()
 	assert.Equal(t, root, postContext[TREE_DEPTH])
 
-	siblings2, _ := ComputeSiblingsMatrix(postContext, leaves, postContext, 0)
+	siblings2, _ := merkletest.ComputeSiblingsMatrix(postContext, leaves, postContext, 0)
 	assert.Equal(t, siblings, siblings2)
 }
 
@@ -90,7 +91,7 @@ func TestIncorrectCreateProofsLevel(t *testing.T) {
 		common.HexToHash("0x00"),
 		common.HexToHash("0x00"),
 	}
-	_, _, err := CreateProofs(leaves, 0)
+	_, _, err := merkletest.CreateProofs(leaves, 0)
 	assert.NotNil(t, err)
 }
 
@@ -101,13 +102,13 @@ func TestComputSiblingsMatrixAssertions(t *testing.T) {
 	pre := post
 	index := uint64(0)
 
-	_, err = ComputeSiblingsMatrix(pre, []common.Hash{}, post, index)
+	_, err = merkletest.ComputeSiblingsMatrix(pre, []common.Hash{}, post, index)
 	assert.NotNil(t, err)
 
-	_, err = ComputeSiblingsMatrix(nil, outputs, post, index)
+	_, err = merkletest.ComputeSiblingsMatrix(nil, outputs, post, index)
 	assert.NotNil(t, err)
 
-	_, err = ComputeSiblingsMatrix(pre, outputs, nil, index)
+	_, err = merkletest.ComputeSiblingsMatrix(pre, outputs, nil, index)
 	assert.NotNil(t, err)
 }
 
@@ -135,7 +136,7 @@ func TestComputeSiblingsMatrix(t *testing.T) {
 			if len(proof.Siblings) != 0 {
 				// sanity check. Proof must comput rootHash
 				assert.Equal(t, proof.RootHash,
-					ComputeRootHashFromProof(proof.Index, proof.Hash, proof.Siblings))
+					merkletest.ComputeRootHashFromProof(proof.Index, proof.Hash, proof.Siblings))
 				pre = CreatePreContextFromProof(proof.Index, proof.Hash, proof.Siblings)
 				index = proof.Index + 1
 			}
@@ -147,7 +148,7 @@ func TestComputeSiblingsMatrix(t *testing.T) {
 			}
 
 			// compute siblings. must match reference.
-			siblings, err := ComputeSiblingsMatrix(pre, outputs, post, index)
+			siblings, err := merkletest.ComputeSiblingsMatrix(pre, outputs, post, index)
 			assert.Nil(t, err)
 			for i := range outputs {
 				begin := TREE_DEPTH * i

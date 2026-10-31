@@ -17,6 +17,7 @@ import (
 	"io"
 	"log/slog"
 	"math/big"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,18 @@ type prtRepositoryMock struct {
 	eventCounts          map[common.Address]repository.TournamentEventCounts
 	eventCountError      error
 	eventCountRead       func(int64, uint64, common.Address, uint64)
+	deploymentMu         sync.Mutex
+	deploymentRows       map[int64]model.DeploymentAdmissionState
+	deploymentRead       func(context.Context, repository.DeploymentIdentity) (*model.DeploymentAdmissionState, error)
+	deploymentAck        func(context.Context, repository.DeploymentAssessment) (*model.DeploymentAdmissionState, error)
+	deploymentCompletion func(context.Context, repository.DeploymentIdentity, uint64) (*repository.DeploymentCompletionState, error)
+	deploymentDrain      func(context.Context, repository.DeploymentDrainRequest) error
+}
+
+func (m *prtRepositoryMock) GetMatch(ctx context.Context, app string, epoch uint64, tournament, id string) (*model.Match, error) {
+	args := m.Called(ctx, app, epoch, tournament, id)
+	match, _ := args.Get(0).(*model.Match)
+	return match, args.Error(1)
 }
 
 func (m *prtRepositoryMock) GetTournamentEventCounts(
@@ -412,9 +425,14 @@ func (m *adapterFactoryMock) CreateDaveConsensusAdapter(addr common.Address) (Da
 
 type daveConsensusAdapterMock struct {
 	mock.Mock
+	deploymentRead func(context.Context, txsender.BlockRef) (DeploymentEvidence, error)
 }
 
 var _ DaveConsensusAdapter = (*daveConsensusAdapterMock)(nil)
+
+func (m *daveConsensusAdapterMock) ReadDeployment(ctx context.Context, head txsender.BlockRef) (DeploymentEvidence, error) {
+	return m.deploymentRead(ctx, head)
+}
 
 func (m *daveConsensusAdapterMock) EpochSealedAt(
 	ctx context.Context, blockHash common.Hash, epoch uint64,
@@ -563,5 +581,8 @@ func newPRTServiceMock() (*Service, *prtRepositoryMock) {
 		observationFailures: map[int64]tournamentObservationFailure{},
 	}
 	s.delivery = &delivery{Service: s, deliveryPolicy: txsender.RuntimePolicy()}
+	// Protocol fixtures supply acknowledged compatible admission explicitly.
+	// Deployment lifecycle tests replace this with an empty process cache.
+	admitTestDeployment(s, repo, prtRevertTestApp())
 	return s, repo
 }

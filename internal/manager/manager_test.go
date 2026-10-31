@@ -310,7 +310,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		repo := &MockMachineRepository{}
 		app := &model.Application{
 			ID: 75, Name: "RetryFailedStatus", IApplicationAddress: common.HexToAddress("0x75"),
-			Enabled: true, Status: model.ApplicationStatus_OK,
+			Enabled: true, Status: model.ApplicationStatus_OK, ConsensusType: model.Consensus_PRT,
 		}
 		repo.On("ListApplications", mock.Anything, mock.MatchedBy(func(f repository.ApplicationFilter) bool {
 			return f.ForeclosureRecorded != nil && !*f.ForeclosureRecorded
@@ -319,6 +319,15 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 			return f.ForeclosureRecorded != nil && *f.ForeclosureRecorded
 		}), repository.Pagination{}, false).Return([]*model.Application{}, uint64(0), nil).Twice()
 		repo.On("GetLastSnapshot", mock.Anything, app.IApplicationAddress.String()).Return(nil, nil).Once()
+		root := common.HexToAddress("0x100")
+		epoch := &model.Epoch{ApplicationID: app.ID, Index: 2, LastBlock: 100, TournamentAddress: &root, Status: model.EpochStatus_Closed}
+		repo.On("ListEpochs", mock.Anything, app.IApplicationAddress.Hex(), repository.EpochFilter{
+			HasTournament: new(true), Status: model.NonTerminalEpochStatuses(),
+		}, repository.Pagination{}, false).Return([]*model.Epoch{epoch}, uint64(1), nil).Once()
+		repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), root.Hex()).Return(&model.Tournament{
+			ApplicationID: app.ID, EpochIndex: epoch.Index, Address: root, StartInstant: 100, Allowance: 50,
+		}, nil).Once()
+		var output bytes.Buffer
 		writeErr := errors.New("temporary status write failure")
 		repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed, mock.Anything).
 			Return(writeErr).Once()
@@ -335,7 +344,7 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		}
 		factory := &MockMachineInstanceFactory{Instance: instance}
 		manager := newTestMachineManager(
-			repo, slog.New(slog.NewTextHandler(io.Discard, nil)), false, 10,
+			repo, slog.New(slog.NewTextHandler(&output, nil)), false, 10,
 			WithInstanceFactory(factory),
 		)
 
@@ -361,6 +370,9 @@ func (s *MachineManagerSuite) TestUpdateMachines() {
 		require.Equal(1, factory.TemplateCalls)
 		require.Equal(1, instance.closeCalls)
 		require.False(manager.HasMachine(app.ID))
+		require.Equal(1, strings.Count(output.String(), "PRT protection stopped"))
+		require.Contains(output.String(), "join_close_block=150")
+		require.Contains(output.String(), "epoch_index=2")
 		repo.AssertExpectations(s.T())
 	})
 
@@ -1429,6 +1441,12 @@ func (s *MachineManagerSuite) TestTemplateFactoryResultHandling() {
 			if tt.candidate != nil {
 				factory.Instance = tt.candidate
 			}
+			if tt.factoryErr != nil {
+				repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
+					mock.MatchedBy(func(reason *string) bool {
+						return reason != nil && strings.Contains(*reason, tt.factoryErr.Error())
+					})).Return(nil).Once()
+			}
 			manager := newTestMachineManager(
 				repo, slog.New(slog.NewTextHandler(io.Discard, nil)), false, 10,
 				WithInstanceFactory(factory),
@@ -1437,10 +1455,14 @@ func (s *MachineManagerSuite) TestTemplateFactoryResultHandling() {
 			require.NoError(manager.UpdateMachines(context.Background()))
 			require.Equal(1, factory.TemplateCalls)
 			require.False(manager.HasMachine(app.ID))
+			if tt.factoryErr != nil {
+				require.Equal(model.ApplicationStatus_Failed, app.Status)
+			}
 			if tt.candidate != nil {
 				require.Equal(1, tt.candidate.closeCalls)
 				require.Zero(tt.candidate.replayCalls)
 			}
+			repo.AssertExpectations(s.T())
 			manager.Close()
 		})
 	}
@@ -1604,7 +1626,7 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 		require.True(manager.HasMachine(1))
 	})
 
-	s.Run("TemplateCreationFailureSkipsApp", func() {
+	s.Run("TemplateCreationFailureMarksAppFailed", func() {
 		require := s.Require()
 
 		app := &model.Application{
@@ -1627,12 +1649,17 @@ func (s *MachineManagerSuite) TestUpdateMachinesErrors() {
 
 		testLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
 		factory := &MockMachineInstanceFactory{Err: errors.New("machine creation failed")}
+		repo.On("UpdateApplicationStatus", mock.Anything, app.ID, model.ApplicationStatus_Failed,
+			mock.MatchedBy(func(reason *string) bool {
+				return reason != nil && strings.Contains(*reason, "machine creation failed")
+			})).Return(nil).Once()
 		manager := newTestMachineManager(repo, testLogger, false, 500, WithInstanceFactory(factory))
 
 		err := manager.UpdateMachines(context.Background())
-		// UpdateMachines should not return an error; it logs and skips
 		require.NoError(err)
 		require.False(manager.HasMachine(1))
+		require.Equal(model.ApplicationStatus_Failed, app.Status)
+		repo.AssertExpectations(s.T())
 	})
 
 	s.Run("SynchronizeFailureClosesAndSkipsApp", func() {
@@ -1961,4 +1988,18 @@ func (m *DummyMachineInstanceMock) Hash(_ context.Context) ([32]byte, error) {
 func (m *DummyMachineInstanceMock) Close() error {
 	m.closeCalls++
 	return m.closeError
+}
+
+func (m *MockMachineRepository) ListEpochs(
+	ctx context.Context, name string, filter repository.EpochFilter, pagination repository.Pagination, descending bool,
+) ([]*model.Epoch, uint64, error) {
+	args := m.Called(ctx, name, filter, pagination, descending)
+	return args.Get(0).([]*model.Epoch), args.Get(1).(uint64), args.Error(2)
+}
+func (m *MockMachineRepository) GetTournament(ctx context.Context, name, address string) (*model.Tournament, error) {
+	args := m.Called(ctx, name, address)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*model.Tournament), args.Error(1)
 }

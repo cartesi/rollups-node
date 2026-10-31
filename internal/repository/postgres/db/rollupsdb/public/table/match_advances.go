@@ -25,6 +25,8 @@ type matchAdvancesTable struct {
 	LeftNode             postgres.ColumnBytea
 	SegmentStartPosition postgres.ColumnFloat
 	EliminableAt         postgres.ColumnFloat
+	CurrentHeight        postgres.ColumnFloat
+	ResponderDeadline    postgres.ColumnFloat
 	BlockNumber          postgres.ColumnFloat
 	TxHash               postgres.ColumnBytea
 	LogIndex             postgres.ColumnFloat
@@ -79,13 +81,15 @@ func newMatchAdvancesTableImpl(schemaName, tableName, alias string) matchAdvance
 		LeftNodeColumn             = postgres.ByteaColumn("left_node")
 		SegmentStartPositionColumn = postgres.FloatColumn("segment_start_position")
 		EliminableAtColumn         = postgres.FloatColumn("eliminable_at")
+		CurrentHeightColumn        = postgres.FloatColumn("current_height")
+		ResponderDeadlineColumn    = postgres.FloatColumn("responder_deadline")
 		BlockNumberColumn          = postgres.FloatColumn("block_number")
 		TxHashColumn               = postgres.ByteaColumn("tx_hash")
 		LogIndexColumn             = postgres.FloatColumn("log_index")
 		CreatedAtColumn            = postgres.TimestampzColumn("created_at")
 		UpdatedAtColumn            = postgres.TimestampzColumn("updated_at")
-		allColumns                 = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, IDHashColumn, OtherParentColumn, LeftNodeColumn, SegmentStartPositionColumn, EliminableAtColumn, BlockNumberColumn, TxHashColumn, LogIndexColumn, CreatedAtColumn, UpdatedAtColumn}
-		mutableColumns             = postgres.ColumnList{EpochIndexColumn, TournamentAddressColumn, IDHashColumn, OtherParentColumn, LeftNodeColumn, SegmentStartPositionColumn, EliminableAtColumn, BlockNumberColumn, CreatedAtColumn, UpdatedAtColumn}
+		allColumns                 = postgres.ColumnList{ApplicationIDColumn, EpochIndexColumn, TournamentAddressColumn, IDHashColumn, OtherParentColumn, LeftNodeColumn, SegmentStartPositionColumn, EliminableAtColumn, CurrentHeightColumn, ResponderDeadlineColumn, BlockNumberColumn, TxHashColumn, LogIndexColumn, CreatedAtColumn, UpdatedAtColumn}
+		mutableColumns             = postgres.ColumnList{EpochIndexColumn, TournamentAddressColumn, IDHashColumn, OtherParentColumn, LeftNodeColumn, SegmentStartPositionColumn, EliminableAtColumn, CurrentHeightColumn, ResponderDeadlineColumn, BlockNumberColumn, CreatedAtColumn, UpdatedAtColumn}
 		defaultColumns             = postgres.ColumnList{CreatedAtColumn, UpdatedAtColumn}
 	)
 
@@ -101,6 +105,8 @@ func newMatchAdvancesTableImpl(schemaName, tableName, alias string) matchAdvance
 		LeftNode:             LeftNodeColumn,
 		SegmentStartPosition: SegmentStartPositionColumn,
 		EliminableAt:         EliminableAtColumn,
+		CurrentHeight:        CurrentHeightColumn,
+		ResponderDeadline:    ResponderDeadlineColumn,
 		BlockNumber:          BlockNumberColumn,
 		TxHash:               TxHashColumn,
 		LogIndex:             LogIndexColumn,

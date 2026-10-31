@@ -39,6 +39,7 @@ func TestResultPublicationMakesProgressWithContinuousObserverLag(t *testing.T) {
 		// Bind every result read to the block that was actually published. A
 		// read at the moving configured head cannot establish this checkpoint.
 		f.expectResultBoundarySnapshot(epoch, snapshot, published)
+		expectProtectionReads(t, f.factory, f.consensus, observerFacts(published), epoch)
 		require.NoError(t, f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(published)))
 		require.Equal(t, published, f.app.LastTournamentCheckBlock)
 		require.Equal(t, published, tournament.Snapshot.AsOfBlock)

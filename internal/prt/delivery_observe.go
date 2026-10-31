@@ -56,8 +56,17 @@ func (s *Service) observe(ctx context.Context) error {
 	filter := repository.ApplicationFilter{ConsensusType: new(model.Consensus_PRT), Enabled: new(true)}
 	through, err := s.repository.GetApplicationIDBoundary(ctx, filter)
 	if err != nil || through == 0 {
+		if err == nil {
+			s.protectionNotices = nil
+		}
 		return err
 	}
+	wasStopped := s.publicationStopped()
+	defer func() {
+		if !wasStopped && s.publicationStopped() {
+			s.reportGlobalProtectionStop(ctx, through, s.publicationFailure())
+		}
+	}()
 	facts, err := s.validatedObservationReference(ctx, s.observerFacts)
 	if err != nil {
 		if errors.Is(err, txsender.ErrFinality) {
@@ -67,6 +76,7 @@ func (s *Service) observe(ctx context.Context) error {
 	}
 	s.observerFacts = facts
 	var errs []error
+	active := make(map[int64]struct{})
 	for after := int64(0); after < through; {
 		apps, listErr := s.repository.ListApplicationsByID(ctx, filter, after, through, deliveryApplicationPageSize)
 		if listErr != nil {
@@ -76,6 +86,7 @@ func (s *Service) observe(ctx context.Context) error {
 			break
 		}
 		for _, app := range apps {
+			active[app.ID] = struct{}{}
 			after = app.ID
 			if err = s.observeApplication(ctx, app, facts); err != nil {
 				errs = append(errs, fmt.Errorf("observing PRT application %s: %w", app.Name, err))
@@ -85,22 +96,46 @@ func (s *Service) observe(ctx context.Context) error {
 			}
 		}
 	}
+	for id := range s.protectionNotices {
+		if _, ok := active[id]; !ok {
+			delete(s.protectionNotices, id)
+		}
+	}
 	return errors.Join(errs...)
 }
 
-func (s *Service) observeApplication(ctx context.Context, app *model.Application, facts txsender.BlockRef) error {
+func (s *Service) observeApplication(ctx context.Context, app *model.Application, facts txsender.BlockRef) (resultErr error) {
 	if !app.Enabled {
 		s.clearTournamentObservationFailure(app.ID)
+		delete(s.protectionNotices, app.ID)
 		return nil
 	}
+	var deploymentErr error
+	defer func() { resultErr = errors.Join(resultErr, deploymentErr) }()
 	s.warnZeroStagingPeriod(app)
-	epochs, _, err := getTournamentObservationEpochs(ctx, s.repository, app.Name)
-	if err != nil {
-		return err
-	}
+	epochs, _, epochErr := getTournamentObservationEpochs(ctx, s.repository, app.Name)
 	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
-	if err != nil {
-		return err
+	if epochErr == nil && err == nil && len(epochs) == 0 &&
+		app.Status == model.ApplicationStatus_OK && app.LastTournamentCheckBlock == 0 {
+		// Registration at latest does not establish visibility at this observation block.
+		opts := pinnedCallOpts(withLiveBlock(ctx, facts.Number, facts.Hash), facts.Number)
+		if _, visibilityErr := consensus.GetCurrentSealedEpoch(opts); errors.Is(visibilityErr, bind.ErrNoCode) {
+			return nil
+		}
+	}
+	clocks := s.observeProtection(ctx, app, epochs, consensus, facts, errors.Join(epochErr, err))
+	var deployment deploymentSnapshot
+	if err == nil {
+		deployment, deploymentErr = s.observeDeployment(ctx, app, consensus, facts)
+	}
+	state, generation, admissionErr := s.deploymentVerdictState(ctx, app)
+	deploymentErr = errors.Join(deploymentErr, admissionErr)
+	s.reportProtectionStops(ctx, app, clocks, facts, state, generation, deploymentErr)
+	if ctx.Err() != nil {
+		return errors.Join(epochErr, err, ctx.Err())
+	}
+	if epochErr != nil || err != nil {
+		return errors.Join(epochErr, err)
 	}
 	var view *daveConsensusSnapshot
 	var eligibilityErr error
@@ -135,7 +170,10 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 			break
 		}
 	}
-	observeErr := errors.Join(eligibilityErr, s.observeTournamentState(ctx, app, epochs, consensus, facts))
+	observeErr := eligibilityErr
+	if deployment.Alpha6Shape {
+		observeErr = errors.Join(observeErr, s.observeTournamentState(ctx, app, epochs, consensus, facts))
+	}
 	if ctx.Err() != nil {
 		return errors.Join(observeErr, ctx.Err())
 	}
@@ -256,7 +294,7 @@ func (s *Service) observeTournamentState(
 			expected = new(target.Snapshot.AsOfBlock)
 		}
 		batches, readErr := s.gatherTournamentData(ctx, app, epoch, TournamentLevel(target.Level), target.ParentMatchIDHash,
-			target.ParentTournamentAddress, target.Address, levels, facts.Number)
+			target.ParentTournamentAddress, target.Address, levels, facts.Number, nil, nil)
 		if readErr == nil && len(batches) > 0 {
 			// Revalidate after all reads and before publishing this complete unit.
 			readErr = s.validateObservationBlock(ctx, facts)

@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/cartesi/rollups-node/internal/model"
 )
 
@@ -92,6 +94,9 @@ type AdvanceResponse struct {
 	ExceptionData       []byte
 	PeriodicStateHashes []Hash
 	PaddingRepetitions  uint64
+	// FinalStateEntry is the collector's entry of repeated final-state roots.
+	// It is zero when collection is disabled.
+	FinalStateEntry Hash
 }
 
 // InspectResponse contains the result of an inspect operation. On incomplete
@@ -108,6 +113,7 @@ type InspectResponse struct {
 // Common errors
 var (
 	ErrMachineInternal            = errors.New("machine internal error")
+	ErrUnsupportedHashFunction    = errors.New("unsupported machine hash function")
 	ErrDeadlineExceeded           = fmt.Errorf("machine operation deadline exceeded: %w", context.DeadlineExceeded)
 	ErrCanceled                   = fmt.Errorf("machine operation canceled: %w", context.Canceled)
 	ErrOrphanServer               = errors.New("machine server was left orphan")
@@ -179,11 +185,12 @@ type Machine interface {
 
 // MachineConfig contains configuration for a machine instance
 type MachineConfig struct { //nolint:revive // Keep the established public API name.
-	Address             string                    // Address to connect to the machine backend
-	Path                string                    // Path to the machine's directory
-	ExecutionParameters model.ExecutionParameters // Execution parameters for the machine
-	RuntimeConfig       *string
-	BackendFactoryFn    BackendFactory // Optional factory for custom backend creation
+	Address                   string                    // Address to connect to the machine backend
+	Path                      string                    // Path to the machine's directory
+	ExecutionParameters       model.ExecutionParameters // Execution parameters for the machine
+	RuntimeConfig             *string
+	RequirePrtMachineIdentity bool
+	BackendFactoryFn          BackendFactory // Optional factory for custom backend creation
 }
 
 // DefaultConfig returns a default machine configuration
@@ -212,7 +219,9 @@ func DefaultBackendFactory(address string, timeout time.Duration) (Backend, stri
 	return NewLibCartesiBackend(address, timeout)
 }
 
-// Load loads a machine from a snapshot or template path
+// Load loads a machine from a snapshot or template path.
+// Direct callers using the default backend must first validate SDK architecture
+// and computation-hash limits with the exported validators.
 func Load(ctx context.Context, logger *slog.Logger, config *MachineConfig) (Machine, error) {
 	if logger == nil {
 		return nil, errors.New("logger must not be nil")
@@ -267,6 +276,41 @@ func Load(ctx context.Context, logger *slog.Logger, config *MachineConfig) (Mach
 		machine.Close()
 		err = fmt.Errorf("could not load the machine: %w", err)
 		return nil, errors.Join(ErrMachineInternal, err)
+	}
+
+	if err := checkContext(ctx); err != nil {
+		return nil, errors.Join(err, machine.Close())
+	}
+	hashFunction, err := machine.backend.HashFunction(machine.params.FastDeadline)
+	if err != nil {
+		err = fmt.Errorf("could not read machine hash function: %w", err)
+		return nil, errors.Join(ErrMachineInternal, err, machine.Close())
+	}
+	if hashFunction != "keccak256" {
+		err = fmt.Errorf("machine hash function %q, expected keccak256: %w", hashFunction, ErrUnsupportedHashFunction)
+		return nil, errors.Join(err, machine.Close())
+	}
+
+	if config.RequirePrtMachineIdentity {
+		if err := checkContext(ctx); err != nil {
+			return nil, errors.Join(err, machine.Close())
+		}
+		identity, err := machine.backend.MachineIdentity(machine.params.FastDeadline)
+		if err != nil {
+			err = fmt.Errorf("could not read loaded machine identity: %w", err)
+			return nil, errors.Join(ErrMachineInternal, err, machine.Close())
+		}
+		if err := checkContext(ctx); err != nil {
+			return nil, errors.Join(err, machine.Close())
+		}
+		err = errors.Join(
+			model.CheckMarchID("loaded machine", identity.MarchID),
+			model.CheckUarchPristineStateHash("loaded machine uarch state", common.Hash(identity.UarchStateHash)),
+			model.CheckUarchPristineStateHash("machine server", common.Hash(identity.UarchPristineStateHash)),
+		)
+		if err != nil {
+			return nil, errors.Join(err, machine.Close())
+		}
 	}
 
 	// Ensures that the machine is at a manual yield.

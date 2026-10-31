@@ -19,7 +19,7 @@ import (
 
 func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 	for _, staged := range []bool{false, true} {
-		name := "opponent wins"
+		name := "false final state"
 		if staged {
 			name = "matching result is staged"
 		}
@@ -34,6 +34,9 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 			tournament := resultBoundaryTournament(f, epoch, winner)
 			snapshot := resultTestSnapshot(epoch, staged)
 			snapshot.stage.WinnerCommitment = winner
+			if !staged {
+				snapshot.stage.WinnerPostEpochMachineStateHash = common.HexToHash("0xdead")
+			}
 			observed := resultTestSnapshot(epoch, false)
 			observed.stage.IsFinished = false
 			observed.stage.WinnerCommitment = common.Hash{}
@@ -52,6 +55,7 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 			f.expectResultBoundaryWindow(epoch, tournament, 99)
 			f.expectResultBoundarySnapshot(epoch, observed, 99)
 
+			expectProtectionReads(t, f.factory, f.consensus, observerFacts(99), epoch)
 			require.NoError(t, f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(99)))
 			require.Equal(t, uint64(99), f.app.LastTournamentCheckBlock, "the older window must still publish successfully")
 			require.Equal(t, uint64(99), tournament.Snapshot.AsOfBlock)
@@ -67,11 +71,12 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 			f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), tournament.Address.Hex()).
 				Return(tournament, nil).Once()
 			f.expectResultBoundarySnapshot(epoch, observed, 99)
+			expectProtectionReads(t, f.factory, f.consensus, observerFacts(99), epoch)
 			require.NoError(t, f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(99)))
 			require.Empty(t, writeCoverage)
 
 			f.app.LastEpochCheckBlock = 100
-			f.expectResultBoundaryWindow(epoch, tournament, 100)
+			f.expectResultBoundaryWindowForState(epoch, tournament, 100, snapshot.stage.WinnerPostEpochMachineStateHash)
 			if staged {
 				f.expectResultBoundarySnapshot(epoch, snapshot, 100)
 			} else {
@@ -80,6 +85,10 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 				f.consensus.On("CanStageTournamentResult", opts).Return(snapshot.stage, nil).Once()
 				f.consensus.On("CanAcceptStagedTournamentResult", opts).Return(snapshot.accept, nil).Once()
 			}
+			expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+			if !staged {
+				expectStoredProtection(t, f.repo, f.app, epoch)
+			}
 			err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 			if staged {
 				require.NoError(t, err)
@@ -87,7 +96,7 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 				require.Equal(t, model.EpochStatus_ClaimStaged, epoch.Status)
 				require.Equal(t, new(uint64(100)), epoch.StagedAtBlock)
 			} else {
-				require.ErrorContains(t, err, "Epoch 0 has inconsistent commitment")
+				require.ErrorContains(t, err, "Epoch 0 has inconsistent machine hash")
 				require.Equal(t, model.ApplicationStatus_Diverged, f.app.Status)
 			}
 			require.Equal(t, []uint64{100}, writeCoverage, "the complete result window must precede the local write")
@@ -120,6 +129,13 @@ func (f *observerCheckpointFixture) expectResultBoundarySnapshot(epoch *model.Ep
 
 func (f *observerCheckpointFixture) expectResultBoundaryWindow(epoch *model.Epoch, tournament *model.Tournament, head uint64) {
 	f.t.Helper()
+	f.expectResultBoundaryWindowForState(epoch, tournament, head, *epoch.MachineHash)
+}
+
+func (f *observerCheckpointFixture) expectResultBoundaryWindowForState(
+	epoch *model.Epoch, tournament *model.Tournament, head uint64, finalState common.Hash,
+) {
+	f.t.Helper()
 	f.epochs(epoch)
 	opts := mock.MatchedBy(resultCallOptsAtBlock(head))
 	f.consensus.On("TournamentLevelCount", opts).Return(uint64(1), nil).Once()
@@ -133,7 +149,7 @@ func (f *observerCheckpointFixture) expectResultBoundaryWindow(epoch *model.Epoc
 		HasCandidate: true, Candidate: *tournament.Snapshot.Candidate}
 	if head >= 100 {
 		standing.State, standing.AcceptsJoins = model.TournamentStandingRootWinner, false
-		standing.FinalState, standing.FinishedAt = *epoch.MachineHash, 100
+		standing.FinalState, standing.FinishedAt = finalState, 100
 	}
 	adapter.On("Standing", opts).Return(standing, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, standing.State)
@@ -144,12 +160,12 @@ func (f *observerCheckpointFixture) expectResultBoundaryWindow(epoch *model.Epoc
 	counts := zeroStructuralEventCounts()
 	counts.CommitmentJoined.SetUint64(1)
 	f.repo.eventCounts = map[common.Address]repository.TournamentEventCounts{
-		tournament.Address: {CommitmentJoined: 1},
+		tournament.Address: {StandingChanged: 1, CommitmentJoined: 1},
 	}
 	adapter.On("StructuralEventCounts", opts).Return(counts, nil).Once()
 	address := tournament.Address.Hex()
 	commitment := &model.Commitment{ApplicationID: f.app.ID, EpochIndex: epoch.Index, TournamentAddress: tournament.Address,
-		Commitment: standing.Candidate, FinalStateHash: *epoch.MachineHash, BlockNumber: 20}
+		Commitment: standing.Candidate, FinalStateHash: finalState, BlockNumber: 20}
 	f.repo.On("ListCommitments", mock.Anything, f.app.Name,
 		repository.CommitmentFilter{EpochIndex: &epoch.Index, TournamentAddress: &address}, repository.Pagination{}, false).
 		Return([]*model.Commitment{commitment}, uint64(1), nil).Once()
@@ -190,7 +206,7 @@ func TestAcceptanceWaitsForTournamentObservation(t *testing.T) {
 	client.On("TransactionReceipt", mock.Anything, raw.TxHash).Return(receipt, nil).Twice()
 	client.On("HeaderByNumber", mock.Anything, receipt.BlockNumber).Return(header, nil).Once()
 	s.client = client
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock()
 	consensus.On("ParseEpochSealed", raw).Return(&idaveconsensus.IDaveConsensusEpochSealed{
 		EpochNumber: big.NewInt(1), InitialMachineStateHash: *epoch.MachineHash,
 		OutputsMerkleRoot: *epoch.TxBufferDataBlock, Raw: raw,
@@ -228,11 +244,12 @@ func TestResultWindowPublicationFailureCannotWriteProtocolResult(t *testing.T) {
 	f.checkpoint.epochs(f.epoch)
 	f.levels(1)
 	f.checkpoint.tournament(f.epoch, *f.epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
+	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
 	require.ErrorIs(t, f.d.observeApplication(t.Context(), f.app, f.facts), failure)
 	require.Equal(t, uint64(50), f.app.LastTournamentCheckBlock)
 	require.Equal(t, model.EpochStatus_ClaimComputed, f.epoch.Status)
 	require.Nil(t, f.epoch.StagedAtBlock)
 	f.repo.AssertNotCalled(t, "UpdateEpochReconciledStaged", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	f.consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 1)
+	f.consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 2)
 }

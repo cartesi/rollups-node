@@ -63,8 +63,7 @@ func TestValidatorCompletesEpochBeforeTerminalBoundary(t *testing.T) {
 
 func expectValidPrefixEpoch(repo *Mockrepo, app *model.Application, epoch *model.Epoch, empty bool) {
 	address := app.IApplicationAddress.String()
-	repo.On("ListOutputs", mock.Anything, address, repository.OutputFilter{EpochIndex: &epoch.Index},
-		repository.Pagination{}, false).Return([]*model.Output{}, uint64(0), nil).Once()
+	expectEpochOutputs(repo, app, epoch, []*model.Output{})
 	var input *model.Input
 	if !empty {
 		input = &model.Input{MachineHash: epoch.MachineHash, TxBufferDataBlock: epoch.TxBufferDataBlock}
@@ -128,7 +127,9 @@ func TestValidatorReloadsPrefixBeforeComputation(t *testing.T) {
 				require.Equal(t, model.EpochStatus_ClaimComputed, epoch.Status)
 				repo.AssertNumberOfCalls(t, "StoreClaimAndProofs", 1)
 			} else {
-				repo.AssertNotCalled(t, "ListOutputs", mock.Anything, mock.Anything, mock.Anything, mock.Anything, false)
+				repo.AssertNotCalled(t, "GetEpochOutputRange", mock.Anything, mock.Anything, mock.Anything)
+				repo.AssertNotCalled(t, "ScanOutputs", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+				repo.AssertNotCalled(t, "StoreClaimAndProofs", mock.Anything, mock.Anything, mock.Anything)
 				repo.AssertNotCalled(t, "StoreClaimAndProofs", mock.Anything, mock.Anything, mock.Anything)
 			}
 			repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)

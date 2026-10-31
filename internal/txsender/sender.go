@@ -142,7 +142,7 @@ func (s *Sender[A]) PublishNext(ctx context.Context, planner Planner[A]) (report
 		return report, err
 	}
 	report.Block, report.Nonce = snap.block, snap.nonce
-	if s.current != nil && s.current.nonce > snap.nonce {
+	if s.current != nil && (s.current.nonce > snap.nonce || s.current.block.Number > snap.block.Number) {
 		canonical, readErr := s.backend.Canonical(ctx, s.current.block)
 		if readErr != nil {
 			return report, inconclusive(readErr)

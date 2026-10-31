@@ -55,7 +55,8 @@ func TestPRTTickOnlyObservesAndDoesNotCreateEmptyCoverage(t *testing.T) {
 	second.IApplicationAddress = common.HexToAddress("0x901")
 	second.IConsensusAddress = common.HexToAddress("0x902")
 	f.repo.apps = append(f.repo.apps, &second)
-	f.factory.On("CreateDaveConsensusAdapter", second.IConsensusAddress).Return(&daveConsensusAdapterMock{}, nil)
+	secondConsensus := newCompatibleDaveConsensusAdapterMock(second.IConsensusAddress)
+	f.factory.On("CreateDaveConsensusAdapter", second.IConsensusAddress).Return(secondConsensus, nil)
 	f.repo.On("ListEpochs", mock.Anything, mock.Anything, repository.EpochFilter{HasTournament: new(true)},
 		repository.Pagination{}, false).Return([]*model.Epoch{}, uint64(0), nil)
 	f.repo.On("GetLastNonOpenEpochIndex", mock.Anything, mock.Anything).Return((*uint64)(nil), nil)
@@ -63,6 +64,8 @@ func TestPRTTickOnlyObservesAndDoesNotCreateEmptyCoverage(t *testing.T) {
 		head := uint64(101 + tick)
 		tickHead(client, head)
 		f.block.Number = uint64(120 + tick)
+		expectProtectionReads(t, f.factory, f.consensus, observerFacts(head))
+		expectProtectionReads(t, f.factory, secondConsensus, observerFacts(head))
 		reschedule, err := f.d.Tick(t.Context())
 		require.False(t, reschedule)
 		require.NoError(t, err)
@@ -155,6 +158,9 @@ func TestPRTTickPreservesDependencyCancellationAndDeadlines(t *testing.T) {
 						client.ExpectedCalls[len(client.ExpectedCalls)-1].Run(func(mock.Arguments) { cancel() })
 					}
 				}
+				if !test.shutdown && (branch == activeApplicationName || branch == foreclosedApplicationName) {
+					expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
+				}
 				_, err := f.d.Tick(ctx)
 				if test.quiet {
 					require.NoError(t, err)
@@ -183,6 +189,7 @@ func TestPRTTickRetainsEarlierApplicationErrorDuringShutdown(t *testing.T) {
 		Return([]*model.Epoch(nil), uint64(0), firstError).Once()
 	f.repo.On("ListEpochs", mock.Anything, second.Name, mock.Anything, repository.Pagination{}, false).
 		Run(func(mock.Arguments) { cancel() }).Return([]*model.Epoch(nil), uint64(0), context.Canceled).Once()
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
 	_, err := f.d.Tick(ctx)
 	require.ErrorIs(t, err, firstError)
 	require.ErrorIs(t, err, context.Canceled)

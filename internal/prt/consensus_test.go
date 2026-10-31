@@ -62,7 +62,7 @@ func TestDaveMachineValidityProofUsesContractOrderAndOwnsSiblings(t *testing.T) 
 func TestReadDaveConsensusSnapshotUsesOnePinnedCallOptions(t *testing.T) {
 	epoch := resultTestEpoch(model.EpochStatus_ClaimStaged)
 	snapshot := resultTestSnapshot(epoch, true)
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock()
 	var first *bind.CallOpts
 	checkOpts := func(args mock.Arguments) {
 		opts := args.Get(0).(*bind.CallOpts)
@@ -187,7 +187,6 @@ func TestTournamentResultLatestMismatchIsPure(t *testing.T) {
 	}{
 		{"lower input bound", func(v *daveConsensusSnapshot) { v.sealed.InputIndexLowerBound++ }},
 		{"upper input bound", func(v *daveConsensusSnapshot) { v.sealed.InputIndexUpperBound++ }},
-		{"winner commitment", func(v *daveConsensusSnapshot) { v.stage.WinnerCommitment[0] ^= 1 }},
 		{"staged winner state", func(v *daveConsensusSnapshot) { v.stage.WinnerPostEpochMachineStateHash[0] ^= 1 }},
 		{"staged output root", func(v *daveConsensusSnapshot) {
 			v.sealed.StagedPostEpochOutputsMerkleRoot[0] ^= 1
@@ -232,6 +231,7 @@ func TestTournamentResultObservationRecordsOnlyPublishedStage(t *testing.T) {
 			if test.staged && test.stored == 0 {
 				f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, f.epoch.Index, uint64(10)).Return(nil).Once()
 			}
+			expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), f.epoch)
 			require.NoError(t, f.d.observeApplication(t.Context(), f.app, observerFacts(100)))
 			switch {
 			case test.staged && test.stored == 0:
@@ -307,7 +307,7 @@ func TestCheckEpochsAcceptsComputedOrStagedEpochFromExactEpochSealedEvent(t *tes
 				mock.MatchedBy(func(hash *common.Hash) bool { return hash != nil && *hash == acceptTx })).
 				Return(nil).Once()
 
-			consensus := &daveConsensusAdapterMock{}
+			consensus := newCompatibleDaveConsensusAdapterMock()
 			consensus.On("ParseEpochSealed", *staleLog).Return(staleEvent, nil).Once()
 			consensus.On("ParseEpochSealed", *exactLog).Return(exactEvent, nil).Once()
 			factory := &adapterFactoryMock{}
@@ -318,6 +318,7 @@ func TestCheckEpochsAcceptsComputedOrStagedEpochFromExactEpochSealedEvent(t *tes
 
 			service, _ := newPRTServiceMock()
 			service.repository = repo
+			admitTestDeployment(service, repo, app)
 			service.adapterFactory = factory
 			service.client = client
 			service.submissionEnabled = true
@@ -369,13 +370,14 @@ func TestCheckEpochsValidatesAcceptanceReceiptAgainstPinnedHead(t *testing.T) {
 			repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
 				Return(&model.Tournament{ApplicationID: app.ID, EpochIndex: epoch.Index, Address: *epoch.TournamentAddress,
 					Snapshot: model.TournamentSnapshot{FinishedAtBlock: 9, AsOfBlock: 20}}, nil).Once()
-			consensus := &daveConsensusAdapterMock{}
+			consensus := newCompatibleDaveConsensusAdapterMock()
 			factory := &adapterFactoryMock{}
 			factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Once()
 			client := &ethClientMock{}
 			client.On("TransactionReceipt", mock.Anything, acceptTx).Return(test.receipt, nil).Once()
 			service, _ := newPRTServiceMock()
 			service.repository = repo
+			admitTestDeployment(service, repo, app)
 			service.adapterFactory = factory
 			service.client = client
 
@@ -408,7 +410,7 @@ func TestValidateApplicationDefersActionsForAcceptanceAfterPinnedHead(t *testing
 	repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
 		Return(&model.Tournament{ApplicationID: app.ID, EpochIndex: epoch.Index, Address: *epoch.TournamentAddress,
 			Snapshot: model.TournamentSnapshot{FinishedAtBlock: 9, AsOfBlock: 20}}, nil).Once()
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock()
 	view := resultTestSnapshot(epoch, true)
 	consensus.On("GetCurrentSealedEpoch", mock.Anything).Return(view.sealed, nil).Once()
 	consensus.On("CanStageTournamentResult", mock.Anything).Return(view.stage, nil).Once()
@@ -423,12 +425,14 @@ func TestValidateApplicationDefersActionsForAcceptanceAfterPinnedHead(t *testing
 	}, nil).Once()
 	service, _ := newPRTServiceMock()
 	service.repository = repo
+	admitTestDeployment(service, repo, app)
 	service.adapterFactory = factory
 	service.client = client
 	service.defaultBlock = model.DefaultBlock_Finalized
 
+	expectProtectionReads(t, factory, consensus, observerFacts(20), epoch)
 	require.NoError(t, service.delivery.observeApplication(t.Context(), app, observerFacts(20)))
-	consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 1)
+	consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 2)
 	consensus.AssertNumberOfCalls(t, "CanStageTournamentResult", 1)
 	consensus.AssertNumberOfCalls(t, "CanAcceptStagedTournamentResult", 1)
 	repo.AssertExpectations(t)

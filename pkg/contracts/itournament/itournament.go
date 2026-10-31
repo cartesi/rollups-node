@@ -112,7 +112,7 @@ type MatchId struct {
 
 // ITournamentMetaData contains all meta data concerning the ITournament contract.
 var ITournamentMetaData = &bind.MetaData{
-	ABI: "[{\"type\":\"function\",\"name\":\"advanceMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"newLeftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"newRightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"bisectingMatch\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"value\",\"type\":\"tuple\",\"internalType\":\"structITournament.BisectingMatchView\",\"components\":[{\"name\":\"revealingParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingLeft\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingRight\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"segmentStartPosition\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"segmentStartCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"currentHeight\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"responder\",\"type\":\"uint8\",\"internalType\":\"enumITournament.CommitmentSide\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"bondRecovery\",\"inputs\":[],\"outputs\":[{\"name\":\"disposition\",\"type\":\"uint8\",\"internalType\":\"enumITournament.BondDisposition\"},{\"name\":\"claimer\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"payment\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"bondValue\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"classifyMatchTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"outcome\",\"type\":\"uint8\",\"internalType\":\"enumITournament.MatchTimeoutOutcome\"},{\"name\":\"deferredCharge\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"commitmentStanding\",\"inputs\":[{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.CommitmentStandingView\",\"components\":[{\"name\":\"joined\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"claimer\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"clockRunning\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"clockDeadline\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"clockAllowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"eliminateInnerTournament\",\"inputs\":[{\"name\":\"childTournament\",\"type\":\"address\",\"internalType\":\"contractITournament\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"eliminateMatchByTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"getCommitmentJoinedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getLeafMatchSealedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchAdvancedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchCreatedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchDeletedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNewInnerTournamentCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"innerResult\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.InnerResultView\",\"components\":[{\"name\":\"disposition\",\"type\":\"uint8\",\"internalType\":\"enumITournament.InnerTournamentDisposition\"},{\"name\":\"parentCommitment\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"pausedAllowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"joinTournament\",\"inputs\":[{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"proof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"readyToSealMatch\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"value\",\"type\":\"tuple\",\"internalType\":\"structITournament.ReadyToSealMatchView\",\"components\":[{\"name\":\"revealingParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingLeft\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingRight\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"segmentStartPosition\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"segmentStartCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"responder\",\"type\":\"uint8\",\"internalType\":\"enumITournament.CommitmentSide\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"sealInnerMatchAndCreateInnerTournament\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"agreeHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeHashProof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"sealLeafMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"agreeHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeHashProof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"sealedMatch\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"value\",\"type\":\"tuple\",\"internalType\":\"structITournament.SealedMatchView\",\"components\":[{\"name\":\"agreeState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"divergencePosition\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"divergenceCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"finalStateOne\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"finalStateTwo\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentDescriptor\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.TournamentDescriptor\",\"components\":[{\"name\":\"initialHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"baseCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"log2Stride\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"height\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"level\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"kind\",\"type\":\"uint8\",\"internalType\":\"enumITournament.TournamentKind\"},{\"name\":\"startInstant\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentStanding\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.TournamentStandingView\",\"components\":[{\"name\":\"standing\",\"type\":\"uint8\",\"internalType\":\"enumITournament.TournamentStanding\"},{\"name\":\"acceptsJoins\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"hasCandidate\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"candidate\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"parentCommitment\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"finishedAt\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"winnerExpiresAt\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tryRecoveringBond\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winInnerTournament\",\"inputs\":[{\"name\":\"childTournament\",\"type\":\"address\",\"internalType\":\"contractITournament\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winLeafMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"proofs\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winMatchByTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"event\",\"name\":\"BondRecovered\",\"inputs\":[{\"name\":\"commitment\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"claimer\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"payment\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"burned\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"CommitmentJoined\",\"inputs\":[{\"name\":\"commitment\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"finalStateHash\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Machine.Hash\"},{\"name\":\"submitter\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"LeafMatchSealed\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"eliminableAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchAdvanced\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"otherParent\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"segmentStartPosition\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"eliminableAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchCreated\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"leftOfTwo\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"eliminableAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchDeleted\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"reason\",\"type\":\"uint8\",\"indexed\":false,\"internalType\":\"enumITournament.MatchDeletionReason\"},{\"name\":\"winnerCommitment\",\"type\":\"uint8\",\"indexed\":false,\"internalType\":\"enumITournament.WinnerCommitment\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"NewInnerTournament\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"childTournament\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"contractITournament\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"PartialBondRefund\",\"inputs\":[{\"name\":\"recipient\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"value\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"success\",\"type\":\"bool\",\"indexed\":true,\"internalType\":\"bool\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"CannotAdvanceTimedOutClock\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentCannotBeEliminated\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentMustBeEliminated\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentNotFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ClockAlreadyInitialized\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"CommitmentProofWrongSize\",\"inputs\":[{\"name\":\"treeHeight\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"siblingsLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"CommitmentStateMismatch\",\"inputs\":[{\"name\":\"expected\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"computed\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"IncorrectAgreeState\",\"inputs\":[{\"name\":\"initialState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"InsufficientBond\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidChildrenNodes\",\"inputs\":[{\"name\":\"expectedParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"leftChild\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightChild\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"InvalidContestedFinalState\",\"inputs\":[{\"name\":\"contestedFinalStateOne\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"contestedFinalStateTwo\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"MatchCannotBeAdvanced\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchCannotBeEliminatedByTimeout\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchCannotBeSealed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchCannotBeWonByTimeout\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchDoesNotExist\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchIsNotSealed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NoWinner\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ReentrancyDetected\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireLeafTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireNonLeafTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireNonRootTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentFailedNoWinner\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentIsClosed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentIsFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentNotFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"WrongChildren\",\"inputs\":[{\"name\":\"whichCommitment\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"left\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"right\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"WrongFinalState\",\"inputs\":[{\"name\":\"whichCommitment\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"computedPostState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"committedPostState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"WrongNodesForStep\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"WrongTournamentWinner\",\"inputs\":[{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"winner\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}]",
+	ABI: "[{\"type\":\"function\",\"name\":\"advanceMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"newLeftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"newRightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"bisectingMatch\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"value\",\"type\":\"tuple\",\"internalType\":\"structITournament.BisectingMatchView\",\"components\":[{\"name\":\"revealingParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingLeft\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingRight\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"segmentStartPosition\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"segmentStartCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"currentHeight\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"responder\",\"type\":\"uint8\",\"internalType\":\"enumITournament.CommitmentSide\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"bondRecovery\",\"inputs\":[],\"outputs\":[{\"name\":\"disposition\",\"type\":\"uint8\",\"internalType\":\"enumITournament.BondDisposition\"},{\"name\":\"claimer\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"payment\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"bondValue\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"classifyMatchTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"outcome\",\"type\":\"uint8\",\"internalType\":\"enumITournament.MatchTimeoutOutcome\"},{\"name\":\"deferredCharge\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"commitmentStanding\",\"inputs\":[{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.CommitmentStandingView\",\"components\":[{\"name\":\"joined\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"claimer\",\"type\":\"address\",\"internalType\":\"address\"},{\"name\":\"clockRunning\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"clockDeadline\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"clockAllowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"eliminateInnerTournament\",\"inputs\":[{\"name\":\"childTournament\",\"type\":\"address\",\"internalType\":\"contractITournament\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"eliminateMatchByTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"getCommitmentJoinedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getLeafMatchSealedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchAdvancedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchCreatedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getMatchDeletedCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"getNewInnerTournamentCount\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"uint256\",\"internalType\":\"uint256\"}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"innerResult\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.InnerResultView\",\"components\":[{\"name\":\"disposition\",\"type\":\"uint8\",\"internalType\":\"enumITournament.InnerTournamentDisposition\"},{\"name\":\"parentCommitment\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"pausedAllowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"joinTournament\",\"inputs\":[{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"proof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"payable\"},{\"type\":\"function\",\"name\":\"readyToSealMatch\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"value\",\"type\":\"tuple\",\"internalType\":\"structITournament.ReadyToSealMatchView\",\"components\":[{\"name\":\"revealingParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingLeft\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"waitingRight\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"segmentStartPosition\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"segmentStartCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"responder\",\"type\":\"uint8\",\"internalType\":\"enumITournament.CommitmentSide\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"sealInnerMatchAndCreateInnerTournament\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"agreeHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeHashProof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"sealLeafMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightLeaf\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"agreeHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeHashProof\",\"type\":\"bytes32[]\",\"internalType\":\"bytes32[]\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"sealedMatch\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"internalType\":\"Match.IdHash\"}],\"outputs\":[{\"name\":\"actualPhase\",\"type\":\"uint8\",\"internalType\":\"enumMatch.Phase\"},{\"name\":\"value\",\"type\":\"tuple\",\"internalType\":\"structITournament.SealedMatchView\",\"components\":[{\"name\":\"agreeState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"divergencePosition\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"divergenceCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"finalStateOne\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"finalStateTwo\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentDescriptor\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.TournamentDescriptor\",\"components\":[{\"name\":\"initialHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"baseCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"log2Stride\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"height\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"level\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"kind\",\"type\":\"uint8\",\"internalType\":\"enumITournament.TournamentKind\"},{\"name\":\"startInstant\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tournamentStanding\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"tuple\",\"internalType\":\"structITournament.TournamentStandingView\",\"components\":[{\"name\":\"standing\",\"type\":\"uint8\",\"internalType\":\"enumITournament.TournamentStanding\"},{\"name\":\"acceptsJoins\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"hasCandidate\",\"type\":\"bool\",\"internalType\":\"bool\"},{\"name\":\"candidate\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"parentCommitment\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"finishedAt\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"winnerExpiresAt\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"}]}],\"stateMutability\":\"view\"},{\"type\":\"function\",\"name\":\"tryRecoveringBond\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\",\"internalType\":\"bool\"}],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winInnerTournament\",\"inputs\":[{\"name\":\"childTournament\",\"type\":\"address\",\"internalType\":\"contractITournament\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winLeafMatch\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"proofs\",\"type\":\"bytes\",\"internalType\":\"bytes\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"function\",\"name\":\"winMatchByTimeout\",\"inputs\":[{\"name\":\"matchId\",\"type\":\"tuple\",\"internalType\":\"structMatch.Id\",\"components\":[{\"name\":\"commitmentOne\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"commitmentTwo\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightNode\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}],\"outputs\":[],\"stateMutability\":\"nonpayable\"},{\"type\":\"event\",\"name\":\"BondRecovered\",\"inputs\":[{\"name\":\"commitment\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"claimer\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"payment\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"burned\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"CommitmentJoined\",\"inputs\":[{\"name\":\"commitment\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"finalStateHash\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Machine.Hash\"},{\"name\":\"submitter\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"LeafMatchSealed\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"agreeState\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Machine.Hash\"},{\"name\":\"divergencePosition\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"finalStateOne\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Machine.Hash\"},{\"name\":\"finalStateTwo\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Machine.Hash\"},{\"name\":\"deadlineOne\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"},{\"name\":\"deadlineTwo\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"},{\"name\":\"eliminableAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchAdvanced\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"otherParent\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"leftNode\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"segmentStartPosition\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"currentHeight\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"uint64\"},{\"name\":\"responderDeadline\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"},{\"name\":\"eliminableAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchCreated\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"leftOfTwo\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"responderDeadline\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"},{\"name\":\"eliminableAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"MatchDeleted\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Tree.Node\"},{\"name\":\"reason\",\"type\":\"uint8\",\"indexed\":false,\"internalType\":\"enumITournament.MatchDeletionReason\"},{\"name\":\"winnerCommitment\",\"type\":\"uint8\",\"indexed\":false,\"internalType\":\"enumITournament.WinnerCommitment\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"NewInnerTournament\",\"inputs\":[{\"name\":\"matchIdHash\",\"type\":\"bytes32\",\"indexed\":true,\"internalType\":\"Match.IdHash\"},{\"name\":\"childTournament\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"contractITournament\"},{\"name\":\"one\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"two\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"contestedFinalStateOne\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Machine.Hash\"},{\"name\":\"contestedFinalStateTwo\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Machine.Hash\"},{\"name\":\"descriptor\",\"type\":\"tuple\",\"indexed\":false,\"internalType\":\"structITournament.TournamentDescriptor\",\"components\":[{\"name\":\"initialHash\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"baseCycle\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"log2Stride\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"height\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"level\",\"type\":\"uint64\",\"internalType\":\"uint64\"},{\"name\":\"kind\",\"type\":\"uint8\",\"internalType\":\"enumITournament.TournamentKind\"},{\"name\":\"startInstant\",\"type\":\"uint64\",\"internalType\":\"Time.Instant\"},{\"name\":\"allowance\",\"type\":\"uint64\",\"internalType\":\"Time.Duration\"}]},{\"name\":\"bondValue\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"PartialBondRefund\",\"inputs\":[{\"name\":\"recipient\",\"type\":\"address\",\"indexed\":true,\"internalType\":\"address\"},{\"name\":\"value\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"success\",\"type\":\"bool\",\"indexed\":true,\"internalType\":\"bool\"}],\"anonymous\":false},{\"type\":\"event\",\"name\":\"StandingChanged\",\"inputs\":[{\"name\":\"matchCount\",\"type\":\"uint256\",\"indexed\":false,\"internalType\":\"uint256\"},{\"name\":\"dangling\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"parentCommitment\",\"type\":\"bytes32\",\"indexed\":false,\"internalType\":\"Tree.Node\"},{\"name\":\"resultAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"},{\"name\":\"winnerExpiresAt\",\"type\":\"uint64\",\"indexed\":false,\"internalType\":\"Time.Instant\"}],\"anonymous\":false},{\"type\":\"error\",\"name\":\"CannotAdvanceTimedOutClock\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentCannotBeEliminated\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentMustBeEliminated\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ChildTournamentNotFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ClockAlreadyInitialized\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"CommitmentProofWrongSize\",\"inputs\":[{\"name\":\"treeHeight\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"siblingsLength\",\"type\":\"uint256\",\"internalType\":\"uint256\"}]},{\"type\":\"error\",\"name\":\"CommitmentStateMismatch\",\"inputs\":[{\"name\":\"expected\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"computed\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"IncorrectAgreeState\",\"inputs\":[{\"name\":\"initialState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"agreeState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"InsufficientBond\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"InvalidChildrenNodes\",\"inputs\":[{\"name\":\"expectedParent\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"leftChild\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"rightChild\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"InvalidContestedFinalState\",\"inputs\":[{\"name\":\"contestedFinalStateOne\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"contestedFinalStateTwo\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"finalState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"MatchCannotBeAdvanced\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchCannotBeEliminatedByTimeout\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchCannotBeSealed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchCannotBeWonByTimeout\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchDoesNotExist\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"MatchIsNotSealed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"NoWinner\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"ReentrancyDetected\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireLeafTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireNonLeafTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"RequireNonRootTournament\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentFailedNoWinner\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentIsClosed\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentIsFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"TournamentNotFinished\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"WrongChildren\",\"inputs\":[{\"name\":\"whichCommitment\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"left\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"right\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]},{\"type\":\"error\",\"name\":\"WrongFinalState\",\"inputs\":[{\"name\":\"whichCommitment\",\"type\":\"uint256\",\"internalType\":\"uint256\"},{\"name\":\"computedPostState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"},{\"name\":\"committedPostState\",\"type\":\"bytes32\",\"internalType\":\"Machine.Hash\"}]},{\"type\":\"error\",\"name\":\"WrongNodesForStep\",\"inputs\":[]},{\"type\":\"error\",\"name\":\"WrongTournamentWinner\",\"inputs\":[{\"name\":\"commitmentRoot\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"},{\"name\":\"winner\",\"type\":\"bytes32\",\"internalType\":\"Tree.Node\"}]}]",
 }
 
 // ITournamentABI is the input ABI used to generate the binding from.
@@ -1435,14 +1435,22 @@ func (it *ITournamentLeafMatchSealedIterator) Close() error {
 
 // ITournamentLeafMatchSealed represents a LeafMatchSealed event raised by the ITournament contract.
 type ITournamentLeafMatchSealed struct {
-	MatchIdHash  [32]byte
-	EliminableAt uint64
-	Raw          types.Log // Blockchain specific contextual infos
+	MatchIdHash        [32]byte
+	One                [32]byte
+	Two                [32]byte
+	AgreeState         [32]byte
+	DivergencePosition *big.Int
+	FinalStateOne      [32]byte
+	FinalStateTwo      [32]byte
+	DeadlineOne        uint64
+	DeadlineTwo        uint64
+	EliminableAt       uint64
+	Raw                types.Log // Blockchain specific contextual infos
 }
 
-// FilterLeafMatchSealed is a free log retrieval operation binding the contract event 0x304d9235f96c68167f2d1c8f6fbdce133d7d35b4706d00f47b40172cf96bd923.
+// FilterLeafMatchSealed is a free log retrieval operation binding the contract event 0x71fadc30cf69447f432880db37c552ec27366ea80468707d257a8e86c0d10efb.
 //
-// Solidity: event LeafMatchSealed(bytes32 indexed matchIdHash, uint64 eliminableAt)
+// Solidity: event LeafMatchSealed(bytes32 indexed matchIdHash, bytes32 one, bytes32 two, bytes32 agreeState, uint256 divergencePosition, bytes32 finalStateOne, bytes32 finalStateTwo, uint64 deadlineOne, uint64 deadlineTwo, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) FilterLeafMatchSealed(opts *bind.FilterOpts, matchIdHash [][32]byte) (*ITournamentLeafMatchSealedIterator, error) {
 
 	var matchIdHashRule []interface{}
@@ -1457,9 +1465,9 @@ func (_ITournament *ITournamentFilterer) FilterLeafMatchSealed(opts *bind.Filter
 	return &ITournamentLeafMatchSealedIterator{contract: _ITournament.contract, event: "LeafMatchSealed", logs: logs, sub: sub}, nil
 }
 
-// WatchLeafMatchSealed is a free log subscription operation binding the contract event 0x304d9235f96c68167f2d1c8f6fbdce133d7d35b4706d00f47b40172cf96bd923.
+// WatchLeafMatchSealed is a free log subscription operation binding the contract event 0x71fadc30cf69447f432880db37c552ec27366ea80468707d257a8e86c0d10efb.
 //
-// Solidity: event LeafMatchSealed(bytes32 indexed matchIdHash, uint64 eliminableAt)
+// Solidity: event LeafMatchSealed(bytes32 indexed matchIdHash, bytes32 one, bytes32 two, bytes32 agreeState, uint256 divergencePosition, bytes32 finalStateOne, bytes32 finalStateTwo, uint64 deadlineOne, uint64 deadlineTwo, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) WatchLeafMatchSealed(opts *bind.WatchOpts, sink chan<- *ITournamentLeafMatchSealed, matchIdHash [][32]byte) (event.Subscription, error) {
 
 	var matchIdHashRule []interface{}
@@ -1503,9 +1511,9 @@ func (_ITournament *ITournamentFilterer) WatchLeafMatchSealed(opts *bind.WatchOp
 	}), nil
 }
 
-// ParseLeafMatchSealed is a log parse operation binding the contract event 0x304d9235f96c68167f2d1c8f6fbdce133d7d35b4706d00f47b40172cf96bd923.
+// ParseLeafMatchSealed is a log parse operation binding the contract event 0x71fadc30cf69447f432880db37c552ec27366ea80468707d257a8e86c0d10efb.
 //
-// Solidity: event LeafMatchSealed(bytes32 indexed matchIdHash, uint64 eliminableAt)
+// Solidity: event LeafMatchSealed(bytes32 indexed matchIdHash, bytes32 one, bytes32 two, bytes32 agreeState, uint256 divergencePosition, bytes32 finalStateOne, bytes32 finalStateTwo, uint64 deadlineOne, uint64 deadlineTwo, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) ParseLeafMatchSealed(log types.Log) (*ITournamentLeafMatchSealed, error) {
 	event := new(ITournamentLeafMatchSealed)
 	if err := _ITournament.contract.UnpackLog(event, "LeafMatchSealed", log); err != nil {
@@ -1585,16 +1593,20 @@ func (it *ITournamentMatchAdvancedIterator) Close() error {
 // ITournamentMatchAdvanced represents a MatchAdvanced event raised by the ITournament contract.
 type ITournamentMatchAdvanced struct {
 	MatchIdHash          [32]byte
+	One                  [32]byte
+	Two                  [32]byte
 	OtherParent          [32]byte
 	LeftNode             [32]byte
 	SegmentStartPosition *big.Int
+	CurrentHeight        uint64
+	ResponderDeadline    uint64
 	EliminableAt         uint64
 	Raw                  types.Log // Blockchain specific contextual infos
 }
 
-// FilterMatchAdvanced is a free log retrieval operation binding the contract event 0xb6135d4f6f9687ce2f55ce0fd69c7f9d77e003a036ac8e402828abdd973621b1.
+// FilterMatchAdvanced is a free log retrieval operation binding the contract event 0x7f64b1b1c9315d0c13cf8aab2cec06ca48d1e7bccd4b409bb8cd0774647bc67e.
 //
-// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 otherParent, bytes32 leftNode, uint256 segmentStartPosition, uint64 eliminableAt)
+// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 one, bytes32 two, bytes32 otherParent, bytes32 leftNode, uint256 segmentStartPosition, uint64 currentHeight, uint64 responderDeadline, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) FilterMatchAdvanced(opts *bind.FilterOpts, matchIdHash [][32]byte) (*ITournamentMatchAdvancedIterator, error) {
 
 	var matchIdHashRule []interface{}
@@ -1609,9 +1621,9 @@ func (_ITournament *ITournamentFilterer) FilterMatchAdvanced(opts *bind.FilterOp
 	return &ITournamentMatchAdvancedIterator{contract: _ITournament.contract, event: "MatchAdvanced", logs: logs, sub: sub}, nil
 }
 
-// WatchMatchAdvanced is a free log subscription operation binding the contract event 0xb6135d4f6f9687ce2f55ce0fd69c7f9d77e003a036ac8e402828abdd973621b1.
+// WatchMatchAdvanced is a free log subscription operation binding the contract event 0x7f64b1b1c9315d0c13cf8aab2cec06ca48d1e7bccd4b409bb8cd0774647bc67e.
 //
-// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 otherParent, bytes32 leftNode, uint256 segmentStartPosition, uint64 eliminableAt)
+// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 one, bytes32 two, bytes32 otherParent, bytes32 leftNode, uint256 segmentStartPosition, uint64 currentHeight, uint64 responderDeadline, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) WatchMatchAdvanced(opts *bind.WatchOpts, sink chan<- *ITournamentMatchAdvanced, matchIdHash [][32]byte) (event.Subscription, error) {
 
 	var matchIdHashRule []interface{}
@@ -1655,9 +1667,9 @@ func (_ITournament *ITournamentFilterer) WatchMatchAdvanced(opts *bind.WatchOpts
 	}), nil
 }
 
-// ParseMatchAdvanced is a log parse operation binding the contract event 0xb6135d4f6f9687ce2f55ce0fd69c7f9d77e003a036ac8e402828abdd973621b1.
+// ParseMatchAdvanced is a log parse operation binding the contract event 0x7f64b1b1c9315d0c13cf8aab2cec06ca48d1e7bccd4b409bb8cd0774647bc67e.
 //
-// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 otherParent, bytes32 leftNode, uint256 segmentStartPosition, uint64 eliminableAt)
+// Solidity: event MatchAdvanced(bytes32 indexed matchIdHash, bytes32 one, bytes32 two, bytes32 otherParent, bytes32 leftNode, uint256 segmentStartPosition, uint64 currentHeight, uint64 responderDeadline, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) ParseMatchAdvanced(log types.Log) (*ITournamentMatchAdvanced, error) {
 	event := new(ITournamentMatchAdvanced)
 	if err := _ITournament.contract.UnpackLog(event, "MatchAdvanced", log); err != nil {
@@ -1736,17 +1748,18 @@ func (it *ITournamentMatchCreatedIterator) Close() error {
 
 // ITournamentMatchCreated represents a MatchCreated event raised by the ITournament contract.
 type ITournamentMatchCreated struct {
-	MatchIdHash  [32]byte
-	One          [32]byte
-	Two          [32]byte
-	LeftOfTwo    [32]byte
-	EliminableAt uint64
-	Raw          types.Log // Blockchain specific contextual infos
+	MatchIdHash       [32]byte
+	One               [32]byte
+	Two               [32]byte
+	LeftOfTwo         [32]byte
+	ResponderDeadline uint64
+	EliminableAt      uint64
+	Raw               types.Log // Blockchain specific contextual infos
 }
 
-// FilterMatchCreated is a free log retrieval operation binding the contract event 0x6257204c2340779874d2f4e6f94db385ead25b228b1660535f7cbc81b492ac1e.
+// FilterMatchCreated is a free log retrieval operation binding the contract event 0xb98467806859c2b452dbfe60905ffe650a4ac0bada72cbe887f71bdb014f8d7f.
 //
-// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo, uint64 eliminableAt)
+// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo, uint64 responderDeadline, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) FilterMatchCreated(opts *bind.FilterOpts, matchIdHash [][32]byte, one [][32]byte, two [][32]byte) (*ITournamentMatchCreatedIterator, error) {
 
 	var matchIdHashRule []interface{}
@@ -1769,9 +1782,9 @@ func (_ITournament *ITournamentFilterer) FilterMatchCreated(opts *bind.FilterOpt
 	return &ITournamentMatchCreatedIterator{contract: _ITournament.contract, event: "MatchCreated", logs: logs, sub: sub}, nil
 }
 
-// WatchMatchCreated is a free log subscription operation binding the contract event 0x6257204c2340779874d2f4e6f94db385ead25b228b1660535f7cbc81b492ac1e.
+// WatchMatchCreated is a free log subscription operation binding the contract event 0xb98467806859c2b452dbfe60905ffe650a4ac0bada72cbe887f71bdb014f8d7f.
 //
-// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo, uint64 eliminableAt)
+// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo, uint64 responderDeadline, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) WatchMatchCreated(opts *bind.WatchOpts, sink chan<- *ITournamentMatchCreated, matchIdHash [][32]byte, one [][32]byte, two [][32]byte) (event.Subscription, error) {
 
 	var matchIdHashRule []interface{}
@@ -1823,9 +1836,9 @@ func (_ITournament *ITournamentFilterer) WatchMatchCreated(opts *bind.WatchOpts,
 	}), nil
 }
 
-// ParseMatchCreated is a log parse operation binding the contract event 0x6257204c2340779874d2f4e6f94db385ead25b228b1660535f7cbc81b492ac1e.
+// ParseMatchCreated is a log parse operation binding the contract event 0xb98467806859c2b452dbfe60905ffe650a4ac0bada72cbe887f71bdb014f8d7f.
 //
-// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo, uint64 eliminableAt)
+// Solidity: event MatchCreated(bytes32 indexed matchIdHash, bytes32 indexed one, bytes32 indexed two, bytes32 leftOfTwo, uint64 responderDeadline, uint64 eliminableAt)
 func (_ITournament *ITournamentFilterer) ParseMatchCreated(log types.Log) (*ITournamentMatchCreated, error) {
 	event := new(ITournamentMatchCreated)
 	if err := _ITournament.contract.UnpackLog(event, "MatchCreated", log); err != nil {
@@ -2072,14 +2085,20 @@ func (it *ITournamentNewInnerTournamentIterator) Close() error {
 
 // ITournamentNewInnerTournament represents a NewInnerTournament event raised by the ITournament contract.
 type ITournamentNewInnerTournament struct {
-	MatchIdHash     [32]byte
-	ChildTournament common.Address
-	Raw             types.Log // Blockchain specific contextual infos
+	MatchIdHash            [32]byte
+	ChildTournament        common.Address
+	One                    [32]byte
+	Two                    [32]byte
+	ContestedFinalStateOne [32]byte
+	ContestedFinalStateTwo [32]byte
+	Descriptor             ITournamentTournamentDescriptor
+	BondValue              *big.Int
+	Raw                    types.Log // Blockchain specific contextual infos
 }
 
-// FilterNewInnerTournament is a free log retrieval operation binding the contract event 0xc7912008857e6a935ca95124a47677526500edc470687f5ced6e7ad3ca465138.
+// FilterNewInnerTournament is a free log retrieval operation binding the contract event 0x8ac9fa8a2f66ec2f1841fa997537ff3b5b13f0e6b4a276c5ce7c8c28764e2466.
 //
-// Solidity: event NewInnerTournament(bytes32 indexed matchIdHash, address indexed childTournament)
+// Solidity: event NewInnerTournament(bytes32 indexed matchIdHash, address indexed childTournament, bytes32 one, bytes32 two, bytes32 contestedFinalStateOne, bytes32 contestedFinalStateTwo, (bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64) descriptor, uint256 bondValue)
 func (_ITournament *ITournamentFilterer) FilterNewInnerTournament(opts *bind.FilterOpts, matchIdHash [][32]byte, childTournament []common.Address) (*ITournamentNewInnerTournamentIterator, error) {
 
 	var matchIdHashRule []interface{}
@@ -2098,9 +2117,9 @@ func (_ITournament *ITournamentFilterer) FilterNewInnerTournament(opts *bind.Fil
 	return &ITournamentNewInnerTournamentIterator{contract: _ITournament.contract, event: "NewInnerTournament", logs: logs, sub: sub}, nil
 }
 
-// WatchNewInnerTournament is a free log subscription operation binding the contract event 0xc7912008857e6a935ca95124a47677526500edc470687f5ced6e7ad3ca465138.
+// WatchNewInnerTournament is a free log subscription operation binding the contract event 0x8ac9fa8a2f66ec2f1841fa997537ff3b5b13f0e6b4a276c5ce7c8c28764e2466.
 //
-// Solidity: event NewInnerTournament(bytes32 indexed matchIdHash, address indexed childTournament)
+// Solidity: event NewInnerTournament(bytes32 indexed matchIdHash, address indexed childTournament, bytes32 one, bytes32 two, bytes32 contestedFinalStateOne, bytes32 contestedFinalStateTwo, (bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64) descriptor, uint256 bondValue)
 func (_ITournament *ITournamentFilterer) WatchNewInnerTournament(opts *bind.WatchOpts, sink chan<- *ITournamentNewInnerTournament, matchIdHash [][32]byte, childTournament []common.Address) (event.Subscription, error) {
 
 	var matchIdHashRule []interface{}
@@ -2148,9 +2167,9 @@ func (_ITournament *ITournamentFilterer) WatchNewInnerTournament(opts *bind.Watc
 	}), nil
 }
 
-// ParseNewInnerTournament is a log parse operation binding the contract event 0xc7912008857e6a935ca95124a47677526500edc470687f5ced6e7ad3ca465138.
+// ParseNewInnerTournament is a log parse operation binding the contract event 0x8ac9fa8a2f66ec2f1841fa997537ff3b5b13f0e6b4a276c5ce7c8c28764e2466.
 //
-// Solidity: event NewInnerTournament(bytes32 indexed matchIdHash, address indexed childTournament)
+// Solidity: event NewInnerTournament(bytes32 indexed matchIdHash, address indexed childTournament, bytes32 one, bytes32 two, bytes32 contestedFinalStateOne, bytes32 contestedFinalStateTwo, (bytes32,uint256,uint64,uint64,uint64,uint8,uint64,uint64) descriptor, uint256 bondValue)
 func (_ITournament *ITournamentFilterer) ParseNewInnerTournament(log types.Log) (*ITournamentNewInnerTournament, error) {
 	event := new(ITournamentNewInnerTournament)
 	if err := _ITournament.contract.UnpackLog(event, "NewInnerTournament", log); err != nil {
@@ -2314,6 +2333,148 @@ func (_ITournament *ITournamentFilterer) WatchPartialBondRefund(opts *bind.Watch
 func (_ITournament *ITournamentFilterer) ParsePartialBondRefund(log types.Log) (*ITournamentPartialBondRefund, error) {
 	event := new(ITournamentPartialBondRefund)
 	if err := _ITournament.contract.UnpackLog(event, "PartialBondRefund", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// ITournamentStandingChangedIterator is returned from FilterStandingChanged and is used to iterate over the raw logs and unpacked data for StandingChanged events raised by the ITournament contract.
+type ITournamentStandingChangedIterator struct {
+	Event *ITournamentStandingChanged // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *ITournamentStandingChangedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(ITournamentStandingChanged)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(ITournamentStandingChanged)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *ITournamentStandingChangedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *ITournamentStandingChangedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// ITournamentStandingChanged represents a StandingChanged event raised by the ITournament contract.
+type ITournamentStandingChanged struct {
+	MatchCount       *big.Int
+	Dangling         [32]byte
+	ParentCommitment [32]byte
+	ResultAt         uint64
+	WinnerExpiresAt  uint64
+	Raw              types.Log // Blockchain specific contextual infos
+}
+
+// FilterStandingChanged is a free log retrieval operation binding the contract event 0x2fbc19cf9980c334e64332c6587cddbdddc46fcbf678fe3f062427570b7fdefd.
+//
+// Solidity: event StandingChanged(uint256 matchCount, bytes32 dangling, bytes32 parentCommitment, uint64 resultAt, uint64 winnerExpiresAt)
+func (_ITournament *ITournamentFilterer) FilterStandingChanged(opts *bind.FilterOpts) (*ITournamentStandingChangedIterator, error) {
+
+	logs, sub, err := _ITournament.contract.FilterLogs(opts, "StandingChanged")
+	if err != nil {
+		return nil, err
+	}
+	return &ITournamentStandingChangedIterator{contract: _ITournament.contract, event: "StandingChanged", logs: logs, sub: sub}, nil
+}
+
+// WatchStandingChanged is a free log subscription operation binding the contract event 0x2fbc19cf9980c334e64332c6587cddbdddc46fcbf678fe3f062427570b7fdefd.
+//
+// Solidity: event StandingChanged(uint256 matchCount, bytes32 dangling, bytes32 parentCommitment, uint64 resultAt, uint64 winnerExpiresAt)
+func (_ITournament *ITournamentFilterer) WatchStandingChanged(opts *bind.WatchOpts, sink chan<- *ITournamentStandingChanged) (event.Subscription, error) {
+
+	logs, sub, err := _ITournament.contract.WatchLogs(opts, "StandingChanged")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(ITournamentStandingChanged)
+				if err := _ITournament.contract.UnpackLog(event, "StandingChanged", log); err != nil {
+					// If the signature doesn't match, skip this log.
+					if errors.Is(err, bind.ErrEventSignatureMismatch) {
+						continue
+					}
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseStandingChanged is a log parse operation binding the contract event 0x2fbc19cf9980c334e64332c6587cddbdddc46fcbf678fe3f062427570b7fdefd.
+//
+// Solidity: event StandingChanged(uint256 matchCount, bytes32 dangling, bytes32 parentCommitment, uint64 resultAt, uint64 winnerExpiresAt)
+func (_ITournament *ITournamentFilterer) ParseStandingChanged(log types.Log) (*ITournamentStandingChanged, error) {
+	event := new(ITournamentStandingChanged)
+	if err := _ITournament.contract.UnpackLog(event, "StandingChanged", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log

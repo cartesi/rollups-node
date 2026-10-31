@@ -369,6 +369,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	require.NoError(err)
 	require.NotNil(resp)
 	require.Equal(CompletionStatusAccepted, resp.Status)
+	require.Zero(resp.FinalStateEntry)
 	require.Empty(resp.Outputs)
 	require.Empty(resp.Reports)
 	mockBackend.AssertExpectations(s.T())
@@ -421,6 +422,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	mockBackendHalted.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
 	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(100), nil).Once()
+	mockBackendHalted.SetupRequestYield()
 	mockBackendHalted.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -432,8 +434,7 @@ func (s *ImplementationSuite) TestAdvance() {
 		mock.AnythingOfType("time.Duration"),
 	).Run(func(args mock.Arguments) {
 		state := args.Get(1).(*HashCollectorState)
-		state.Hashes = append(state.Hashes, expectedHaltHash)
-		state.MCyclePhase = 0 // halt occurred exactly at the collected boundary
+		collectTestEntries(state, 100, true, expectedHaltHash, expectedHaltHash)
 	}).Return(Halted, nil)
 	machineHalted := &machineImpl{
 		backend: mockBackendHalted,
@@ -449,17 +450,18 @@ func (s *ImplementationSuite) TestAdvance() {
 	require.NoError(err)
 	require.NotNil(resp)
 	require.Equal(CompletionStatusHalted, resp.Status)
+	require.Equal(Hash(model.FinalStateEntry(expectedHaltHash)), resp.FinalStateEntry)
 	require.Empty(resp.PeriodicStateHashes)
 	require.Equal(InputEntryCapacity, resp.PaddingRepetitions)
 	mockBackendHalted.AssertExpectations(s.T())
 
-	// Test advance halted off a sampling boundary: 0.21 still appends the
-	// fixed-point sample (nonzero phase) and the node must still drop it.
+	// A halt between sampling boundaries still supplies its final entry.
 	offBoundaryHaltHash := randomFakeHash()
 	mockBackendHaltedOff := NewMockBackend()
 	mockBackendHaltedOff.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendHaltedOff.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
 	mockBackendHaltedOff.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(101), nil).Once()
+	mockBackendHaltedOff.SetupRequestYield()
 	mockBackendHaltedOff.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -471,8 +473,7 @@ func (s *ImplementationSuite) TestAdvance() {
 		mock.AnythingOfType("time.Duration"),
 	).Run(func(args mock.Arguments) {
 		state := args.Get(1).(*HashCollectorState)
-		state.Hashes = append(state.Hashes, offBoundaryHaltHash)
-		state.MCyclePhase = 5 // halt occurred between sampling boundaries
+		collectTestEntries(state, 101, true, offBoundaryHaltHash, offBoundaryHaltHash)
 	}).Return(Halted, nil)
 	machineHaltedOff := &machineImpl{
 		backend: mockBackendHaltedOff,
@@ -518,6 +519,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	mockBackendOverflow.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 		Return(^uint64(0)-uint64(999), nil).Once()
+	mockBackendOverflow.SetupRequestYield()
 	mockBackendOverflow.On("SendCmioResponse", uint16(AdvanceStateRequest), input, expectedHash,
 		mock.AnythingOfType("time.Duration")).Return(nil).Once()
 	mockBackendOverflow.On("Run", ^uint64(0), mock.AnythingOfType("time.Duration")).
@@ -544,6 +546,7 @@ func (s *ImplementationSuite) TestAdvance() {
 	// Test advance with invalid hash length
 	mockBackend5 := NewMockBackend()
 	mockBackend5.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackend5.SetupRequestYield()
 	mockBackend5.On(
 		"SendCmioResponse", uint16(AdvanceStateRequest), mock.Anything,
 		expectedHash, mock.AnythingOfType("time.Duration"),
@@ -657,8 +660,14 @@ func (s *ImplementationSuite) TestPRTHashCollectionIsIndependentOfConfiguredCycl
 	s.Equal(uncapped, capped)
 	s.Equal(uncapped.PeriodicStateHashes, capped.PeriodicStateHashes)
 	s.Equal(uncapped.PaddingRepetitions, capped.PaddingRepetitions)
-	s.Equal(expectedHashes, capped.PeriodicStateHashes)
-	s.Equal(InputEntryCapacity-uint64(len(expectedHashes)), capped.PaddingRepetitions)
+	expected := &HashCollectorState{MCycleSamplingPeriod: MCycleComputationHashPeriod,
+		Log2BundleMCycleCount: int32(Log2StateHashesPerEntry)}
+	collectTestEntries(expected, 9, true, expectedHashes[0], Hash{0xF1, 0xED})
+	kept, padding, final, err := model.CanonicalInputHashCollection(expected.Hashes, 9)
+	s.Require().NoError(err)
+	s.Equal(kept, capped.PeriodicStateHashes)
+	s.Equal(padding, capped.PaddingRepetitions)
+	s.Equal(final, capped.FinalStateEntry)
 	s.Equal(uncappedTargets, maximumCapTargets)
 	s.Equal(uncapped, maximumCap,
 		"the largest valid configured span must be canonically identical to no operator cap")
@@ -670,6 +679,7 @@ func (s *ImplementationSuite) TestPRTHashCollectionIsIndependentOfConfiguredCycl
 // same guest events. This makes the scheduling-invariance test exercise the
 // real run loop rather than preprogramming one yield per call.
 type statefulAdvanceBackend struct {
+	delivered   bool
 	cycle       uint64
 	runTargets  []uint64
 	outputsHash Hash
@@ -702,7 +712,14 @@ func (b *statefulAdvanceBackend) run(mcycleEnd uint64) (BreakReason, error) {
 }
 
 func (b *statefulAdvanceBackend) Load(string, string, time.Duration) error { return nil }
-func (b *statefulAdvanceBackend) Store(string, time.Duration) error        { return nil }
+func (b *statefulAdvanceBackend) HashFunction(time.Duration) (string, error) {
+	return testKeccakHashFunction, nil
+}
+func (b *statefulAdvanceBackend) MachineIdentity(time.Duration) (Identity, error) {
+	pristine := Hash(model.UarchPristineStateHash())
+	return Identity{MarchID: model.CartesiMachineMarchID, UarchStateHash: pristine, UarchPristineStateHash: pristine}, nil
+}
+func (b *statefulAdvanceBackend) Store(string, time.Duration) error { return nil }
 func (b *statefulAdvanceBackend) Run(end uint64, _ time.Duration) (BreakReason, error) {
 	return b.run(end)
 }
@@ -712,30 +729,20 @@ func (b *statefulAdvanceBackend) RunAndCollectRootHashes(
 	_ time.Duration,
 ) (BreakReason, error) {
 	reason, err := b.run(end)
-	if err == nil && reason == YieldedAutomatically {
-		switch b.cycle {
-		case 3:
-			state.Hashes = append(state.Hashes, b.hashes[0])
-		case 6:
-			state.Hashes = append(state.Hashes, b.hashes[1])
-		}
-	}
-	if err == nil && reason == YieldedManually {
-		// Emulator 0.21 appends the fixed-point sample whenever a collecting
-		// run stops at a manual yield, regardless of phase; the node drops
-		// exactly this final entry.
-		state.Hashes = append(state.Hashes, Hash{0xF1, 0xED})
+	if err == nil {
+		collectTestEntries(state, b.cycle, isFixedPointBreakReason(reason), b.hashes[0], Hash{0xF1, 0xED})
 	}
 	return reason, err
 }
 func (b *statefulAdvanceBackend) IsAtManualYield(time.Duration) (bool, error) {
-	return b.cycle == 9, nil
+	return !b.delivered || b.cycle == 9, nil
 }
 func (b *statefulAdvanceBackend) ReadMCycle(time.Duration) (uint64, error) { return b.cycle, nil }
 func (b *statefulAdvanceBackend) SendCmioResponse(reason uint16, data []byte, _ *Hash, _ time.Duration) error {
 	if reason != uint16(AdvanceStateRequest) || string(data) != "stable-input" {
 		return fmt.Errorf("unexpected CMIO response reason=%d data_len=%d", reason, len(data))
 	}
+	b.delivered = true
 	return nil
 }
 func (b *statefulAdvanceBackend) ReceiveCmioRequest(time.Duration) (uint8, uint16, []byte, error) {
@@ -752,7 +759,7 @@ func (b *statefulAdvanceBackend) ReceiveCmioRequest(time.Duration) (uint8, uint1
 }
 func (b *statefulAdvanceBackend) WriteMemory(uint64, []byte, time.Duration) error { return nil }
 func (b *statefulAdvanceBackend) ReadMemory(address, length uint64, _ time.Duration) ([]byte, error) {
-	if address != htifTohostAddress || length != 8 || b.cycle != 9 {
+	if address != htifTohostAddress || length != 8 || (b.delivered && b.cycle != 9) {
 		return nil, errors.New("unexpected scripted memory read")
 	}
 	return binary.LittleEndian.AppendUint64(nil, acceptedTohostTestValue()|HashSize), nil
@@ -775,6 +782,7 @@ func (s *ImplementationSuite) TestInterruptedAdvanceReturnsNilAndCanBeRetried() 
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest),
@@ -1037,6 +1045,7 @@ func (s *ImplementationSuite) TestConfiguredCycleEndpointCompletionSucceeds() {
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1061,6 +1070,7 @@ func (s *ImplementationSuite) TestConfiguredCycleEndpointHaltSucceeds() {
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1084,6 +1094,7 @@ func (s *ImplementationSuite) TestConfiguredCycleExhaustionFails() {
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(InspectStateRequest), []byte("query"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1111,6 +1122,7 @@ func (s *ImplementationSuite) TestAdvanceConfiguredCycleExhaustionReturnsNoResul
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1136,6 +1148,7 @@ func (s *ImplementationSuite) TestAdvanceMachineOverflowCompletesRun() {
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1166,6 +1179,7 @@ func (s *ImplementationSuite) TestAdvanceConfiguredLimitTieCompletesWithMachineO
 	backend := NewMockBackend()
 	backend.On("CmioRxBufferSize").Return(uint64(1024))
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+	backend.SetupRequestYield()
 	backend.On(
 		"SendCmioResponse",
 		uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1200,6 +1214,7 @@ func (s *ImplementationSuite) TestAdvanceStartingAtMachineMaximumCompletesWithOv
 			backend.On("CmioRxBufferSize").Return(uint64(1024))
 			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 				Return(^uint64(0), nil).Once()
+			backend.SetupRequestYield()
 			backend.On(
 				"SendCmioResponse",
 				uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1225,7 +1240,7 @@ func (s *ImplementationSuite) TestAdvanceStartingAtMachineMaximumCompletesWithOv
 	}
 }
 
-func (s *ImplementationSuite) TestRunRejectsNonOverflowReasonAtMachineMaximum() {
+func (s *ImplementationSuite) TestRunRejectsNonFixedPointReasonAtMachineMaximum() {
 	for _, breakReason := range []BreakReason{ReachedTargetMcycle, YieldedSoftly} {
 		s.Run(fmt.Sprintf("break reason %d", breakReason), func() {
 			backend := NewMockBackend()
@@ -1244,7 +1259,23 @@ func (s *ImplementationSuite) TestRunRejectsNonOverflowReasonAtMachineMaximum() 
 			s.Equal(breakReason, result.breakReason)
 			s.Equal(^uint64(0), result.currentCycle)
 			s.Require().ErrorIs(err, ErrMachineInternal)
-			s.Contains(err.Error(), "instead of mcycle overflow at MaxUint64")
+			s.Contains(err.Error(), "instead of a fixed point at MaxUint64")
+			backend.AssertExpectations(s.T())
+		})
+	}
+}
+
+func (s *ImplementationSuite) TestRunAcceptsFixedPointReasonAtMachineMaximum() {
+	for _, reason := range []BreakReason{Halted, YieldedManually, McycleOverflow} {
+		s.Run(fmt.Sprintf("break reason %d", reason), func() {
+			backend := NewMockBackend()
+			backend.On("Run", ^uint64(0), mock.AnythingOfType("time.Duration")).Return(reason, nil).Once()
+			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(^uint64(0), nil).Once()
+			machine := &machineImpl{backend: backend, logger: s.logger}
+			result, err := machine.runIncrementInterval(context.Background(), ^uint64(0), ^uint64(0), 1, nil, time.Second)
+			s.Require().NoError(err)
+			s.Equal(reason, result.breakReason)
+			s.Equal(^uint64(0), result.currentCycle)
 			backend.AssertExpectations(s.T())
 		})
 	}
@@ -1281,6 +1312,7 @@ func (s *ImplementationSuite) TestInspectInheritedMcycleOverflowCompletesRun() {
 			backend := NewMockBackend()
 			backend.On("CmioRxBufferSize").Return(uint64(1024))
 			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(start, nil).Once()
+			backend.SetupRequestYield()
 			backend.On(
 				"SendCmioResponse",
 				uint16(InspectStateRequest), []byte("query"), nil, mock.AnythingOfType("time.Duration"),
@@ -1390,6 +1422,7 @@ func (s *ImplementationSuite) TestInspectUsesConfiguredCycleIncrement() {
 	mockBackend := NewMockBackend()
 	mockBackend.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(startCycle, nil).Once()
+	mockBackend.SetupRequestYield()
 	mockBackend.On(
 		"SendCmioResponse",
 		uint16(InspectStateRequest), mock.Anything, mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1487,6 +1520,7 @@ func (s *ImplementationSuite) TestInspect() {
 	mockBackendHalted := NewMockBackend()
 	mockBackendHalted.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
+	mockBackendHalted.SetupRequestYield()
 	mockBackendHalted.On("SendCmioResponse", uint16(InspectStateRequest), query, nil,
 		mock.AnythingOfType("time.Duration")).Return(nil).Once()
 	mockBackendHalted.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).
@@ -1518,6 +1552,7 @@ func (s *ImplementationSuite) TestInspect() {
 	mockBackendFailed := NewMockBackend()
 	mockBackendFailed.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendFailed.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil).Once()
+	mockBackendFailed.SetupRequestYield()
 	mockBackendFailed.On("SendCmioResponse", uint16(InspectStateRequest), query, nil,
 		mock.AnythingOfType("time.Duration")).Return(nil).Once()
 	mockBackendFailed.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).
@@ -1570,6 +1605,7 @@ func (s *ImplementationSuite) TestInspect() {
 	mockBackendOverflow.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackendOverflow.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 		Return(^uint64(0)-uint64(999), nil).Once()
+	mockBackendOverflow.SetupRequestYield()
 	mockBackendOverflow.On("SendCmioResponse", uint16(InspectStateRequest), query, nil,
 		mock.AnythingOfType("time.Duration")).Return(nil).Once()
 	mockBackendOverflow.On("Run", ^uint64(0), mock.AnythingOfType("time.Duration")).
@@ -1656,6 +1692,7 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 			backend.On("CmioRxBufferSize").Return(uint64(1024))
 			backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 				Return(uint64(0), nil).Once()
+			backend.SetupRequestYield()
 			backend.On(
 				"SendCmioResponse",
 				uint16(AdvanceStateRequest), []byte("input"), mock.Anything, mock.AnythingOfType("time.Duration"),
@@ -1670,16 +1707,12 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 					mock.AnythingOfType("time.Duration"),
 				).Run(func(args mock.Arguments) {
 					state := args.Get(1).(*HashCollectorState)
-					state.Hashes = append(state.Hashes, collectedHash)
-					state.MCyclePhase = 0
+					collectTestEntries(state, MCycleComputationHashPeriod, true, collectedHash, terminalSample)
 				}).Return(YieldedManually, nil).Once()
 				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 					Return(MCycleComputationHashPeriod, nil).Once()
 			case test.sameRunPriorBoundary:
-				// RunAndCollectRootHashes may cross and collect a prior
-				// boundary, then stop at a manual yield one cycle later in the
-				// same call. Emulator 0.21 also appends the off-boundary
-				// fixed-point sample; only that final entry may be dropped.
+				// The same call crosses a sampling boundary and reaches a fixed point.
 				backend.On(
 					"RunAndCollectRootHashes",
 					2*MCycleComputationHashPeriod,
@@ -1687,15 +1720,12 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 					mock.AnythingOfType("time.Duration"),
 				).Run(func(args mock.Arguments) {
 					state := args.Get(1).(*HashCollectorState)
-					state.Hashes = append(state.Hashes, collectedHash, terminalSample)
-					state.MCyclePhase = 1
+					collectTestEntries(state, MCycleComputationHashPeriod+1, true, collectedHash, terminalSample)
 				}).Return(YieldedManually, nil).Once()
 				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 					Return(MCycleComputationHashPeriod+1, nil).Once()
 			case test.immediateYield:
-				// Even a yield right after delivery is a fixed point: 0.21
-				// appends its sample at a nonzero phase, and the node must
-				// still drop it.
+				// A yield before the first periodic sample still produces final padding.
 				backend.On(
 					"RunAndCollectRootHashes",
 					MCycleComputationHashPeriod,
@@ -1703,8 +1733,7 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 					mock.AnythingOfType("time.Duration"),
 				).Run(func(args mock.Arguments) {
 					state := args.Get(1).(*HashCollectorState)
-					state.Hashes = append(state.Hashes, terminalSample)
-					state.MCyclePhase = 1
+					collectTestEntries(state, 1, true, collectedHash, terminalSample)
 				}).Return(YieldedManually, nil).Once()
 				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 					Return(uint64(1), nil).Once()
@@ -1717,14 +1746,11 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 					mock.AnythingOfType("time.Duration"),
 				).Run(func(args mock.Arguments) {
 					state := args.Get(1).(*HashCollectorState)
-					state.Hashes = append(state.Hashes, collectedHash)
-					state.MCyclePhase = 0
+					collectTestEntries(state, MCycleComputationHashPeriod, false, collectedHash, terminalSample)
 				}).Return(ReachedTargetMcycle, nil).Once()
 				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 					Return(MCycleComputationHashPeriod, nil).Once()
-				// The second call manually yields one cycle later; 0.21 appends
-				// the off-boundary fixed-point sample, which is dropped while
-				// the prior boundary remains in the collection.
+				// A terminal call completes the retained partial bundle.
 				backend.On(
 					"RunAndCollectRootHashes",
 					2*MCycleComputationHashPeriod,
@@ -1732,8 +1758,7 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 					mock.AnythingOfType("time.Duration"),
 				).Run(func(args mock.Arguments) {
 					state := args.Get(1).(*HashCollectorState)
-					state.Hashes = append(state.Hashes, terminalSample)
-					state.MCyclePhase = 1
+					collectTestEntries(state, MCycleComputationHashPeriod+1, true, collectedHash, terminalSample)
 				}).Return(YieldedManually, nil).Once()
 				backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 					Return(MCycleComputationHashPeriod+1, nil).Once()
@@ -1763,13 +1788,20 @@ func (s *ImplementationSuite) TestAdvanceCanonicalizesTerminalBoundaryHash() {
 			s.Require().NoError(err)
 			s.Require().NotNil(response)
 			s.Equal(test.status, response.Status)
-			if test.terminalAtBoundary || test.immediateYield {
-				s.Empty(response.PeriodicStateHashes)
-				s.Equal(InputEntryCapacity, response.PaddingRepetitions)
-			} else {
-				s.Equal([]Hash{collectedHash}, response.PeriodicStateHashes)
-				s.Equal(InputEntryCapacity-1, response.PaddingRepetitions)
+			delta := MCycleComputationHashPeriod + 1
+			if test.terminalAtBoundary {
+				delta = MCycleComputationHashPeriod
+			} else if test.immediateYield {
+				delta = 1
 			}
+			expected := &HashCollectorState{MCycleSamplingPeriod: MCycleComputationHashPeriod,
+				Log2BundleMCycleCount: int32(Log2StateHashesPerEntry)}
+			collectTestEntries(expected, delta, true, collectedHash, terminalSample)
+			kept, padding, final, err := model.CanonicalInputHashCollection(expected.Hashes, delta)
+			s.Require().NoError(err)
+			s.Equal(kept, response.PeriodicStateHashes)
+			s.Equal(padding, response.PaddingRepetitions)
+			s.Equal(final, response.FinalStateEntry)
 			backend.AssertExpectations(s.T())
 		})
 	}
@@ -1787,8 +1819,7 @@ func (s *ImplementationSuite) TestRunCanonicalizesOverflowCollection() {
 		mock.AnythingOfType("time.Duration"),
 	).Run(func(args mock.Arguments) {
 		state := args.Get(1).(*HashCollectorState)
-		state.Hashes = append(state.Hashes, terminalSample)
-		state.MCyclePhase = 7
+		collectTestEntries(state, fixedEndpoint-startCycle, true, terminalSample, terminalSample)
 	}).Return(McycleOverflow, nil).Once()
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(fixedEndpoint, nil).Once()
 	machine := &machineImpl{
@@ -1808,8 +1839,14 @@ func (s *ImplementationSuite) TestRunCanonicalizesOverflowCollection() {
 	s.Require().ErrorIs(err, ErrMcycleOverflow)
 	s.Empty(result.outputs)
 	s.Empty(result.reports)
-	s.Empty(result.periodicStateHashes)
-	s.Equal(uint64(InputEntryCapacity), result.paddingRepetitions)
+	expected := &HashCollectorState{MCycleSamplingPeriod: MCycleComputationHashPeriod,
+		Log2BundleMCycleCount: int32(Log2StateHashesPerEntry)}
+	collectTestEntries(expected, fixedEndpoint-startCycle, true, terminalSample, terminalSample)
+	kept, padding, final, spanErr := model.CanonicalInputHashCollection(expected.Hashes, fixedEndpoint-startCycle)
+	s.Require().NoError(spanErr)
+	s.Equal(kept, result.periodicStateHashes)
+	s.Equal(padding, result.paddingRepetitions)
+	s.Equal(final, result.finalStateEntry)
 	backend.AssertExpectations(s.T())
 }
 
@@ -1826,8 +1863,7 @@ func (s *ImplementationSuite) TestRunCapsCollectorChunksAndPreservesCollectionSt
 		state := args.Get(1).(*HashCollectorState)
 		s.Zero(state.MCyclePhase)
 		s.Empty(state.Hashes)
-		state.Hashes = append(state.Hashes, firstPeriodicHash)
-		state.MCyclePhase = 7
+		collectTestEntries(state, mcycleComputationHashChunkSize, false, firstPeriodicHash, terminalHash)
 	}).Return(ReachedTargetMcycle, nil).Once()
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 		Return(mcycleComputationHashChunkSize, nil).Once()
@@ -1838,10 +1874,10 @@ func (s *ImplementationSuite) TestRunCapsCollectorChunksAndPreservesCollectionSt
 		mock.AnythingOfType("time.Duration"),
 	).Run(func(args mock.Arguments) {
 		state := args.Get(1).(*HashCollectorState)
-		s.Equal(uint64(7), state.MCyclePhase)
-		s.Equal([]Hash{firstPeriodicHash}, state.Hashes)
-		state.Hashes = append(state.Hashes, terminalHash)
-		state.MCyclePhase = 11
+		s.Zero(state.MCyclePhase)
+		// Each stored entry covers 2^24 mcycles. The chunk is an exact multiple.
+		s.Equal(mcycleComputationHashChunkSize/(uint64(1)<<24), uint64(len(state.Hashes)))
+		collectTestEntries(state, 2*mcycleComputationHashChunkSize, true, firstPeriodicHash, terminalHash)
 	}).Return(YieldedManually, nil).Once()
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 		Return(2*mcycleComputationHashChunkSize, nil).Once()
@@ -1861,8 +1897,14 @@ func (s *ImplementationSuite) TestRunCapsCollectorChunksAndPreservesCollectionSt
 	)
 
 	s.Require().NoError(err)
-	s.Equal([]Hash{firstPeriodicHash}, result.periodicStateHashes)
-	s.Equal(InputEntryCapacity-1, result.paddingRepetitions)
+	expected := &HashCollectorState{MCycleSamplingPeriod: MCycleComputationHashPeriod,
+		Log2BundleMCycleCount: int32(Log2StateHashesPerEntry)}
+	collectTestEntries(expected, 2*mcycleComputationHashChunkSize, true, firstPeriodicHash, terminalHash)
+	kept, padding, final, spanErr := model.CanonicalInputHashCollection(expected.Hashes, 2*mcycleComputationHashChunkSize)
+	s.Require().NoError(spanErr)
+	s.Equal(kept, result.periodicStateHashes)
+	s.Equal(padding, result.paddingRepetitions)
+	s.Equal(final, result.finalStateEntry)
 	backend.AssertExpectations(s.T())
 }
 
@@ -1873,7 +1915,10 @@ func (s *ImplementationSuite) TestRunRejectsFixedPointWithoutAppendedHash() {
 		MCycleComputationHashPeriod,
 		mock.AnythingOfType("*machine.HashCollectorState"),
 		mock.AnythingOfType("time.Duration"),
-	).Return(YieldedManually, nil).Once()
+	).Run(func(args mock.Arguments) {
+		state := args.Get(1).(*HashCollectorState)
+		state.PartialBundle = []byte(`{"leaf_count":1}`)
+	}).Return(YieldedManually, nil).Once()
 	backend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 		Return(MCycleComputationHashPeriod, nil).Once()
 	machine := &machineImpl{
@@ -2399,6 +2444,7 @@ func (s *ImplementationSuite) TestProcess() {
 	// Test successful process
 	mockBackend := NewMockBackend()
 	mockBackend.On("CmioRxBufferSize").Return(uint64(1024))
+	mockBackend.SetupRequestYield()
 	mockBackend.On(
 		"SendCmioResponse", mock.AnythingOfType("uint16"), mock.Anything,
 		expectedHash, mock.AnythingOfType("time.Duration"),
@@ -2432,6 +2478,7 @@ func (s *ImplementationSuite) TestProcess() {
 	haltedBackend.On("CmioRxBufferSize").Return(uint64(1024))
 	haltedBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).
 		Return(uint64(0), nil).Once()
+	haltedBackend.SetupRequestYield()
 	haltedBackend.On(
 		"SendCmioResponse",
 		mock.AnythingOfType("uint16"), mock.Anything, expectedHash,
@@ -2484,6 +2531,7 @@ func (s *ImplementationSuite) TestProcess() {
 	mockBackend3 := NewMockBackend()
 	mockBackend3.On("CmioRxBufferSize").Return(uint64(1024))
 	mockBackend3.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
+	mockBackend3.SetupRequestYield()
 	mockBackend3.On("SendCmioResponse",
 		mock.AnythingOfType("uint16"),
 		mock.Anything,
@@ -2621,50 +2669,12 @@ func (s *ImplementationSuite) TestCheckContext() {
 	require.NoError(err)    // nil context is valid in Go
 }
 
-func (s *ImplementationSuite) TestInputHashCollectionSpan() {
+func (s *ImplementationSuite) TestInvalidInputHashCollectionSpanError() {
 	require := s.Require()
-
-	for _, test := range []struct {
-		name    string
-		hashes  uint64
-		padding uint64
-		wantErr bool
-	}{
-		{name: "empty collection", hashes: 0, padding: InputEntryCapacity},
-		{name: "partial collection", hashes: 2, padding: InputEntryCapacity - 2},
-		{name: "exact boundary", hashes: InputEntryCapacity, padding: 0},
-		{name: "short span", hashes: 2, padding: InputEntryCapacity - 3, wantErr: true},
-		{name: "long span", hashes: 2, padding: InputEntryCapacity - 1, wantErr: true},
-		{name: "collector overflow", hashes: InputEntryCapacity + 1, wantErr: true},
-	} {
-		s.Run(test.name, func() {
-			err := ValidateInputHashCollectionSpan(test.hashes, test.padding)
-			require.Equal(test.wantErr, err != nil)
-		})
-	}
-
-	padding, err := inputHashCollectionPaddingRepetitions(InputEntryCapacity)
-	require.NoError(err)
-	require.Zero(padding)
-	_, err = inputHashCollectionPaddingRepetitions(InputEntryCapacity + 1)
-	require.ErrorContains(err, "exceeds input entry capacity")
-
-	canonicalCount, padding, err := canonicalInputHashCollectionShape(
-		InputEntryCapacity,
-		true,
-	)
-	require.NoError(err)
-	require.Equal(InputEntryCapacity-1, canonicalCount)
-	require.Equal(uint64(1), padding)
-
-	// Validate the raw collector count before removing the terminal sample.
-	// Otherwise S+1 would be incorrectly normalized into a valid S shape.
-	_, _, err = canonicalInputHashCollectionShape(InputEntryCapacity+1, true)
-	require.ErrorContains(err, "exceeds input entry capacity")
 
 	// A malformed collection is an internal failure even when execution also
 	// reached a completed terminal state. The terminal status is context only.
-	err = invalidInputHashCollectionSpanError(ErrHalted, errors.New("overcollection"))
+	err := invalidInputHashCollectionSpanError(ErrHalted, errors.New("overcollection"))
 	require.ErrorIs(err, ErrMachineInternal)
 	require.NotErrorIs(err, ErrHalted)
 	require.ErrorContains(err, ErrHalted.Error())

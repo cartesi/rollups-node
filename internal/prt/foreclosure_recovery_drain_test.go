@@ -37,6 +37,7 @@ func TestForeclosedClaimsDrainWhenRecoveryDiscoveryFails(t *testing.T) {
 	f.repo.On("GetLastNonOpenEpochIndex", mock.Anything, f.app.IApplicationAddress.Hex()).Return(new(uint64(3)), nil)
 	failure := errors.New("recovery query unavailable")
 	f.d.repository = &recoveryRepositoryPort{deliveryRepoFake: f.repo, err: failure}
+	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
 	observationErr := f.d.observeApplication(t.Context(), f.app, observerFacts(100))
 	require.ErrorIs(t, errors.Join(observationErr, f.d.tick(t.Context())), failure)
 	f.repo.AssertExpectations(t)
@@ -120,6 +121,7 @@ func TestForeclosedDrainRetainsRecoveryErrorOnEveryReturn(t *testing.T) {
 				r.err = errors.Join(failure, context.Canceled)
 			}
 			f.d.repository = r
+			expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
 			observationErr := f.d.observeApplication(ctx, f.app, observerFacts(100))
 			err := errors.Join(observationErr, f.d.tick(ctx))
 			require.ErrorIs(t, err, failure)

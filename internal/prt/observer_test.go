@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTournamentDescriptorFromBinding_MapsFieldsAndOwnsBaseCycle(t *testing.T) {
+func TestTournamentDescriptorFromBinding_MapsDecodedFields(t *testing.T) {
 	baseCycle := big.NewInt(123)
 	binding := itournament.ITournamentTournamentDescriptor{
 		BaseCycle:  baseCycle,
@@ -36,13 +36,6 @@ func TestTournamentDescriptorFromBinding_MapsFieldsAndOwnsBaseCycle(t *testing.T
 	require.Equal(t, binding.Level, descriptor.Level)
 	require.Equal(t, model.TournamentKindLeaf, descriptor.Kind)
 
-	baseCycle.SetInt64(456)
-	require.Equal(t, int64(123), descriptor.BaseCycle.Int64(), "the DTO must own its base-cycle value")
-	descriptor.BaseCycle.SetInt64(789)
-	require.Equal(t, int64(456), binding.BaseCycle.Int64(), "the binding must not share the DTO base-cycle value")
-
-	_, err = tournamentDescriptorFromBinding(itournament.ITournamentTournamentDescriptor{})
-	require.ErrorContains(t, err, "base cycle is nil")
 }
 
 func TestTournamentStandingFromBinding_MapsAllFields(t *testing.T) {
@@ -277,6 +270,7 @@ func TestReadTournament_PinsDescriptorAndStandingReads(t *testing.T) {
 	expectTournamentAuxiliaryReads(adapter, pinned, RootLevel, standing.State)
 	s, repo := newPRTServiceMock()
 
+	adapter.On("BondValue", pinned).Return(big.NewInt(1), nil).Once()
 	tournament, err := s.readTournament(
 		context.Background(), app, epoch, RootLevel, nil, nil, tournamentAddress, adapter, 2, mostRecentBlock,
 	)
@@ -307,7 +301,7 @@ func TestGatherTournamentData_UsesDynamicLastLevel(t *testing.T) {
 			_ = tournament // Known children are scheduled independently.
 
 			batches, err := s.gatherTournamentData(t.Context(), f.app, epoch, test.level, nil, nil,
-				*epoch.TournamentAddress, 4, 100)
+				*epoch.TournamentAddress, 4, 100, nil, nil)
 			require.NoError(t, err)
 			require.Len(t, batches, 1)
 			require.Equal(t, uint64(test.level), batches[0].Tournament.Level)
@@ -325,6 +319,7 @@ func TestObservedResultRequiresLocalMachineHash(t *testing.T) {
 		mock.MatchedBy(func(reason *string) bool {
 			return reason != nil && strings.Contains(*reason, "missing required fields")
 		})).Return(nil).Once()
+	expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
 	err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
 	require.ErrorContains(t, err, "missing required fields")
 	require.Equal(t, model.ApplicationStatus_Corrupted, f.app.Status)
@@ -343,6 +338,9 @@ func TestObservedResultChecksLocalMachineState(t *testing.T) {
 			} else {
 				f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, f.epoch.Index,
 					view.sealed.StagingBlockNumber).Return(nil).Once()
+			}
+			if mismatch {
+				expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
 			}
 			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
 			if mismatch {

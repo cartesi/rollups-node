@@ -4,6 +4,9 @@
 package repotest
 
 import (
+	"bytes"
+	"errors"
+
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 )
@@ -14,6 +17,124 @@ type OutputSuite struct {
 
 func NewOutputSuite(factory RepositoryFactory) *OutputSuite {
 	return &OutputSuite{BaseSuite: BaseSuite{factory: factory}}
+}
+
+func (s *OutputSuite) TestEpochOutputRanges() {
+	s.Run("EmptyEpoch", func() {
+		app := NewApplicationBuilder().WithConsensus(Consensus_PRT).Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).WithStatus(EpochStatus_Closed).Build()
+		s.Require().NoError(s.Repo.CreateEpochsAndInputs(s.Ctx, app.Name, map[*Epoch][]*Input{epoch: nil}, epoch.LastBlock+1))
+		got, err := s.Repo.GetEpochOutputRange(s.Ctx, app.ID, epoch.Index)
+		s.Require().NoError(err)
+		s.Require().Equal(repository.EpochOutputRange{}, got)
+	})
+
+	s.Run("AcceptedEpochIsolationAndInclusiveScan", func() {
+		const (
+			targetEpoch       = 1
+			targetFirstBlock  = 10
+			targetLastBlock   = 19
+			targetInputUpper  = 4
+			rejectedInput     = 2
+			targetOutputCount = 3
+			otherOutputCount  = 5
+			scanThrough       = 20
+		)
+		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		before := NewEpochBuilder(app.ID).WithStatus(EpochStatus_Closed).WithInputBounds(0, 1).Build()
+		target := NewEpochBuilder(app.ID).WithIndex(targetEpoch).WithBlocks(targetFirstBlock, targetLastBlock).
+			WithStatus(EpochStatus_Closed).WithInputBounds(1, targetInputUpper).Build()
+		inputs := []*Input{
+			NewInputBuilder().WithIndex(0).WithBlockNumber(1).Build(),
+			NewInputBuilder().WithIndex(1).WithBlockNumber(target.FirstBlock + 1).Build(),
+			NewInputBuilder().WithIndex(rejectedInput).WithBlockNumber(target.FirstBlock + rejectedInput).Build(),
+			NewInputBuilder().WithIndex(targetInputUpper - 1).WithBlockNumber(target.FirstBlock + targetInputUpper - 1).Build(),
+		}
+		s.Require().NoError(s.Repo.CreateEpochsAndInputs(s.Ctx, app.Name,
+			map[*Epoch][]*Input{before: inputs[:1], target: inputs[1:]}, scanThrough))
+		payloads := [][][]byte{
+			{[]byte("before")}, {[]byte("target0"), []byte("target1")}, nil, {[]byte("target2")},
+		}
+		for index, input := range inputs {
+			status := InputCompletionStatus_Accepted
+			epochIndex := uint64(targetEpoch)
+			if index == 0 {
+				epochIndex = before.Index
+			}
+			if index == rejectedInput {
+				status = InputCompletionStatus_Rejected
+			}
+			s.Require().NoError(s.Repo.StoreAdvanceResult(s.Ctx, app.ID, &AdvanceResult{
+				EpochIndex: epochIndex, InputIndex: input.Index, Status: status,
+				Outputs: payloads[index], StateProof: *DummyStateProof(),
+			}))
+		}
+		other := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
+		otherBefore := NewEpochBuilder(other.ID).WithStatus(EpochStatus_Closed).Build()
+		otherTarget := NewEpochBuilder(other.ID).WithIndex(targetEpoch).WithBlocks(targetFirstBlock, targetLastBlock).
+			WithStatus(EpochStatus_Closed).WithInputBounds(0, 1).Build()
+		otherInput := NewInputBuilder().WithIndex(0).WithBlockNumber(otherTarget.FirstBlock + 1).Build()
+		s.Require().NoError(s.Repo.CreateEpochsAndInputs(s.Ctx, other.Name,
+			map[*Epoch][]*Input{otherBefore: nil, otherTarget: {otherInput}}, scanThrough))
+		s.storeAdvanceResult(other.ID, targetEpoch, 0,
+			[][]byte{[]byte("other0"), []byte("other1"), []byte("other2"), []byte("other3"), []byte("other4")}, nil)
+		got, err := s.Repo.GetEpochOutputRange(s.Ctx, app.ID, target.Index)
+		s.Require().NoError(err)
+		s.Require().Equal(repository.EpochOutputRange{Count: targetOutputCount, First: 1, Last: targetOutputCount}, got)
+		previous, err := s.Repo.GetEpochOutputRange(s.Ctx, app.ID, before.Index)
+		s.Require().NoError(err)
+		s.Require().Equal(repository.EpochOutputRange{Count: 1, First: 0, Last: 0}, previous)
+		otherRange, err := s.Repo.GetEpochOutputRange(s.Ctx, other.ID, targetEpoch)
+		s.Require().NoError(err)
+		s.Require().Equal(repository.EpochOutputRange{Count: otherOutputCount, First: 0, Last: otherOutputCount - 1}, otherRange)
+
+		expected := [][]byte{[]byte("target0"), []byte("target1"), []byte("target2")}
+		var read uint64
+		s.Require().NoError(s.Repo.ScanOutputs(s.Ctx, app.ID, got.First, got.Last, func(index uint64, rawData []byte) error {
+			s.Equal(got.First+read, index)
+			s.Equal(expected[read], rawData)
+			read++
+			return nil
+		}))
+		s.Equal(got.Count, read)
+		const middleIndex = 2
+		read = 0
+		s.Require().NoError(s.Repo.ScanOutputs(s.Ctx, app.ID, middleIndex, middleIndex, func(index uint64, rawData []byte) error {
+			s.Equal(uint64(middleIndex), index)
+			s.Equal(expected[1], rawData)
+			read++
+			return nil
+		}))
+		s.Equal(uint64(1), read)
+		want := errors.New("stop output scan")
+		read = 0
+		err = s.Repo.ScanOutputs(s.Ctx, app.ID, got.First, got.Last, func(uint64, []byte) error {
+			read++
+			return want
+		})
+		s.Require().ErrorIs(err, want)
+		s.Equal(uint64(1), read)
+		for _, bounds := range [][2]uint64{{1, 0}, {0, repository.MaxOutputRangeRows}} {
+			err := s.Repo.ScanOutputs(s.Ctx, app.ID, bounds[0], bounds[1], func(uint64, []byte) error { return nil })
+			s.Require().ErrorContains(err, "output scan range must contain between 1 and 65536 indexes")
+		}
+	})
+
+	s.Run("WholeTwoMiBOutput", func() {
+		const outputSize = 2 << 20
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+		payload := bytes.Repeat([]byte{0xab}, outputSize)
+		s.storeAdvanceResult(seed.App.ID, 0, 0, [][]byte{payload}, nil)
+		calls := 0
+		s.Require().NoError(s.Repo.ScanOutputs(s.Ctx, seed.App.ID, 0, 0, func(index uint64, rawData []byte) error {
+			s.Equal(uint64(0), index)
+			s.Require().Len(rawData, outputSize)
+			s.Equal(payload, rawData)
+			calls++
+			return nil
+		}))
+		s.Equal(1, calls)
+	})
 }
 
 func (s *OutputSuite) TestGetOutput() {
@@ -482,6 +603,39 @@ func (s *OutputSuite) TestUpdateOutputsExecution() {
 
 		// Verify all 3 were updated
 		for i := range uint64(3) {
+			got, err := s.Repo.GetOutput(
+				s.Ctx, seed.App.IApplicationAddress.String(), i)
+			s.Require().NoError(err)
+			s.Require().NotNil(got.ExecutionTransactionHash,
+				"output %d should have execution hash", i)
+			s.Equal(txHash, *got.ExecutionTransactionHash)
+		}
+	})
+
+	s.Run("DescendingIndexesUpdatedAtomically", func() {
+		const outputCount = 3
+		const scanBlock = 200
+		seed := Seed(s.Ctx, s.T(), s.Repo)
+
+		s.storeAdvanceResult(seed.App.ID, 0, 0,
+			[][]byte{[]byte("o0"), []byte("o1"), []byte("o2")}, nil)
+
+		txHash := UniqueHash()
+		outputs := make([]*Output, outputCount)
+		for i := range uint64(outputCount) {
+			outputs[i] = &Output{
+				InputEpochApplicationID:  seed.App.ID,
+				Index:                    uint64(outputCount) - 1 - i,
+				ExecutionTransactionHash: &txHash,
+			}
+		}
+
+		err := s.Repo.UpdateOutputsExecution(
+			s.Ctx, seed.App.IApplicationAddress.String(), outputs, scanBlock)
+		s.Require().NoError(err)
+
+		// Verify all 3 were updated
+		for i := range uint64(outputCount) {
 			got, err := s.Repo.GetOutput(
 				s.Ctx, seed.App.IApplicationAddress.String(), i)
 			s.Require().NoError(err)

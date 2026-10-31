@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/txsender"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -28,6 +29,16 @@ type TournamentDescriptor struct {
 	Kind         model.TournamentKind
 	StartInstant uint64
 	Allowance    uint64
+}
+
+// TournamentCreation is immutable parent event provenance for a child tournament.
+type TournamentCreation struct {
+	Address                common.Address
+	Descriptor             TournamentDescriptor
+	BondValue              model.Uint256
+	ContestedFinalStateOne *common.Hash
+	ContestedFinalStateTwo *common.Hash
+	Event                  model.TournamentCreationEvent
 }
 
 // TournamentStanding is the current tournament result and timing projection.
@@ -133,6 +144,7 @@ type TournamentAdapter interface {
 
 // DaveConsensusAdapter wraps access to the IDaveConsensus contract.
 type DaveConsensusAdapter interface {
+	ReadDeployment(ctx context.Context, head txsender.BlockRef) (DeploymentEvidence, error)
 	ParseEpochSealed(log types.Log) (*idaveconsensus.IDaveConsensusEpochSealed, error)
 	EpochSealedAt(ctx context.Context, blockHash common.Hash, epoch uint64) ([]*idaveconsensus.IDaveConsensusEpochSealed, error)
 	TournamentLevelCount(opts *bind.CallOpts) (uint64, error)
@@ -189,6 +201,7 @@ type TournamentEvents struct {
 	LeafMatchSealed    []*itournament.ITournamentLeafMatchSealed
 	PartialBondRefund  []*itournament.ITournamentPartialBondRefund
 	BondRecovered      []*itournament.ITournamentBondRecovered
+	StandingChanged    []*itournament.ITournamentStandingChanged
 }
 
 type TournamentLevel uint64

@@ -359,59 +359,36 @@ func (s *ApplicationSuite) TestUpdateApplicationEnabled() {
 	})
 }
 
-func (s *ApplicationSuite) TestEnableApplicationAndClearFailed() {
-	s.Run("ClearsFailedStatusAndReason", func() {
-		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
-		reason := "machine crashed"
-		s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Failed, &reason))
-
-		err := s.Repo.EnableApplicationAndClearFailed(s.Ctx, app.ID)
-		s.Require().NoError(err)
-
-		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
-		s.Require().NoError(err)
-		s.True(got.Enabled)
-		s.Equal(ApplicationStatus_OK, got.Status)
-		s.Nil(got.Reason)
-	})
-
-	s.Run("DoesNotClearCorrupted", func() {
-		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
-		reason := "corruption"
-		s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Corrupted, &reason))
-
-		err := s.Repo.EnableApplicationAndClearFailed(s.Ctx, app.ID)
-		s.Require().NoError(err)
-
-		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
-		s.Require().NoError(err)
-		s.True(got.Enabled)
-		s.Equal(ApplicationStatus_Corrupted, got.Status)
-		s.Require().NotNil(got.Reason)
-		s.Equal(reason, *got.Reason)
-	})
-
-	s.Run("DoesNotClearDiverged", func() {
-		app := NewApplicationBuilder().Create(s.Ctx, s.T(), s.Repo)
-		s.Require().NoError(s.Repo.UpdateApplicationEnabled(s.Ctx, app.ID, false))
-		reason := "claim disagreement"
-		s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, ApplicationStatus_Diverged, &reason))
-
-		err := s.Repo.EnableApplicationAndClearFailed(s.Ctx, app.ID)
-		s.Require().NoError(err)
-
-		got, err := s.Repo.GetApplication(s.Ctx, app.Name)
-		s.Require().NoError(err)
-		s.True(got.Enabled)
-		s.Equal(ApplicationStatus_Diverged, got.Status)
-		s.Require().NotNil(got.Reason)
-		s.Equal(reason, *got.Reason)
-	})
-
+func (s *ApplicationSuite) TestEnableApplicationAndResetDeployment() {
+	for _, test := range []struct {
+		name             string
+		status, expected ApplicationStatus
+		clearFailed      bool
+	}{
+		{"ClearsFailedStatusAndReason", ApplicationStatus_Failed, ApplicationStatus_OK, true},
+		{"PreservesFailedWithoutRecoveryAuthorization", ApplicationStatus_Failed, ApplicationStatus_Failed, false},
+		{"DoesNotClearCorrupted", ApplicationStatus_Corrupted, ApplicationStatus_Corrupted, true},
+		{"DoesNotClearDiverged", ApplicationStatus_Diverged, ApplicationStatus_Diverged, true},
+	} {
+		s.Run(test.name, func() {
+			app := NewApplicationBuilder().WithEnabled(false).Create(s.Ctx, s.T(), s.Repo)
+			reason := "retained boundary-free health"
+			s.Require().NoError(s.Repo.UpdateApplicationStatus(s.Ctx, app.ID, test.status, &reason))
+			s.Require().NoError(s.Repo.EnableApplicationAndResetDeployment(s.Ctx, app.ID, test.clearFailed))
+			got, err := s.Repo.GetApplication(s.Ctx, app.Name)
+			s.Require().NoError(err)
+			s.True(got.Enabled)
+			s.Equal(test.expected, got.Status)
+			if test.expected == ApplicationStatus_OK {
+				s.Nil(got.Reason)
+			} else {
+				s.Equal(&reason, got.Reason)
+			}
+		})
+	}
 	s.Run("ReturnsNotFoundWhenRowMissing", func() {
-		err := s.Repo.EnableApplicationAndClearFailed(s.Ctx, int64(99_999_999))
+		const missingApplicationID = 99_999_999
+		err := s.Repo.EnableApplicationAndResetDeployment(s.Ctx, missingApplicationID, false)
 		s.Require().ErrorIs(err, repository.ErrNotFound)
 	})
 }
@@ -973,6 +950,7 @@ func (s *ApplicationSuite) TestEventLastCheckBlock() {
 			MonitoredEvent_MatchCreated,
 			MonitoredEvent_MatchDeleted,
 			MonitoredEvent_NewInnerTournament,
+			MonitoredEvent_StandingChanged,
 		}
 		for _, event := range tournamentEvents {
 			err = s.Repo.UpdateEventLastCheckBlock(

@@ -421,12 +421,11 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		err := s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result)
 		s.Require().NoError(err)
 
-		// Verify one row per intermediate hash plus the final repetition tail.
+		// Verify one row per collected entry plus the padding row.
 		epochIdx := uint64(0)
-		stateHashes, total, err := s.Repo.ListStateHashes(
-			s.Ctx, seed.App.IApplicationAddress.String(),
-			repository.StateHashFilter{EpochIndex: &epochIdx},
-			repository.Pagination{Limit: 10}, false)
+		total, err := s.Repo.CountEpochStateHashes(s.Ctx, seed.App.ID, epochIdx)
+		s.Require().NoError(err)
+		stateHashes, err := s.Repo.ListEpochStateHashes(s.Ctx, seed.App.ID, epochIdx, nil, 10)
 		s.Require().NoError(err)
 		expectedStateHashRows := len(hashes) + 1
 		s.Len(stateHashes, expectedStateHashRows)
@@ -440,9 +439,9 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Equal(common.Hash(hash3), stateHashes[2].MachineHash)
 		s.Equal(uint64(1), stateHashes[2].Repetitions)
 
-		// Verify final hash has PaddingRepetitions as Repetitions
+		// Verify the final entry has PaddingRepetitions as Repetitions.
 		tail := stateHashes[len(hashes)]
-		s.Equal(machineHash, tail.MachineHash)
+		s.Equal(FinalStateEntry(machineHash), tail.MachineHash)
 		s.Equal(result.PaddingRepetitions, tail.Repetitions)
 
 		// Verify outputs were also created
@@ -480,14 +479,25 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Require().NoError(s.Repo.StoreAdvanceResult(s.Ctx, seed.App.ID, result))
 		epochIndex := uint64(0)
 		expectedRows := len(hashes) + 1
-		stateHashes, total, err := s.Repo.ListStateHashes(
-			s.Ctx,
-			seed.App.IApplicationAddress.String(),
-			repository.StateHashFilter{EpochIndex: &epochIndex},
-			repository.Pagination{Limit: uint64(expectedRows)},
-			false,
-		)
+		total, err := s.Repo.CountEpochStateHashes(s.Ctx, seed.App.ID, epochIndex)
 		s.Require().NoError(err)
+		const pageSize = 10_000
+		var stateHashes []EpochStateHash
+		var cursor *uint64
+		for {
+			page, err := s.Repo.ListEpochStateHashes(s.Ctx, seed.App.ID, epochIndex, cursor, pageSize)
+			s.Require().NoError(err)
+			stateHashes = append(stateHashes, page...)
+			s.Require().LessOrEqual(len(stateHashes), expectedRows)
+			if len(page) < pageSize {
+				break
+			}
+			last := page[len(page)-1].Index
+			cursor = &last
+		}
+		for index, row := range stateHashes {
+			s.Equal(uint64(index), row.Index)
+		}
 		s.Equal(uint64(expectedRows), total)
 		s.Require().Len(stateHashes, expectedRows)
 		for _, index := range []int{0, len(hashes) / 2, len(hashes) - 1} {
@@ -496,9 +506,61 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 			s.Equal(uint64(1), stateHashes[index].Repetitions)
 		}
 		tail := stateHashes[len(hashes)]
-		s.Equal(machineHash, tail.MachineHash)
+		s.Equal(FinalStateEntry(machineHash), tail.MachineHash)
 		s.Equal(uint64(len(hashes)), tail.Index)
 		s.Equal(InputHashCollectionCapacity-uint64(len(hashes)), tail.Repetitions)
+	})
+
+	s.Run("DaveConsensusEntriesRemainOrderedAcrossInputs", func() {
+		app := NewApplicationBuilder().WithConsensus(Consensus_PRT).Create(s.Ctx, s.T(), s.Repo)
+		epoch := NewEpochBuilder(app.ID).WithStatus(EpochStatus_Closed).
+			WithBlocks(0, 9).WithInputBounds(0, 2).Build()
+		inputs := []*Input{
+			NewInputBuilder().WithIndex(0).WithBlockNumber(1).Build(),
+			NewInputBuilder().WithIndex(1).WithBlockNumber(2).Build(),
+		}
+		s.Require().NoError(s.Repo.CreateEpochsAndInputs(s.Ctx, app.Name, map[*Epoch][]*Input{epoch: inputs}, 10))
+		entries := [][][32]byte{
+			{[32]byte(UniqueHash()), [32]byte(UniqueHash())},
+			{[32]byte(UniqueHash())},
+		}
+		proof := DummyStateProof()
+		statuses := []InputCompletionStatus{InputCompletionStatus_Accepted, InputCompletionStatus_Rejected}
+		for inputIndex, inputEntries := range entries {
+			// A rejected input retains the preceding canonical state proof.
+			s.Require().NoError(s.Repo.StoreAdvanceResult(s.Ctx, app.ID, &AdvanceResult{
+				EpochIndex:          epoch.Index,
+				InputIndex:          uint64(inputIndex),
+				Status:              statuses[inputIndex],
+				StateProof:          *proof,
+				PeriodicStateHashes: inputEntries,
+				PaddingRepetitions:  InputHashCollectionCapacity - uint64(len(inputEntries)),
+				IsDaveConsensus:     true,
+			}))
+		}
+		total, err := s.Repo.CountEpochStateHashes(s.Ctx, app.ID, epoch.Index)
+		s.Require().NoError(err)
+		stored, err := s.Repo.ListEpochStateHashes(s.Ctx, app.ID, epoch.Index, nil, 10)
+		s.Require().NoError(err)
+		s.Require().Len(stored, 5)
+		s.Equal(uint64(len(stored)), total)
+		var rowIndex uint64
+		for inputIndex, inputEntries := range entries {
+			for _, entry := range inputEntries {
+				row := stored[rowIndex]
+				s.Equal(rowIndex, row.Index)
+				s.Equal(uint64(inputIndex), row.InputIndex)
+				s.Equal(common.Hash(entry), row.MachineHash)
+				s.Equal(uint64(1), row.Repetitions)
+				rowIndex++
+			}
+			paddingRow := stored[rowIndex]
+			s.Equal(rowIndex, paddingRow.Index)
+			s.Equal(uint64(inputIndex), paddingRow.InputIndex)
+			s.Equal(FinalStateEntry(proof.MachineHash), paddingRow.MachineHash)
+			s.Equal(InputHashCollectionCapacity-uint64(len(inputEntries)), paddingRow.Repetitions)
+			rowIndex++
+		}
 	})
 
 	s.Run("DaveConsensusRollsBackChildrenOnInvalidHashSpan", func() {
@@ -547,13 +609,9 @@ func (s *BulkOperationsSuite) TestStoreAdvanceResult() {
 		s.Empty(reports)
 		s.Zero(reportCount)
 		epochIndex := uint64(0)
-		stateHashes, stateHashCount, err := s.Repo.ListStateHashes(
-			s.Ctx,
-			seed.App.IApplicationAddress.String(),
-			repository.StateHashFilter{EpochIndex: &epochIndex},
-			repository.Pagination{Limit: resultPageLimit},
-			false,
-		)
+		stateHashCount, err := s.Repo.CountEpochStateHashes(s.Ctx, seed.App.ID, epochIndex)
+		s.Require().NoError(err)
+		stateHashes, err := s.Repo.ListEpochStateHashes(s.Ctx, seed.App.ID, epochIndex, nil, resultPageLimit)
 		s.Require().NoError(err)
 		s.Empty(stateHashes)
 		s.Zero(stateHashCount)
@@ -724,7 +782,7 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofs() {
 			OutputHashesSiblings:    proof,
 		}
 
-		err = s.Repo.StoreClaimAndProofs(s.Ctx, seed.Epoch, []*Output{out})
+		err = s.Repo.StoreClaimAndProofs(s.Ctx, seed.Epoch, WriteProofs(out))
 		s.Require().NoError(err)
 
 		gotEpoch, err := s.Repo.GetEpoch(s.Ctx, seed.App.IApplicationAddress.String(), 0)
@@ -1135,7 +1193,7 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofsRollback() {
 		}
 
 		err = s.Repo.StoreClaimAndProofs(
-			s.Ctx, seed.Epoch, []*Output{nonExistentOutput})
+			s.Ctx, seed.Epoch, WriteProofs(nonExistentOutput))
 		s.Require().Error(err)
 
 		// Verify the epoch status was rolled back — still InputsProcessed

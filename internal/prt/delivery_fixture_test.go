@@ -53,7 +53,7 @@ func newDeliveryFixture(t *testing.T) *deliveryFixture {
 	backend.advance(100)
 	backend.advance(110)
 	block := txsender.BlockRef{Number: 110, Hash: backend.headers[110].Hash()}
-	consensus := &daveConsensusAdapterMock{}
+	consensus := newCompatibleDaveConsensusAdapterMock()
 	factory := &adapterFactoryMock{}
 	factory.On("CreateDaveConsensusAdapter", app.IConsensusAddress).Return(consensus, nil).Maybe()
 	service.repository, service.defaultBlock, service.pollInterval = repo, model.DefaultBlock_Finalized, 10*time.Millisecond

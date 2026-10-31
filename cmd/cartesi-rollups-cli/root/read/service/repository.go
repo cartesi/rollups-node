@@ -883,6 +883,100 @@ func (s *RepositoryReadService) ListMatchAdvances(ctx context.Context, params ap
 	return json.RawMessage(result), err
 }
 
+func (s *RepositoryReadService) GetStandingChange(ctx context.Context, params api.GetStandingChangeParams) (json.RawMessage, error) {
+	repo := s.Repository
+	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
+	if err != nil {
+		return nil, fmt.Errorf("invalid application: %w", err)
+	}
+	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid epoch index: %w", err)
+	}
+	if _, err := config.ToAddressFromString(params.TournamentAddress); err != nil {
+		return nil, fmt.Errorf("invalid tournament address: %w", err)
+	}
+	txHash, err := config.ToHashFromString(params.TxHash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transaction hash: %w", err)
+	}
+	logIndex, err := config.ToIndexFromString(params.LogIndex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid log index: %w", err)
+	}
+
+	data, err := repo.GetStandingChange(ctx, application, epochIndex, params.TournamentAddress, txHash, logIndex)
+	if err != nil {
+		return nil, err
+	}
+	if data == nil {
+		app, lookupErr := repo.GetApplication(ctx, application)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if app == nil {
+			return nil, ErrApplicationNotFound
+		}
+		return nil, ErrNotFound
+	}
+
+	response := map[string]any{
+		"data": data,
+	}
+
+	result, err := json.Marshal(response)
+
+	return json.RawMessage(result), err
+}
+
+func (s *RepositoryReadService) ListStandingChanges(ctx context.Context, params api.ListStandingChangesParams) (json.RawMessage, error) {
+	repo := s.Repository
+	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
+	if err != nil {
+		return nil, fmt.Errorf("invalid application: %w", err)
+	}
+	epochIndex, err := config.ToIndexFromString(params.EpochIndex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid epoch index: %w", err)
+	}
+	if _, err := config.ToAddressFromString(params.TournamentAddress); err != nil {
+		return nil, fmt.Errorf("invalid tournament address: %w", err)
+	}
+	pagination := repository.Pagination{}
+	pagination.Limit = params.Limit
+	pagination.Offset = params.Offset
+
+	data, total, err := repo.ListStandingChanges(
+		ctx, application, epochIndex, params.TournamentAddress, pagination, params.Descending,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		app, err := repo.GetApplication(ctx, application)
+		if err != nil {
+			return nil, err
+		}
+		if app == nil {
+			return nil, ErrApplicationNotFound
+		}
+		data = make([]*model.StandingChanged, 0)
+	}
+
+	response := map[string]any{
+		"data": data,
+		"pagination": map[string]uint64{
+			"total_count": total,
+			"limit":       pagination.Limit,
+			"offset":      pagination.Offset,
+		},
+	}
+
+	result, err := json.Marshal(response)
+
+	return json.RawMessage(result), err
+}
+
 func (s *RepositoryReadService) Close() {
 	s.Repository.Close()
 }

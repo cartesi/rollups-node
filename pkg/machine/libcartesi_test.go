@@ -470,9 +470,9 @@ func (s *LibCartesiSuite) TestReadMemory() {
 func (s *LibCartesiSuite) TestIsAtManualYield() {
 	require := s.Require()
 
-	// Test manual yield true
+	// Any nonzero flag denotes a manual yield; its value is not a CMIO reason.
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
-	s.mockRemoteMachine.On("ReadReg", emulator.REG_IFLAGS_Y).Return(uint64(emulator.ManualYieldReasonAccepted), nil)
+	s.mockRemoteMachine.On("ReadReg", emulator.REG_IFLAGS_Y).Return(uint64(2), nil)
 
 	isAtYield, err := s.backend.IsAtManualYield(5 * time.Second)
 	require.NoError(err)
@@ -736,11 +736,18 @@ func (s *LibCartesiSuite) TestNewMachineRuntimeConfig() {
 
 	config, err := s.backend.NewMachineRuntimeConfig()
 	require.NoError(err)
-	require.Contains(config, "concurrency")
-	require.Contains(config, "update_merkle_tree")
-
-	// Verify it's valid JSON
-	require.True(config[0] == '{' && config[len(config)-1] == '}')
+	machine, err := emulator.CreateMachine(`{"ram":{"length":4096}}`, config, "")
+	require.NoError(err)
+	s.T().Cleanup(func() {
+		require.NoError(machine.Destroy())
+		machine.Delete()
+	})
+	applied, err := machine.GetRuntimeConfig()
+	require.NoError(err)
+	var sent, kept map[string]any
+	require.NoError(json.Unmarshal([]byte(config), &sent))
+	require.NoError(json.Unmarshal([]byte(applied), &kept))
+	require.Subset(kept, sent)
 }
 
 func (s *LibCartesiSuite) TestCmioRxBufferSize() {
@@ -766,6 +773,11 @@ func (m *MockRemoteMachine) Load(dir string, runtimeConfig string) error {
 	return args.Error(0)
 }
 
+func (m *MockRemoteMachine) GetInitialConfig() (string, error) {
+	args := m.Called()
+	return args.String(0), args.Error(1)
+}
+
 func (m *MockRemoteMachine) Run(mcycleEnd uint64) (emulator.BreakReason, error) {
 	args := m.Called(mcycleEnd)
 	return args.Get(0).(emulator.BreakReason), args.Error(1)
@@ -774,6 +786,16 @@ func (m *MockRemoteMachine) Run(mcycleEnd uint64) (emulator.BreakReason, error) 
 func (m *MockRemoteMachine) GetRootHash() (emulator.Hash, error) {
 	args := m.Called()
 	return args.Get(0).(Hash), args.Error(1)
+}
+
+func (m *MockRemoteMachine) GetNodeHash(address uint64, log2Size int32) (emulator.Hash, error) {
+	args := m.Called(address, log2Size)
+	return args.Get(0).(emulator.Hash), args.Error(1)
+}
+
+func (m *MockRemoteMachine) GetUarchPristineHash() (emulator.Hash, error) {
+	args := m.Called()
+	return args.Get(0).(emulator.Hash), args.Error(1)
 }
 
 func (m *MockRemoteMachine) GetProof(address uint64, log2TargetSize, log2RootSize int32) (string, error) {
