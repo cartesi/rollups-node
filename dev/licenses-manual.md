@@ -8,8 +8,12 @@ invisible to `go-licenses`; they are maintained by hand in `dev/licenses-manual.
 Everything after them is generated from the module graph, with the corrections listed in
 `dev/licenses-overrides.tsv` applied.
 
+The project's own code, including all contributions to it, is available under the [Apache License, Version 2.0](LICENSE).
+This code is also offered under the [GNU Lesser General Public License, Version 3](licenses/LGPL-3.0.txt), making it dual-licensed: you may use it independently in other applications under either license, at your option.
+
 Two components reach users under the GNU Lesser General Public License v3.0: go-ethereum,
 statically linked into every binary, and the Cartesi Machine emulator, loaded at run time.
+The node as a whole is subject to LGPL-3.0 when distributed with go-ethereum.
 The LGPL-3.0 is written as a set of additional permissions on top of the GPL-3.0. Both texts
 are in [licenses/LGPL-3.0.txt](licenses/LGPL-3.0.txt) and
 [licenses/GPL-3.0.txt](licenses/GPL-3.0.txt).

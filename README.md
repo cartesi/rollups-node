@@ -18,7 +18,7 @@ We provide packages for debian (.deb) in **amd64** and **arm64** variants on the
 
 - Cartesi Machine emulator == 0.22.x
 - GNU Make >= 3.81
-- Go >= 1.27.1
+- Go >= 1.27.3
 
 Follow the [Cartesi Machine installation instructions](https://github.com/cartesi/machine-emulator?tab=readme-ov-file#installation).
 
@@ -112,12 +112,16 @@ For a complete list of authors, see the [AUTHORS](AUTHORS) file.
 
 ## License
 
-The repository and all contributions to it are licensed under the [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0), unless otherwise specified below or in subdirectory LICENSE / COPYING files.
-Please review our [LICENSE](LICENSE) file for the Apache 2.0 license and also the [third party licenses](THIRD_PARTY_LICENSES.md) file for information on third-party software licenses.
+The project's own code, including all contributions to it, is available under the [Apache License, Version 2.0](LICENSE).
+This code is also offered under the [GNU Lesser General Public License, Version 3](licenses/LGPL-3.0.txt), making it dual-licensed: you may use it independently in other applications under either license, at your option.
 
-Note: This component currently has dependencies licensed under the GNU LGPL, version 3, so you should treat this component as a whole as being under the LGPL version 3. But all Cartesi-written code in this component is licensed under the Apache License, version 2, and can be used independently under the Apache v2 license.
+The distributed node includes LGPL-licensed dependencies.
+In particular, go-ethereum is statically linked into every binary, so the node as a whole is subject to LGPL-3.0 when distributed with it.
+Only go-ethereum's library packages are used, that is, everything outside `cmd/`.
+
+Third-party components and code covered by separate LICENSE / COPYING files remain subject to their respective licenses.
+See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for details.
 
 The Cartesi Machine emulator is a dynamic library in its own package. A recipient can replace it without a new build of the node.
-go-ethereum is statically linked into every binary. Only its library packages are used, that is, everything outside `cmd/`.
 The complete source of this project is in this repository under Apache 2.0. To build the node against a different go-ethereum, add a `replace` directive for `github.com/ethereum/go-ethereum` to `go.mod` and run `make build`.
 The full text of the LGPL-3.0 and the GPL-3.0 is in [licenses/](licenses).

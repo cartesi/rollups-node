@@ -51,10 +51,10 @@ FROM common-env AS go-installer
 RUN <<EOF
     set -e
     ARCH=$(dpkg --print-architecture)
-    wget -O /tmp/go.tar.gz "https://go.dev/dl/go1.27.1.linux-${ARCH}.tar.gz"
+    wget -O /tmp/go.tar.gz "https://go.dev/dl/go1.27.3.linux-${ARCH}.tar.gz"
     case "$ARCH" in
-        amd64) echo "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445  /tmp/go.tar.gz" | sha256sum --check ;;
-        arm64) echo "3450b45a3f9ee8568792736a5c5e70a1f2e9b36c35a8f74958c03e51d7d92bec  /tmp/go.tar.gz" | sha256sum --check ;;
+        amd64) echo "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40  /tmp/go.tar.gz" | sha256sum --check ;;
+        arm64) echo "a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49  /tmp/go.tar.gz" | sha256sum --check ;;
         *) echo "unsupported architecture: $ARCH"; exit 1 ;;
     esac
     tar -C /opt -xzf /tmp/go.tar.gz
@@ -112,7 +112,7 @@ RUN make build-go
 FROM go-builder AS tester
 
 # Install golangci-lint for linting inside Docker.
-ARG GOLANGCI_LINT_VERSION=2.13.2
+ARG GOLANGCI_LINT_VERSION=2.15.0
 RUN GOTOOLCHAIN=local go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION}
 
 # Install gotestsum for test output formatting and summaries.

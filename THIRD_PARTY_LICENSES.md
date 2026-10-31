@@ -8,8 +8,12 @@ invisible to `go-licenses`; they are maintained by hand in `dev/licenses-manual.
 Everything after them is generated from the module graph, with the corrections listed in
 `dev/licenses-overrides.tsv` applied.
 
+The project's own code, including all contributions to it, is available under the [Apache License, Version 2.0](LICENSE).
+This code is also offered under the [GNU Lesser General Public License, Version 3](licenses/LGPL-3.0.txt), making it dual-licensed: you may use it independently in other applications under either license, at your option.
+
 Two components reach users under the GNU Lesser General Public License v3.0: go-ethereum,
 statically linked into every binary, and the Cartesi Machine emulator, loaded at run time.
+The node as a whole is subject to LGPL-3.0 when distributed with go-ethereum.
 The LGPL-3.0 is written as a set of additional permissions on top of the GPL-3.0. Both texts
 are in [licenses/LGPL-3.0.txt](licenses/LGPL-3.0.txt) and
 [licenses/GPL-3.0.txt](licenses/GPL-3.0.txt).
@@ -58,116 +62,116 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## github.com/aws/aws-sdk-go-v2
 
 * Name: github.com/aws/aws-sdk-go-v2
-* Version: v1.47.1
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/v1.47.1/LICENSE.txt)
+* Version: v1.47.5
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/v1.47.5/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/config
 
 * Name: github.com/aws/aws-sdk-go-v2/config
-* Version: v1.33.6
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/config/v1.33.6/config/LICENSE.txt)
+* Version: v1.33.12
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/config/v1.33.12/config/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/credentials
 
 * Name: github.com/aws/aws-sdk-go-v2/credentials
-* Version: v1.20.6
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/credentials/v1.20.6/credentials/LICENSE.txt)
+* Version: v1.20.12
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/credentials/v1.20.12/credentials/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/feature/ec2/imds
 
 * Name: github.com/aws/aws-sdk-go-v2/feature/ec2/imds
-* Version: v1.20.1
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/feature/ec2/imds/v1.20.1/feature/ec2/imds/LICENSE.txt)
+* Version: v1.20.5
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/feature/ec2/imds/v1.20.5/feature/ec2/imds/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/internal/configsources
 
 * Name: github.com/aws/aws-sdk-go-v2/internal/configsources
-* Version: v1.5.4
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/internal/configsources/v1.5.4/internal/configsources/LICENSE.txt)
+* Version: v1.5.8
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/internal/configsources/v1.5.8/internal/configsources/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
 
 * Name: github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
-* Version: v2.8.4
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/internal/endpoints/v2.8.4/internal/endpoints/v2/LICENSE.txt)
+* Version: v2.8.8
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/internal/endpoints/v2.8.8/internal/endpoints/v2/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/internal/sync/singleflight
 
 * Name: github.com/aws/aws-sdk-go-v2/internal/sync/singleflight
-* Version: v1.47.1
-* License: [BSD-3-Clause](https://github.com/aws/aws-sdk-go-v2/blob/v1.47.1/internal/sync/singleflight/LICENSE)
+* Version: v1.47.5
+* License: [BSD-3-Clause](https://github.com/aws/aws-sdk-go-v2/blob/v1.47.5/internal/sync/singleflight/LICENSE)
 
 ## github.com/aws/aws-sdk-go-v2/internal/v4a
 
 * Name: github.com/aws/aws-sdk-go-v2/internal/v4a
-* Version: v1.5.4
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/internal/v4a/v1.5.4/internal/v4a/LICENSE.txt)
+* Version: v1.5.8
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/internal/v4a/v1.5.8/internal/v4a/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
 
 * Name: github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
-* Version: v1.13.19
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/internal/accept-encoding/v1.13.19/service/internal/accept-encoding/LICENSE.txt)
+* Version: v1.13.23
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/internal/accept-encoding/v1.13.23/service/internal/accept-encoding/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
 
 * Name: github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
-* Version: v1.14.4
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/internal/presigned-url/v1.14.4/service/internal/presigned-url/LICENSE.txt)
+* Version: v1.14.8
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/internal/presigned-url/v1.14.8/service/internal/presigned-url/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/service/kms
 
 * Name: github.com/aws/aws-sdk-go-v2/service/kms
-* Version: v1.61.1
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/kms/v1.61.1/service/kms/LICENSE.txt)
+* Version: v1.62.1
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/kms/v1.62.1/service/kms/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/service/signin
 
 * Name: github.com/aws/aws-sdk-go-v2/service/signin
-* Version: v1.10.1
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/signin/v1.10.1/service/signin/LICENSE.txt)
+* Version: v1.12.0
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/signin/v1.12.0/service/signin/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/service/sso
 
 * Name: github.com/aws/aws-sdk-go-v2/service/sso
-* Version: v1.38.1
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/sso/v1.38.1/service/sso/LICENSE.txt)
+* Version: v1.39.0
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/sso/v1.39.0/service/sso/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/service/ssooidc
 
 * Name: github.com/aws/aws-sdk-go-v2/service/ssooidc
-* Version: v1.43.1
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/ssooidc/v1.43.1/service/ssooidc/LICENSE.txt)
+* Version: v1.44.0
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/ssooidc/v1.44.0/service/ssooidc/LICENSE.txt)
 
 ## github.com/aws/aws-sdk-go-v2/service/sts
 
 * Name: github.com/aws/aws-sdk-go-v2/service/sts
-* Version: v1.51.1
-* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/sts/v1.51.1/service/sts/LICENSE.txt)
+* Version: v1.51.6
+* License: [Apache-2.0](https://github.com/aws/aws-sdk-go-v2/blob/service/sts/v1.51.6/service/sts/LICENSE.txt)
 
 ## github.com/aws/smithy-go
 
 * Name: github.com/aws/smithy-go
-* Version: v1.28.2
-* License: [Apache-2.0](https://github.com/aws/smithy-go/blob/v1.28.2/LICENSE)
+* Version: v1.28.7
+* License: [Apache-2.0](https://github.com/aws/smithy-go/blob/v1.28.7/LICENSE)
 
 ## github.com/aws/smithy-go/internal/sync/singleflight
 
 * Name: github.com/aws/smithy-go/internal/sync/singleflight
-* Version: v1.28.2
-* License: [BSD-3-Clause](https://github.com/aws/smithy-go/blob/v1.28.2/internal/sync/singleflight/LICENSE)
+* Version: v1.28.7
+* License: [BSD-3-Clause](https://github.com/aws/smithy-go/blob/v1.28.7/internal/sync/singleflight/LICENSE)
 
 ## github.com/aws/smithy-go/transport/http/protocol/internal/json/internal/stdlib
 
 * Name: github.com/aws/smithy-go/transport/http/protocol/internal/json/internal/stdlib
-* Version: v1.28.2
-* License: [BSD-3-Clause](https://github.com/aws/smithy-go/blob/v1.28.2/transport/http/protocol/internal/json/internal/stdlib/LICENSE)
+* Version: v1.28.7
+* License: [BSD-3-Clause](https://github.com/aws/smithy-go/blob/v1.28.7/transport/http/protocol/internal/json/internal/stdlib/LICENSE)
 
 ## github.com/bits-and-blooms/bitset
 
 * Name: github.com/bits-and-blooms/bitset
-* Version: v1.25.0
-* License: [BSD-3-Clause](https://github.com/bits-and-blooms/bitset/blob/v1.25.0/LICENSE)
+* Version: v1.27.0
+* License: [BSD-3-Clause](https://github.com/bits-and-blooms/bitset/blob/v1.27.0/LICENSE)
 
 ## github.com/cespare/xxhash/v2
 
@@ -178,8 +182,8 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## github.com/consensys/gnark-crypto
 
 * Name: github.com/consensys/gnark-crypto
-* Version: v0.21.0
-* License: [Apache-2.0](https://github.com/consensys/gnark-crypto/blob/v0.21.0/LICENSE)
+* Version: v0.22.0
+* License: [Apache-2.0](https://github.com/consensys/gnark-crypto/blob/v0.22.0/LICENSE)
 
 ## github.com/cpuguy83/go-md2man/v2/md2man
 
@@ -208,28 +212,28 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## github.com/ethereum/go-ethereum
 
 * Name: github.com/ethereum/go-ethereum
-* Version: v1.17.7
-* License: [LGPL-3.0](https://github.com/ethereum/go-ethereum/blob/v1.17.7/COPYING.LESSER)
+* Version: v1.17.10
+* License: [LGPL-3.0](https://github.com/ethereum/go-ethereum/blob/v1.17.10/COPYING.LESSER)
 * Note: only the library packages are used, that is, everything outside cmd/, and those are LGPL-3.0. The GPL-3.0 COPYING file at the module root covers go-ethereum's own binaries, which this project does not build or distribute.
 
 ## github.com/ethereum/go-ethereum/crypto/keccak
 
 * Name: github.com/ethereum/go-ethereum/crypto/keccak
-* Version: v1.17.7
-* License: [BSD-3-Clause](https://github.com/ethereum/go-ethereum/blob/v1.17.7/crypto/keccak/LICENSE)
+* Version: v1.17.10
+* License: [BSD-3-Clause](https://github.com/ethereum/go-ethereum/blob/v1.17.10/crypto/keccak/LICENSE)
 
 ## github.com/ethereum/go-ethereum/crypto/secp256k1
 
 * Name: github.com/ethereum/go-ethereum/crypto/secp256k1
-* Version: v1.17.7
-* License: [BSD-3-Clause](https://github.com/ethereum/go-ethereum/blob/v1.17.7/crypto/secp256k1/LICENSE)
-* Note: built with cgo, this package also compiles the bundled libsecp256k1 C library, which is under the [MIT licence](https://github.com/ethereum/go-ethereum/blob/v1.17.7/crypto/secp256k1/libsecp256k1/COPYING)
+* Version: v1.17.10
+* License: [BSD-3-Clause](https://github.com/ethereum/go-ethereum/blob/v1.17.10/crypto/secp256k1/LICENSE)
+* Note: built with cgo, this package also compiles the bundled libsecp256k1 C library, which is under the [MIT licence](https://github.com/ethereum/go-ethereum/blob/v1.17.10/crypto/secp256k1/libsecp256k1/COPYING)
 
 ## github.com/ethereum/go-ethereum/metrics
 
 * Name: github.com/ethereum/go-ethereum/metrics
-* Version: v1.17.7
-* License: [BSD-2-Clause-FreeBSD](https://github.com/ethereum/go-ethereum/blob/v1.17.7/metrics/LICENSE)
+* Version: v1.17.10
+* License: [BSD-2-Clause-FreeBSD](https://github.com/ethereum/go-ethereum/blob/v1.17.10/metrics/LICENSE)
 
 ## github.com/fjl/jsonw
 
@@ -246,8 +250,8 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## github.com/go-jet/jet/v2
 
 * Name: github.com/go-jet/jet/v2
-* Version: v2.16.0
-* License: [Apache-2.0](https://github.com/go-jet/jet/blob/v2.16.0/LICENSE)
+* Version: v2.16.1
+* License: [Apache-2.0](https://github.com/go-jet/jet/blob/v2.16.1/LICENSE)
 
 ## github.com/go-logr/logr
 
@@ -366,8 +370,8 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## github.com/jackc/puddle/v2
 
 * Name: github.com/jackc/puddle/v2
-* Version: v2.2.2
-* License: [MIT](https://github.com/jackc/puddle/blob/v2.2.2/LICENSE)
+* Version: v2.2.3
+* License: [MIT](https://github.com/jackc/puddle/blob/v2.2.3/LICENSE)
 
 ## github.com/lib/pq
 
@@ -378,14 +382,14 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## github.com/lmittmann/tint
 
 * Name: github.com/lmittmann/tint
-* Version: v1.2.0
-* License: [MIT](https://github.com/lmittmann/tint/blob/v1.2.0/LICENSE)
+* Version: v1.2.1
+* License: [MIT](https://github.com/lmittmann/tint/blob/v1.2.1/LICENSE)
 
 ## github.com/oapi-codegen/runtime
 
 * Name: github.com/oapi-codegen/runtime
-* Version: v1.7.0
-* License: [Apache-2.0](https://github.com/oapi-codegen/runtime/blob/v1.7.0/LICENSE)
+* Version: v1.8.0
+* License: [Apache-2.0](https://github.com/oapi-codegen/runtime/blob/v1.8.0/LICENSE)
 
 ## github.com/pelletier/go-toml/v2
 
@@ -498,20 +502,26 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## go.opentelemetry.io/otel
 
 * Name: go.opentelemetry.io/otel
-* Version: v1.46.0
-* License: [Apache-2.0](https://github.com/open-telemetry/opentelemetry-go/blob/v1.46.0/LICENSE)
+* Version: v1.47.0
+* License: [Apache-2.0](https://github.com/open-telemetry/opentelemetry-go/blob/v1.47.0/LICENSE)
+
+## go.opentelemetry.io/otel/log
+
+* Name: go.opentelemetry.io/otel/log
+* Version: v1.47.0
+* License: [Apache-2.0](https://github.com/open-telemetry/opentelemetry-go/blob/log/v1.47.0/log/LICENSE)
 
 ## go.opentelemetry.io/otel/metric
 
 * Name: go.opentelemetry.io/otel/metric
-* Version: v1.46.0
-* License: [Apache-2.0](https://github.com/open-telemetry/opentelemetry-go/blob/metric/v1.46.0/metric/LICENSE)
+* Version: v1.47.0
+* License: [Apache-2.0](https://github.com/open-telemetry/opentelemetry-go/blob/metric/v1.47.0/metric/LICENSE)
 
 ## go.opentelemetry.io/otel/trace
 
 * Name: go.opentelemetry.io/otel/trace
-* Version: v1.46.0
-* License: [Apache-2.0](https://github.com/open-telemetry/opentelemetry-go/blob/trace/v1.46.0/trace/LICENSE)
+* Version: v1.47.0
+* License: [Apache-2.0](https://github.com/open-telemetry/opentelemetry-go/blob/trace/v1.47.0/trace/LICENSE)
 
 ## go.yaml.in/yaml/v3
 
@@ -522,23 +532,23 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## golang.org/x/crypto
 
 * Name: golang.org/x/crypto
-* Version: v0.57.0
-* License: [BSD-3-Clause](https://cs.opensource.google/go/x/crypto/+/v0.57.0:LICENSE)
+* Version: v0.58.0
+* License: [BSD-3-Clause](https://cs.opensource.google/go/x/crypto/+/v0.58.0:LICENSE)
 
 ## golang.org/x/sync
 
 * Name: golang.org/x/sync
-* Version: v0.23.0
-* License: [BSD-3-Clause](https://cs.opensource.google/go/x/sync/+/v0.23.0:LICENSE)
+* Version: v0.24.0
+* License: [BSD-3-Clause](https://cs.opensource.google/go/x/sync/+/v0.24.0:LICENSE)
 
 ## golang.org/x/sys
 
 * Name: golang.org/x/sys
-* Version: v0.48.0
-* License: [BSD-3-Clause](https://cs.opensource.google/go/x/sys/+/v0.48.0:LICENSE)
+* Version: v0.49.0
+* License: [BSD-3-Clause](https://cs.opensource.google/go/x/sys/+/v0.49.0:LICENSE)
 
 ## golang.org/x/text
 
 * Name: golang.org/x/text
-* Version: v0.42.0
-* License: [BSD-3-Clause](https://cs.opensource.google/go/x/text/+/v0.42.0:LICENSE)
+* Version: v0.43.0
+* License: [BSD-3-Clause](https://cs.opensource.google/go/x/text/+/v0.43.0:LICENSE)
