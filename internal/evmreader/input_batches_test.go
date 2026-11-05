@@ -40,7 +40,7 @@ func TestInputBatchWithoutLimit(t *testing.T) {
 			source.On("GetNumberOfInputs", blockFrom(105), app1Addr).
 				Return(new(big.Int).SetUint64(end), nil)
 			if test.added > 0 {
-				source.On("RetrieveInputs", mock.Anything, []common.Address{app1Addr}, inputIndexRange(test.stored, end)).
+				source.On("RetrieveInputs", mock.Anything, []common.Address{app1Addr}, mock.Anything).
 					Return(batchInputEvents(test.stored, end, 105), nil).Once()
 			}
 
@@ -91,9 +91,9 @@ func TestInputBatchResumesAtPartialBlockAfterGap(t *testing.T) {
 	app := newDaveAppContracts(source, nil)
 	source.On("GetNumberOfInputs", blockRange(100, 105), app1Addr).Return(big.NewInt(0), nil)
 	source.On("GetNumberOfInputs", blockFrom(105), app1Addr).Return(big.NewInt(1000), nil)
-	source.On("RetrieveInputs", mock.Anything, []common.Address{app1Addr}, inputIndexRange(0, 500)).
+	source.On("RetrieveInputs", mock.Anything, []common.Address{app1Addr}, mock.Anything).
 		Return(batchInputEvents(0, 500, 105), nil).Once()
-	source.On("RetrieveInputs", mock.Anything, []common.Address{app1Addr}, inputIndexRange(500, 1000)).
+	source.On("RetrieveInputs", mock.Anything, []common.Address{app1Addr}, mock.Anything).
 		Return(batchInputEvents(500, 1000, 105), nil).Once()
 	repo.On("GetNumberOfInputs", t.Context(), app1Addr.Hex()).Return(uint64(0), nil).Once()
 
@@ -150,7 +150,7 @@ func TestDavePartialSealDefersOpenScanUntilNextTick(t *testing.T) {
 	for _, batch := range []struct{ first, end, block uint64 }{
 		{0, 500, 100}, {500, 600, 101}, {600, 700, 101},
 	} {
-		source.On("RetrieveInputs", mock.Anything, []common.Address{app1Addr}, inputIndexRange(batch.first, batch.end)).
+		source.On("RetrieveInputs", mock.Anything, []common.Address{app1Addr}, mock.Anything).
 			Return(batchInputEvents(batch.first, batch.end, batch.block), nil).Once()
 	}
 
@@ -190,7 +190,7 @@ func TestDavePartialSealDefersOpenScanUntilNextTick(t *testing.T) {
 	for i := range otherEvents {
 		otherEvents[i] = makeInputEvent(app2Addr, uint64(i), 101)
 	}
-	otherSource.On("RetrieveInputs", mock.Anything, []common.Address{app2Addr}, inputIndexRange(0, 300)).
+	otherSource.On("RetrieveInputs", mock.Anything, []common.Address{app2Addr}, mock.Anything).
 		Return(otherEvents, nil).Once()
 	repo.On("GetNumberOfInputs", t.Context(), app2Addr.Hex()).Return(uint64(0), nil).Once()
 	repo.On("GetEpoch", t.Context(), app2Addr.Hex(), uint64(0)).Return((*Epoch)(nil), nil).Once()
@@ -268,7 +268,7 @@ func TestInputBudgetSharedAcrossApplications(t *testing.T) {
 				for index := range events {
 					events[index] = makeInputEvent(addr, uint64(index), 100)
 				}
-				logs := source.On("RetrieveInputs", mock.Anything, []common.Address{addr}, inputIndexRange(0, end)).Once()
+				logs := source.On("RetrieveInputs", mock.Anything, []common.Address{addr}, mock.Anything).Once()
 				if i == 0 && test.failFirst {
 					logs.Return([]iinputbox.IInputBoxInputAdded(nil), errors.New("RPC failure"))
 					continue
@@ -297,7 +297,7 @@ func TestInputBudgetSharedAcrossApplications(t *testing.T) {
 				if !test.failFirst {
 					require.Equal(t, 500, stored[app1Addr]+stored[app2Addr])
 					repo.On("GetNumberOfInputs", t.Context(), app2Addr.Hex()).Return(uint64(200), nil).Once()
-					source.On("RetrieveInputs", mock.Anything, []common.Address{app2Addr}, inputIndexRange(200, 300)).
+					source.On("RetrieveInputs", mock.Anything, []common.Address{app2Addr}, mock.Anything).
 						Return(func() []iinputbox.IInputBoxInputAdded {
 							events := make([]iinputbox.IInputBoxInputAdded, 100)
 							for i := range events {

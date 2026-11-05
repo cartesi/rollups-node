@@ -534,14 +534,10 @@ func (r *Service) fetchInputs(
 			// still consumed this tick's allowance and are retried next tick.
 			*r.inputBudget -= lastInputIdx - firstInputIdx
 		}
-		indices := make([]*big.Int, 0, max(0, lastInputIdx-firstInputIdx))
-		for i := firstInputIdx; i < lastInputIdx; i++ {
-			indices = append(indices, new(big.Int).SetUint64(i))
-		}
 		inputEvents, err := app.inputSource.RetrieveInputs(
 			filterOpts,
 			[]common.Address{app.application.IApplicationAddress},
-			indices,
+			nil,
 		)
 		if err != nil {
 			return fmt.Errorf(

@@ -50,7 +50,7 @@ func (s *EvmReaderSuite) TestFetchApplicationInputsDuplicateAndOutOfOrderEvents(
 	// delivered out-of-order: [2, 0, 1, 1]
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, inputIndexRange(0, 3),
+		mock.Anything, mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{
 		makeInputEvent(addr, 2, 100),
 		makeInputEvent(addr, 0, 100),
@@ -97,7 +97,7 @@ func (s *EvmReaderSuite) TestFetchInputsSameTransactionHashPreservesLogIndex() {
 		Return(new(big.Int).SetUint64(2), nil)
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, inputIndexRange(0, 2),
+		mock.Anything, mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{input0, input1}, nil)
 
 	inputs, _, _, err := s.evmReader.fetchInputs(
@@ -148,7 +148,7 @@ func (s *EvmReaderSuite) sameTransactionScanApp() (appContracts, common.Hash) {
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 			return opts.Start == 100 && opts.End != nil && *opts.End == 100
 		}),
-		[]common.Address{addr}, inputIndexRange(0, 2),
+		[]common.Address{addr}, mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{event0, event1}, nil).Once()
 
 	return app, txHash
@@ -236,7 +236,7 @@ func (s *EvmReaderSuite) TestFetchInputsBoundsFiltering() {
 	// Only indices 2 and 3 may be requested and returned.
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, inputIndexRange(2, 4),
+		mock.Anything, mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{
 		makeInputEvent(addr, 2, 100), // in bounds → included
 		makeInputEvent(addr, 3, 100), // in bounds → included
@@ -308,7 +308,7 @@ func (s *EvmReaderSuite) TestFetchInputsBoundaryExactness() {
 
 	inputSrc.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, inputIndexRange(1, 2),
+		mock.Anything, mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{
 		makeInputEvent(addr, 1, 100),
 	}, nil)
@@ -423,7 +423,7 @@ func (s *SealedEpochsSuite) TestFetchSealedEpochInputsRetrieveFailure() {
 	// RetrieveInputs fails at the transition block
 	s.inputBox.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 100 }),
-		mock.Anything, inputIndexRange(0, 2),
+		mock.Anything, mock.Anything,
 	).Return(([]iinputbox.IInputBoxInputAdded)(nil), errors.New("RPC timeout"))
 
 	prevValue := new(big.Int).SetUint64(epoch.InputIndexLowerBound)

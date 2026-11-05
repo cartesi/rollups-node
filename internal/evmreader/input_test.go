@@ -126,7 +126,7 @@ func (s *EvmReaderSuite) TestItReadsMultipleInputsFromSingleNewBlock() {
 	s.inputBox.Unset("RetrieveInputs")
 	s.inputBox.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
-		mock.Anything, inputIndexRange(0, 2),
+		mock.Anything, mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{first, second}, nil)
 
 	s.inputBox.Unset("GetNumberOfInputs")
@@ -383,7 +383,7 @@ func (s *EvmReaderSuite) TestCatchUpForeclosedInputsStoresSameBlockInput() {
 				opts.End != nil &&
 				*opts.End == app.ForecloseBlock
 		}),
-		[]common.Address{app.IApplicationAddress}, inputIndexRange(0, 1),
+		[]common.Address{app.IApplicationAddress}, mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{sameBlockInput}, nil).Once()
 
 	s.repository.Unset("GetEpoch")

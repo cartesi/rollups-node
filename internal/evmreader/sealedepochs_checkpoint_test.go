@@ -98,7 +98,7 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 				if lower == upper {
 					continue
 				}
-				inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, inputIndexRange(lower, upper)).
+				inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).
 					Return(inputEvents[lower:upper], nil).Once()
 			}
 			contracts := appContracts{application: app, inputSource: inputBox, daveConsensus: dave}
@@ -111,7 +111,7 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 			inputBox.Unset("RetrieveInputs")
 			openCtx, cancel := context.WithCancel(ctx)
 			t.Cleanup(cancel)
-			failedRead := inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, inputIndexRange(sealedInputs, sealedInputs+1)).Once()
+			failedRead := inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).Once()
 			if test.cancelWrite {
 				failedRead.Run(func(mock.Arguments) { cancel() }).Return(inputEvents[sealedInputs:], nil)
 			} else {
@@ -140,7 +140,7 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 			assert.False(t, app.ForeclosureScanCaughtUp(), "drain must wait for the missing open input")
 
 			inputBox.Unset("RetrieveInputs")
-			inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, inputIndexRange(sealedInputs, sealedInputs+1)).
+			inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).
 				Return(inputEvents[sealedInputs:], nil).Once()
 			contracts.application = app
 			reader = &Service{repository: repo, maxInputsPerStep: 500}

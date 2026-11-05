@@ -132,7 +132,7 @@ func inputScanFixture(t *testing.T, operation string, failure error, during func
 	}
 	if operation == scanInputLogs {
 		chainCount.Return(big.NewInt(1), nil)
-		input.On("RetrieveInputs", mock.Anything, mock.Anything, inputIndexRange(0, 1)).
+		input.On("RetrieveInputs", mock.Anything, mock.Anything, mock.Anything).
 			Run(during).Return([]iinputbox.IInputBoxInputAdded(nil), failure).Once()
 		return reader, app, repo, output
 	}

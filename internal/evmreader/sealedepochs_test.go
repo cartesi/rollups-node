@@ -142,7 +142,7 @@ func (s *SealedEpochsSuite) TestProcessSealedEpochFindsInputAtOverlapBlock() {
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 			return opts.Start == sealBlock0
 		}),
-		mock.Anything, inputIndexRange(3, 4),
+		mock.Anything, mock.Anything,
 	).Return([]iinputbox.IInputBoxInputAdded{overlapInput}, nil)
 
 	// CreateEpochsAndInputs captures what was stored.

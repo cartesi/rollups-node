@@ -71,7 +71,7 @@ func TestSealedEpochFetchesOnlyUnstoredInputs(t *testing.T) {
 				}
 				inputBox.On("RetrieveInputs", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 					return opts.Start == sealBlock && opts.End != nil && *opts.End == sealBlock
-				}), []common.Address{app1Addr}, inputIndexRange(5, test.upper)).Return(events, nil).Once()
+				}), []common.Address{app1Addr}, mock.Anything).Return(events, nil).Once()
 			}
 			if !test.mismatch {
 				repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, sealBlock-1).

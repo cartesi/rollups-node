@@ -37,7 +37,7 @@ func TestDavePartialBlockPersistsValidEpochAndResumes(t *testing.T) {
 				for _, first := range []uint64{0, 500} {
 					source.On("RetrieveInputs", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 						return opts.Start == inputBlock && opts.End != nil && *opts.End == inputBlock
-					}), []common.Address{app1Addr}, inputIndexRange(first, first+500)).
+					}), []common.Address{app1Addr}, mock.Anything).
 						Return(batchInputEvents(first, first+500, inputBlock), nil).Once()
 				}
 

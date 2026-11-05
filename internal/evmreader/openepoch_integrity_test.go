@@ -87,7 +87,7 @@ func TestDaveOpenEpochChecksInputCountBeforePublication(t *testing.T) {
 					}
 					inputBox.On("RetrieveInputs", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 						return opts.Start == head && opts.End != nil && *opts.End == head
-					}), []common.Address{app1Addr}, inputIndexRange(test.storedCount, test.endCount)).Return(events, nil).Once()
+					}), []common.Address{app1Addr}, mock.Anything).Return(events, nil).Once()
 				}
 				if !test.mismatch {
 					repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, head).

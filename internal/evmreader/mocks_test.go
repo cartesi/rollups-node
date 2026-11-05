@@ -125,17 +125,17 @@ func (m *MockInputBox) SetupDefaultBehavior() *MockInputBox {
 	// RetrieveInputs: matched by Start block, not call order.
 	m.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
-		[]common.Address{app1Addr}, inputIndexRange(0, 1),
+		[]common.Address{app1Addr}, []*big.Int(nil),
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent0}, nil)
 
 	m.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x12 }),
-		[]common.Address{app1Addr}, inputIndexRange(1, 2),
+		[]common.Address{app1Addr}, []*big.Int(nil),
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent1}, nil)
 
 	m.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
-		[]common.Address{app1Addr}, inputIndexRange(2, 4),
+		[]common.Address{app1Addr}, []*big.Int(nil),
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent2, inputAddedEvent3}, nil)
 
 	// GetNumberOfInputs: block-based matching models the on-chain state.
@@ -690,13 +690,4 @@ func (m *MockAdapterFactory) SetupDefaultBehaviorSingleApp(
 		mock.Anything,
 	).Return(appContract, inputBox, nil, nil)
 	return m
-}
-
-// inputIndexRange describes the exact InputAdded topic alternatives for [lower, upper).
-func inputIndexRange(lower, upper uint64) []*big.Int {
-	indices := make([]*big.Int, 0)
-	for index := lower; index < upper; index++ {
-		indices = append(indices, new(big.Int).SetUint64(index))
-	}
-	return indices
 }

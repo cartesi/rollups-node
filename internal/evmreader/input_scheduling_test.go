@@ -80,7 +80,7 @@ func TestInputSchedulingRotatesAcrossConsensusTypes(t *testing.T) {
 				id := app.application.ID
 				source.On("GetNumberOfInputs", blockRange(99, 100), addr).Return(big.NewInt(0), nil).Maybe()
 				source.On("GetNumberOfInputs", blockFrom(100), addr).Return(big.NewInt(8), nil)
-				logs := source.On("RetrieveInputs", mock.Anything, []common.Address{addr}, inputIndexRange(0, 2)).
+				logs := source.On("RetrieveInputs", mock.Anything, []common.Address{addr}, mock.Anything).
 					Run(func(mock.Arguments) {
 						order = append(order, id)
 						require.NotNil(t, reader.inputBudget)
@@ -98,7 +98,7 @@ func TestInputSchedulingRotatesAcrossConsensusTypes(t *testing.T) {
 			}
 			if !failFirst {
 				addr := daveApp.application.IApplicationAddress
-				source.On("RetrieveInputs", mock.Anything, []common.Address{addr}, inputIndexRange(2, 4)).
+				source.On("RetrieveInputs", mock.Anything, []common.Address{addr}, mock.Anything).
 					Run(func(mock.Arguments) { order = append(order, 10) }).
 					Return(schedulingEvents(addr, 2), nil).Once()
 			}
@@ -152,7 +152,7 @@ func TestInputSchedulingHandlesApplicationMembershipChanges(t *testing.T) {
 		apps[id] = app
 		addr := app.application.IApplicationAddress
 		source.On("GetNumberOfInputs", mock.Anything, addr).Return(big.NewInt(8), nil)
-		source.On("RetrieveInputs", mock.Anything, []common.Address{addr}, inputIndexRange(0, 2)).
+		source.On("RetrieveInputs", mock.Anything, []common.Address{addr}, mock.Anything).
 			Run(func(mock.Arguments) { order = append(order, id) }).Return(schedulingEvents(addr, 0), nil).Once()
 		repo.On("GetNumberOfInputs", t.Context(), addr.Hex()).Return(uint64(0), nil).Once()
 		repo.On("GetEpoch", t.Context(), addr.Hex(), uint64(0)).Return((*Epoch)(nil), nil).Once()
