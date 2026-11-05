@@ -3,7 +3,9 @@
 
 package contract
 
-import "encoding/json"
+import (
+	"encoding/json/jsontext"
+)
 
 // AppResult is the JSON output of "contract app".
 type AppResult struct {
@@ -63,18 +65,18 @@ type DaveConsensusResult struct {
 	IsFinished                 bool    `json:"is_finished"`
 	IsTournamentFailed         bool    `json:"is_tournament_failed"`
 	IsTournamentResultStaged   bool    `json:"is_tournament_result_staged"`
-	HasWinner                  *bool   `json:"has_winner,omitempty"`
+	HasWinner                  *bool   `json:"has_winner,omitzero"`
 	WinnerCommitment           string  `json:"winner_commitment,omitempty"`
 	WinnerPostEpochMachineHash string  `json:"winner_post_epoch_machine_hash,omitempty"`
 	CurrentEpochNumber         uint64  `json:"current_epoch_number"`
 	InputLowerBound            uint64  `json:"input_lower_bound"`
 	InputUpperBound            uint64  `json:"input_upper_bound"`
 	RootTournament             string  `json:"root_tournament"`
-	StagingBlock               *uint64 `json:"staging_block,omitempty"`
+	StagingBlock               *uint64 `json:"staging_block,omitzero"`
 	StagedMachineHash          string  `json:"staged_machine_hash,omitempty"`
 	StagedOutputsMerkleRoot    string  `json:"staged_outputs_merkle_root,omitempty"`
-	AllSentriesAgree           *bool   `json:"all_sentries_agree,omitempty"`
-	ClaimStagingPeriodOver     *bool   `json:"claim_staging_period_over,omitempty"`
+	AllSentriesAgree           *bool   `json:"all_sentries_agree,omitzero"`
+	ClaimStagingPeriodOver     *bool   `json:"claim_staging_period_over,omitzero"`
 
 	SentryManager string         `json:"sentry_manager"`
 	NumSentries   uint64         `json:"num_sentries"`
@@ -118,7 +120,7 @@ type MatchEvent struct {
 	DeletionReason    string  `json:"deletion_reason,omitempty"`
 	Winner            string  `json:"winner,omitempty"`
 	WinnerAddr        string  `json:"winner_addr,omitempty"`
-	DeletionBlock     *uint64 `json:"deletion_block,omitempty"`
+	DeletionBlock     *uint64 `json:"deletion_block,omitzero"`
 	DeletionTxHash    string  `json:"deletion_tx_hash,omitempty"`
 }
 
@@ -150,8 +152,8 @@ type TournamentResult struct {
 	Standing           string              `json:"standing"`
 	Closed             bool                `json:"closed"`
 	Finished           bool                `json:"finished"`
-	FinishedAtBlock    *uint64             `json:"finished_at_block,omitempty"`
-	HasWinner          *bool               `json:"has_winner,omitempty"`
+	FinishedAtBlock    *uint64             `json:"finished_at_block,omitzero"`
+	HasWinner          *bool               `json:"has_winner,omitzero"`
 	WinnerCommitment   string              `json:"winner_commitment,omitempty"`
 	WinnerAddress      string              `json:"winner_address,omitempty"`
 	FinalMachineHash   string              `json:"final_machine_hash,omitempty"`
@@ -162,12 +164,12 @@ type TournamentResult struct {
 	MatchesAdvanced    uint64              `json:"matches_advanced"`
 	MatchesDeleted     uint64              `json:"matches_deleted"`
 	InnerTournaments   uint64              `json:"inner_tournaments"`
-	CanBeEliminated    *bool               `json:"can_be_eliminated,omitempty"`
-	WinnerExpiresAt    *uint64             `json:"winner_expires_at,omitempty"`
+	CanBeEliminated    *bool               `json:"can_be_eliminated,omitzero"`
+	WinnerExpiresAt    *uint64             `json:"winner_expires_at,omitzero"`
 	Commitments        []CommitmentEvent   `json:"commitments,omitempty"`
 	Matches            []MatchEvent        `json:"matches,omitempty"`
 	Advances           []MatchAdvanceEvent `json:"advances,omitempty"`
-	Children           []*TournamentResult `json:"children,omitempty"`
+	Children           []*TournamentResult `json:"children,omitzero"`
 }
 
 // ClaimEvent is a claim event in the epoch history.
@@ -178,9 +180,9 @@ type ClaimEvent struct {
 	Submitter          string  `json:"submitter,omitempty"`
 	LastProcessedBlock uint64  `json:"last_processed_block"`
 	OutputsMerkleRoot  string  `json:"outputs_merkle_root"`
-	OutputsRootValid   *bool   `json:"outputs_root_valid,omitempty"`
-	VotesForClaim      *uint64 `json:"votes_for_claim,omitempty"`
-	VotesNeeded        *uint64 `json:"votes_needed,omitempty"`
+	OutputsRootValid   *bool   `json:"outputs_root_valid,omitzero"`
+	VotesForClaim      *uint64 `json:"votes_for_claim,omitzero"`
+	VotesNeeded        *uint64 `json:"votes_needed,omitzero"`
 }
 
 // EpochEvent is a single sealed epoch event (DaveConsensus).
@@ -192,7 +194,7 @@ type EpochEvent struct {
 	InputUpperBound    uint64 `json:"input_upper_bound"`
 	InitialMachineHash string `json:"initial_machine_hash"`
 	OutputsMerkleRoot  string `json:"outputs_merkle_root"`
-	OutputsRootValid   *bool  `json:"outputs_root_valid,omitempty"`
+	OutputsRootValid   *bool  `json:"outputs_root_valid,omitzero"`
 	Tournament         string `json:"tournament"`
 }
 
@@ -206,13 +208,13 @@ type EpochHistory struct {
 
 // SummaryResult is the JSON output of "contract summary".
 type SummaryResult struct {
-	Application     *AppResult        `json:"application,omitempty"`
+	Application     *AppResult        `json:"application,omitzero"`
 	AppError        string            `json:"app_error,omitempty"`
-	Consensus       json.RawMessage   `json:"consensus,omitempty"`
+	Consensus       jsontext.Value    `json:"consensus,omitzero"`
 	ConsensusError  string            `json:"consensus_error,omitempty"`
-	InputBox        *InputBoxResult   `json:"inputbox,omitempty"`
+	InputBox        *InputBoxResult   `json:"inputbox,omitzero"`
 	InputBoxError   string            `json:"inputbox_error,omitempty"`
-	RootTournament  *TournamentResult `json:"root_tournament,omitempty"`
+	RootTournament  *TournamentResult `json:"root_tournament,omitzero"`
 	TournamentError string            `json:"tournament_error,omitempty"`
 }
 
@@ -251,7 +253,7 @@ type MatchResult struct {
 	PlayerOneAddr        string  `json:"player_one_addr,omitempty"`
 	PlayerTwoAddr        string  `json:"player_two_addr,omitempty"`
 	ActualPhase          string  `json:"actual_phase"`
-	CurrentHeight        *uint64 `json:"current_height,omitempty"`
+	CurrentHeight        *uint64 `json:"current_height,omitzero"`
 	SegmentStartPosition string  `json:"segment_start_position,omitempty"`
 	SegmentStartCycle    string  `json:"segment_start_cycle,omitempty"`
 	TimeoutOutcome       string  `json:"timeout_outcome"`

@@ -7,7 +7,7 @@ package command
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,6 +20,8 @@ import (
 	"github.com/spf13/cobra/doc"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 const (
@@ -36,7 +38,7 @@ func Child(t *testing.T, mainFunc func(), root *cobra.Command) {
 		t.Skip("only runs in a command subprocess")
 	}
 	var expected []string
-	require.NoError(t, json.Unmarshal([]byte(os.Getenv(expectedEnvironment)), &expected))
+	require.NoError(t, json.Unmarshal([]byte(os.Getenv(expectedEnvironment)), &expected, jsonutil.Options))
 	for _, entry := range expected {
 		key, value, _ := strings.Cut(entry, "=")
 		actual, exists := os.LookupEnv(key)
@@ -96,7 +98,7 @@ func Run(t *testing.T, env []string, args ...string) (string, string, error) {
 			process.Env = append(process.Env, key+"="+value)
 		}
 	}
-	expected, err := json.Marshal(env)
+	expected, err := json.Marshal(env, jsonutil.Options)
 	require.NoError(t, err)
 	process.Env = append(process.Env, childProcess+"=1", expectedEnvironment+"="+string(expected), "GOCOVERDIR="+t.TempDir())
 	if len(args) == 1 && args[0] == markdownCommand {

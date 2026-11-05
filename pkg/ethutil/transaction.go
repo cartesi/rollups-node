@@ -5,7 +5,7 @@ package ethutil
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"math/big"
 	"time"
@@ -133,7 +133,7 @@ func _traceTransaction(
 	client *ethclient.Client,
 	hash common.Hash,
 ) (string, error) {
-	var result json.RawMessage
+	var result jsontext.Value
 	err := client.Client().Call(&result, "debug_traceTransaction", hash)
 	if err != nil {
 		return "", err

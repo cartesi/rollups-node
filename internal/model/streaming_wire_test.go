@@ -4,14 +4,16 @@
 package model
 
 import (
-	"encoding/json"
-	jsonv2 "encoding/json/v2"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func streamingModels() []any {
@@ -55,10 +57,10 @@ func fillStreamingFixture(v reflect.Value) {
 
 func TestStreamingModelWireFormat(t *testing.T) {
 	// Fixtures preserve the expected wire format, including the alpha.6 dispute fields.
-	fixture := map[string]json.RawMessage{}
+	fixture := map[string]jsontext.Value{}
 	data, err := os.ReadFile("testdata/streaming_wire.json")
 	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(data, &fixture))
+	require.NoError(t, json.Unmarshal(data, &fixture, jsonutil.Options))
 	for _, value := range streamingModels() {
 		name := reflect.TypeOf(value).Elem().Name()
 		populated := reflect.New(reflect.TypeOf(value).Elem()).Interface()
@@ -69,12 +71,12 @@ func TestStreamingModelWireFormat(t *testing.T) {
 		}{{"zero", value}, {"populated", populated}} {
 			key := name + "/" + tc.name
 			t.Run(key, func(t *testing.T) {
-				require.Implements(t, (*jsonv2.MarshalerTo)(nil), tc.value)
+				require.Implements(t, (*json.MarshalerTo)(nil), tc.value)
 				require.Contains(t, fixture, key)
-				data, err := jsonv2.Marshal(tc.value, json.DefaultOptionsV1())
+				data, err := json.Marshal(tc.value, jsonutil.Options)
 				require.NoError(t, err)
 				require.JSONEq(t, string(fixture[key]), string(data))
-				legacy, err := json.Marshal(tc.value)
+				legacy, err := json.Marshal(tc.value, jsonutil.Options)
 				require.NoError(t, err)
 				require.Equal(t, string(data), string(legacy))
 			})

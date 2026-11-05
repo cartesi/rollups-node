@@ -6,7 +6,8 @@ package deploy
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
@@ -145,7 +147,7 @@ func TestDeploymentCLIReportsPredictedAddress(t *testing.T) {
 			tx := <-backend.sent
 			require.Equal(t, factoryAddress, *tx.To())
 			var result map[string]string
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result, jsonutil.Options))
 			require.Equal(t, map[string]string{
 				"transaction_hash": tx.Hash().Hex(), "status": "broadcast", "predicted_address": predictedAddress.Hex(),
 			}, result)
@@ -182,7 +184,7 @@ func (*deploymentCLIBackend) GetTransactionCount(context.Context, common.Address
 	return 0
 }
 
-func (*deploymentCLIBackend) EstimateGas(context.Context, map[string]json.RawMessage) hexutil.Uint64 {
+func (*deploymentCLIBackend) EstimateGas(context.Context, map[string]jsontext.Value) hexutil.Uint64 {
 	return 500_000
 }
 

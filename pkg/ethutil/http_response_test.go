@@ -6,7 +6,8 @@ package ethutil
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,6 +22,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func responseTestClient(t *testing.T, endpoint string, retry bool, logs *bytes.Buffer) *ethclient.Client {
@@ -232,8 +235,8 @@ func TestEthClientBatchAcceptsFirstResponseFrame(t *testing.T) {
 		for _, trailing := range []string{` {"another":true}`, ` PROVIDER_TRAILING_DATA`} {
 			t.Run(fmt.Sprintf("retry=%v/%s", retry, trailing), func(t *testing.T) {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					var requests []struct{ ID json.RawMessage }
-					require.NoError(t, json.NewDecoder(r.Body).Decode(&requests))
+					var requests []struct{ ID jsontext.Value }
+					require.NoError(t, json.UnmarshalDecode(jsontext.NewDecoder(r.Body), &requests, jsonutil.Options))
 					require.Len(t, requests, 1)
 					_, _ = fmt.Fprintf(w, `[{"jsonrpc":"2.0","id":%s,"result":"0x1"}]%s`, requests[0].ID, trailing)
 				}))

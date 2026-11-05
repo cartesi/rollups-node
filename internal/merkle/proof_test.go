@@ -4,13 +4,15 @@
 package merkle
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"os"
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/merkle/merkletest"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 type merkleProof struct {
@@ -37,7 +39,7 @@ func load(t *testing.T, fileName string) merkleDataPoint {
 	contents, err := os.ReadFile(fileName)
 	assert.Nil(t, err)
 
-	assert.Nil(t, json.Unmarshal(contents, &mdp))
+	assert.Nil(t, json.Unmarshal(contents, &mdp, jsonutil.Options))
 	return mdp
 }
 

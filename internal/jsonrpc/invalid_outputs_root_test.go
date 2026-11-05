@@ -5,16 +5,19 @@ package jsonrpc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/stretchr/testify/require"
 )
 
 type invalidOutputsRootAPIRepository struct {
@@ -50,9 +53,9 @@ func TestInvalidOutputsRootAPIResponses(t *testing.T) {
 	} {
 		t.Run(tc.method, func(t *testing.T) {
 			result, err := jsonrpcHandlers[tc.method](s, httptest.NewRequest(http.MethodPost, "/", nil),
-				RPCRequest{Params: json.RawMessage(tc.params)})
+				RPCRequest{Params: jsontext.Value(tc.params)})
 			require.NoError(t, err)
-			encoded, err := json.Marshal(result)
+			encoded, err := json.Marshal(result, jsonutil.Options)
 			require.NoError(t, err)
 			var response struct {
 				Data struct {
@@ -60,7 +63,7 @@ func TestInvalidOutputsRootAPIResponses(t *testing.T) {
 					Reason string `json:"reason"`
 				} `json:"data"`
 			}
-			require.NoError(t, json.Unmarshal(encoded, &response))
+			require.NoError(t, json.Unmarshal(encoded, &response, jsonutil.Options))
 			require.Equal(t, "INVALID_OUTPUTS_ROOT", response.Data.Status)
 			if tc.method == "cartesi_getApplication" {
 				require.Equal(t, reason, response.Data.Reason)

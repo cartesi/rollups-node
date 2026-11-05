@@ -4,7 +4,8 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/cartesi/rollups-node/test/tooling/command"
 	"github.com/cartesi/rollups-node/test/tooling/db"
@@ -112,16 +114,16 @@ func TestSecretContractSummaryPartialFailure(t *testing.T) {
 		require.Equal(t, marker, user)
 		require.Equal(t, "password", password)
 		var request struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
+			ID     jsontext.Value `json:"id"`
+			Method string         `json:"method"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		if err := json.UnmarshalDecode(jsontext.NewDecoder(r.Body), &request, jsonutil.Options); err != nil {
 			http.Error(w, "invalid test request", http.StatusBadRequest)
 			return
 		}
 		if request.Method == "eth_chainId" {
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": "0x1"})
+			_ = json.MarshalEncode(jsontext.NewEncoder(w), map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": "0x1"}, jsonutil.Options)
 			return
 		}
 		failures.Add(1)
@@ -144,7 +146,7 @@ func TestSecretContractSummaryPartialFailure(t *testing.T) {
 				ConsensusError string `json:"consensus_error"`
 				InputBoxError  string `json:"inputbox_error"`
 			}
-			require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+			require.NoError(t, json.Unmarshal([]byte(stdout), &result, jsonutil.Options))
 			require.NotEmpty(t, result.AppError)
 			require.NotEmpty(t, result.ConsensusError)
 			require.NotEmpty(t, result.InputBoxError)
@@ -196,7 +198,7 @@ func TestSecretCLIReadAndInspectPreserveWireCredentials(t *testing.T) {
 				require.Equal(t, marker, password)
 				if test.name == secretReadCommand {
 					var request struct{ Method string }
-					require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+					require.NoError(t, json.UnmarshalDecode(jsontext.NewDecoder(r.Body), &request, jsonutil.Options))
 					require.Equal(t, "cartesi_listInputs", request.Method)
 				}
 				w.Header().Set("X-Request-ID", marker)

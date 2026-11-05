@@ -5,14 +5,15 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
-	jsonv2 "encoding/json/v2"
+	"encoding/json/v2"
 	"io"
 	"testing"
 
-	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
 )
 
 func TestDecodedStreamingWireFormat(t *testing.T) {
@@ -30,23 +31,23 @@ func TestDecodedStreamingWireFormat(t *testing.T) {
 		{"output without decoded data", output, nil, &DecodedOutput{Output: output}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			base, err := json.Marshal(tc.base)
+			base, err := json.Marshal(tc.base, jsonutil.Options)
 			require.NoError(t, err)
 			expected := base
 			if tc.decoded != nil {
-				decoded, err := json.Marshal(tc.decoded)
+				decoded, err := json.Marshal(tc.decoded, jsonutil.Options)
 				require.NoError(t, err)
 				expected = append(expected[:len(expected)-1], []byte(`,"decoded_data":`)...)
 				expected = append(expected, decoded...)
 				expected = append(expected, '}')
 			}
 			var got bytes.Buffer
-			require.NoError(t, jsonv2.MarshalWrite(&got, tc.value, json.DefaultOptionsV1()))
+			require.NoError(t, json.MarshalWrite(&got, tc.value, jsonutil.Options))
 			require.Equal(t, string(expected), got.String())
-			legacy, err := json.Marshal(tc.value)
+			legacy, err := json.Marshal(tc.value, jsonutil.Options)
 			require.NoError(t, err)
 			require.Equal(t, got.String(), string(legacy))
-			require.Implements(t, (*jsonv2.MarshalerTo)(nil), tc.value)
+			require.Implements(t, (*json.MarshalerTo)(nil), tc.value)
 		})
 	}
 }
@@ -55,7 +56,7 @@ func BenchmarkDecodedOutputStreaming(b *testing.B) {
 	output := &DecodedOutput{Output: &model.Output{RawData: []byte("notice"), OutputHashesSiblings: make([]common.Hash, 63)}, DecodedData: NewNoticeData("0x1234")}
 	b.ReportAllocs()
 	for b.Loop() {
-		if err := jsonv2.MarshalWrite(io.Discard, output, json.DefaultOptionsV1()); err != nil {
+		if err := json.MarshalWrite(io.Discard, output, jsonutil.Options); err != nil {
 			b.Fatal(err)
 		}
 	}

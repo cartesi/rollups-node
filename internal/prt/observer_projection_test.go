@@ -4,15 +4,18 @@
 package prt
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/txsender"
+	"math/big"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"math/big"
-	"testing"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/txsender"
 )
 
 const (
@@ -74,10 +77,10 @@ func TestTournamentProjectionPreservesWinnerPresence(t *testing.T) {
 				}
 				require.NotNil(t, stored)
 				require.Equal(t, uint64(9), stored.Snapshot.FinishedAtBlock)
-				data, err := json.Marshal(stored)
+				data, err := json.Marshal(stored, jsonutil.Options)
 				require.NoError(t, err)
 				var projection map[string]any
-				require.NoError(t, json.Unmarshal(data, &projection))
+				require.NoError(t, json.Unmarshal(data, &projection, jsonutil.Options))
 				projection = projection["snapshot"].(map[string]any)
 				require.Equal(t, uint64(10), stored.Snapshot.AsOfBlock)
 				require.Equal(t, test.state, stored.Snapshot.Standing)

@@ -5,16 +5,17 @@ package matchadvances
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"strings"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMatchAdvancesCommandRequiresScopeAndCompleteEventIdentity(t *testing.T) {
@@ -46,15 +47,15 @@ func TestMatchAdvancesGetExampleHasValidEventIdentity(t *testing.T) {
 
 type matchAdvanceReader struct {
 	service.ReadService
-	get  func(context.Context, api.GetMatchAdvanceParams) (json.RawMessage, error)
-	list func(context.Context, api.ListMatchAdvancesParams) (json.RawMessage, error)
+	get  func(context.Context, api.GetMatchAdvanceParams) (jsontext.Value, error)
+	list func(context.Context, api.ListMatchAdvancesParams) (jsontext.Value, error)
 }
 
-func (reader *matchAdvanceReader) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (json.RawMessage, error) {
+func (reader *matchAdvanceReader) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (jsontext.Value, error) {
 	return reader.get(ctx, params)
 }
 
-func (reader *matchAdvanceReader) ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (json.RawMessage, error) {
+func (reader *matchAdvanceReader) ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (jsontext.Value, error) {
 	return reader.list(ctx, params)
 }
 
@@ -72,12 +73,12 @@ func TestMatchAdvancesCommandMapsGetEventIdentity(t *testing.T) {
 				expectedIndex = "0x2a"
 			}
 			called := false
-			reader := &matchAdvanceReader{get: func(ctx context.Context, params api.GetMatchAdvanceParams) (json.RawMessage, error) {
+			reader := &matchAdvanceReader{get: func(ctx context.Context, params api.GetMatchAdvanceParams) (jsontext.Value, error) {
 				called = true
 				require.Equal(t, t.Context(), ctx)
 				require.Equal(t, api.GetMatchAdvanceParams{Application: args[0], EpochIndex: "0x10",
 					TournamentAddress: args[2], IDHash: args[3], TxHash: args[4], LogIndex: expectedIndex}, params)
-				return json.RawMessage(`{"data":{}}`), nil
+				return jsontext.Value(`{"data":{}}`), nil
 			}}
 			result, err := readMatchAdvances(t.Context(), reader, args)
 			require.NoError(t, err)
@@ -95,11 +96,11 @@ func TestMatchAdvancesCommandKeepsListPaginationFlags(t *testing.T) {
 	require.NoError(t, Cmd.Args(Cmd, args))
 	require.NoError(t, Cmd.PreRunE(Cmd, args))
 	called := false
-	reader := &matchAdvanceReader{list: func(_ context.Context, params api.ListMatchAdvancesParams) (json.RawMessage, error) {
+	reader := &matchAdvanceReader{list: func(_ context.Context, params api.ListMatchAdvancesParams) (jsontext.Value, error) {
 		called = true
 		require.Equal(t, api.ListMatchAdvancesParams{Application: args[0], EpochIndex: "0x10",
 			TournamentAddress: args[2], IDHash: args[3], Limit: 3, Offset: 2, Descending: true}, params)
-		return json.RawMessage(`{"data":[]}`), nil
+		return jsontext.Value(`{"data":[]}`), nil
 	}}
 	_, err := readMatchAdvances(t.Context(), reader, args)
 	require.NoError(t, err)

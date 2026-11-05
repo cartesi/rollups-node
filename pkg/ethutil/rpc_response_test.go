@@ -4,7 +4,8 @@
 package ethutil
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func TestDropNullError(t *testing.T) {
@@ -70,9 +73,9 @@ func newNullErrorServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
-			ID json.RawMessage `json:"id"`
+			ID jsontext.Value `json:"id"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		if err := json.UnmarshalDecode(jsontext.NewDecoder(r.Body), &request, jsonutil.Options); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

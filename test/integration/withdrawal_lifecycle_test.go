@@ -8,7 +8,8 @@ package integration
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"math/big"
@@ -21,13 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
-	"github.com/cartesi/rollups-node/pkg/contracts/ierc20metadata"
-	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -36,6 +30,15 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/pkg/contracts/ierc20metadata"
+	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 const (
@@ -268,7 +271,7 @@ func (s *WithdrawalLifecycleSuite) deployWithdrawalApp(
 		var quorumDeployment struct {
 			Address string `json:"address"`
 		}
-		r.NoError(json.Unmarshal([]byte(out), &quorumDeployment), "parse quorum deployment")
+		r.NoError(json.Unmarshal([]byte(out), &quorumDeployment, jsonutil.Options), "parse quorum deployment")
 		r.NotEmpty(quorumDeployment.Address, "quorum deployment missing address")
 
 		appAddrStr, consensusAddrStr, err = deployApplicationWithConsensus(
@@ -505,7 +508,7 @@ func (s *WithdrawalLifecycleSuite) sendWithdrawalRequest(
 	var result struct {
 		InputIndex string `json:"input_index"`
 	}
-	s.Require().NoError(json.Unmarshal([]byte(out), &result), "parse send output")
+	s.Require().NoError(json.Unmarshal([]byte(out), &result, jsonutil.Options), "parse send output")
 	inputIndex, err := strconv.ParseUint(strings.TrimPrefix(result.InputIndex, "0x"), 16, 64)
 	s.Require().NoError(err, "parse withdrawal input index")
 	return inputIndex
@@ -603,7 +606,7 @@ func (s *WithdrawalLifecycleSuite) generateWithdrawalProofs(
 	var replaySummary struct {
 		MachineRoot string `json:"machine_root"`
 	}
-	r.NoError(json.Unmarshal([]byte(replayOut), &replaySummary), "parse machine replay summary")
+	r.NoError(json.Unmarshal([]byte(replayOut), &replaySummary, jsonutil.Options), "parse machine replay summary")
 	r.Equal(strings.ToLower(finalEpoch.MachineHash.Hex()), strings.ToLower(replaySummary.MachineRoot),
 		"replayed machine root must match finalized epoch machine hash")
 	requireAccountsDriveRange(s.T(), snapshotPath, driveKind, deployment.withdrawalConfig)
@@ -625,7 +628,7 @@ func (s *WithdrawalLifecycleSuite) generateWithdrawalProofs(
 		AccountIndex string `json:"account_index"`
 		MachineRoot  string `json:"machine_root"`
 	}
-	r.NoError(json.Unmarshal([]byte(proveOut), &proveSummary), "parse accounts-drive proof summary")
+	r.NoError(json.Unmarshal([]byte(proveOut), &proveSummary, jsonutil.Options), "parse accounts-drive proof summary")
 	r.Equal(strings.ToLower(finalEpoch.MachineHash.Hex()), strings.ToLower(proveSummary.MachineRoot),
 		"proof machine root must match finalized epoch machine hash")
 	r.NotEmpty(proveSummary.AccountIndex, "proof summary must include account index")
@@ -814,7 +817,7 @@ func readWithdrawalMachineConfig(t testing.TB, machinePath string) withdrawalMac
 	raw, err := os.ReadFile(filepath.Join(machinePath, "config.json"))
 	require.NoError(t, err, "read ERC-20 withdrawal machine config")
 	var cfg withdrawalMachineConfig
-	require.NoError(t, json.Unmarshal(raw, &cfg), "parse ERC-20 withdrawal machine config")
+	require.NoError(t, json.Unmarshal(raw, &cfg, jsonutil.Options), "parse ERC-20 withdrawal machine config")
 	return cfg
 }
 
@@ -939,7 +942,7 @@ func listWithdrawals(
 		},
 		ID: 1,
 	}
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(req, jsonutil.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -962,7 +965,7 @@ func listWithdrawals(
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+	if err := json.UnmarshalDecode(jsontext.NewDecoder(resp.Body), &rpcResp, jsonutil.Options); err != nil {
 		return nil, err
 	}
 	if rpcResp.Error != nil {

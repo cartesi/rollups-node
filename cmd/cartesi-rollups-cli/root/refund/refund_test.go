@@ -6,7 +6,8 @@ package refund
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"math/big"
@@ -26,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputs"
 )
@@ -167,7 +169,7 @@ func (r *refundRPC) GetCode(context.Context, common.Address, string) (hexutil.By
 	return hexutil.Bytes{0x01}, nil
 }
 
-func (r *refundRPC) EstimateGas(context.Context, map[string]json.RawMessage) (hexutil.Uint64, error) {
+func (r *refundRPC) EstimateGas(context.Context, map[string]jsontext.Value) (hexutil.Uint64, error) {
 	r.estimates.Add(1)
 	return testGasLimit, r.estimateErr
 }
@@ -301,7 +303,7 @@ func TestCommandRequiresMatchingRefundEvent(t *testing.T) {
 			}
 			require.NoError(t, err)
 			var result map[string]string
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result, jsonutil.Options))
 			status := "mined"
 			if test.noWait {
 				status = "broadcast"
@@ -339,7 +341,7 @@ func TestCommandSignsOriginalInput(t *testing.T) {
 	require.Equal(t, big.NewInt(7), args[0])
 	require.Equal(t, input, args[1])
 	var result map[string]string
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result, jsonutil.Options))
 	require.Equal(t, map[string]string{
 		"transaction_hash": tx.Hash().Hex(), "application_address": testApplication, "input_index": "7",
 		"status": "mined", "block_number": "0xa",
@@ -407,7 +409,7 @@ func TestCommandReceiptPolicy(t *testing.T) {
 			}
 			require.NoError(t, err)
 			var result map[string]string
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result, jsonutil.Options))
 			if tt.noWait {
 				require.Equal(t, "broadcast", result["status"])
 				require.NotContains(t, result, "block_number")

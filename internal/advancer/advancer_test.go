@@ -6,7 +6,7 @@ package advancer
 import (
 	"context"
 	crand "crypto/rand"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -20,17 +20,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/cartesi/rollups-node/internal/appstatus"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
 	pkgmachine "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/stretchr/testify/suite"
 )
 
 func TestAdvancer(t *testing.T) {
@@ -2220,7 +2221,7 @@ func (mock *MockMachineImpl) Advance(
 	}
 
 	var res AdvanceResult
-	err := json.Unmarshal(input, &res)
+	err := json.Unmarshal(input, &res, jsonutil.Options)
 	if err != nil {
 		return nil, errors.New(string(input))
 	}
@@ -2768,7 +2769,7 @@ func randomAdvanceResult(inputIndex uint64) *AdvanceResult {
 }
 
 func marshal(res *AdvanceResult) []byte {
-	data, err := json.Marshal(*res)
+	data, err := json.Marshal(*res, jsonutil.Options)
 	if err != nil {
 		panic(err)
 	}

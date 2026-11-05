@@ -5,16 +5,17 @@ package reports
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"os"
+
+	"github.com/spf13/cobra"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
-
-	"github.com/spf13/cobra"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 var Cmd = &cobra.Command{
@@ -94,7 +95,7 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 	defer readServ.Close()
 
-	var result json.RawMessage
+	var result jsontext.Value
 	if len(args) >= 2 { //nolint:mnd // Two positional arguments select the get operation.
 		var params api.GetReportParams
 		params.Application = args[0]
@@ -128,7 +129,7 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 
 	var out bytes.Buffer
-	err = json.Indent(&out, result, "", "    ")
+	err = jsonutil.Indent(&out, result, "", "    ")
 	cobra.CheckErr(err)
 	out.WriteString("\n")
 

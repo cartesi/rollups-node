@@ -5,18 +5,20 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputs"
 	"github.com/cartesi/rollups-node/pkg/contracts/outputs"
-
-	"github.com/ethereum/go-ethereum/accounts/abi"
 )
 
 type RepositoryReadService struct {
@@ -25,7 +27,7 @@ type RepositoryReadService struct {
 	OutputAbi  *abi.ABI
 }
 
-func (s *RepositoryReadService) GetApplication(ctx context.Context, params api.GetApplicationParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetApplication(ctx context.Context, params api.GetApplicationParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -44,12 +46,12 @@ func (s *RepositoryReadService) GetApplication(ctx context.Context, params api.G
 		"data": data,
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) GetEpoch(ctx context.Context, params api.GetEpochParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetEpoch(ctx context.Context, params api.GetEpochParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -72,12 +74,12 @@ func (s *RepositoryReadService) GetEpoch(ctx context.Context, params api.GetEpoc
 		"data": data,
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) ListEpochs(ctx context.Context, params api.ListEpochsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListEpochs(ctx context.Context, params api.ListEpochsParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -123,12 +125,12 @@ func (s *RepositoryReadService) ListEpochs(ctx context.Context, params api.ListE
 		},
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) GetInput(ctx context.Context, params api.GetInputParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetInput(ctx context.Context, params api.GetInputParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -155,12 +157,12 @@ func (s *RepositoryReadService) GetInput(ctx context.Context, params api.GetInpu
 		"data": dataVal,
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) ListInputs(ctx context.Context, params api.ListInputsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListInputs(ctx context.Context, params api.ListInputsParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -226,12 +228,12 @@ func (s *RepositoryReadService) ListInputs(ctx context.Context, params api.ListI
 		},
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) GetOutput(ctx context.Context, params api.GetOutputParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetOutput(ctx context.Context, params api.GetOutputParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -261,12 +263,12 @@ func (s *RepositoryReadService) GetOutput(ctx context.Context, params api.GetOut
 		"data": dataVal,
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) ListOutputs(ctx context.Context, params api.ListOutputsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListOutputs(ctx context.Context, params api.ListOutputsParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -349,12 +351,12 @@ func (s *RepositoryReadService) ListOutputs(ctx context.Context, params api.List
 		},
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) GetReport(ctx context.Context, params api.GetReportParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetReport(ctx context.Context, params api.GetReportParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -377,12 +379,12 @@ func (s *RepositoryReadService) GetReport(ctx context.Context, params api.GetRep
 		"data": data,
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) ListReports(ctx context.Context, params api.ListReportsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListReports(ctx context.Context, params api.ListReportsParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -433,12 +435,12 @@ func (s *RepositoryReadService) ListReports(ctx context.Context, params api.List
 		},
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) GetWithdrawal(ctx context.Context, params api.GetWithdrawalParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetWithdrawal(ctx context.Context, params api.GetWithdrawalParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -461,12 +463,12 @@ func (s *RepositoryReadService) GetWithdrawal(ctx context.Context, params api.Ge
 		"data": data,
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) ListWithdrawals(ctx context.Context, params api.ListWithdrawalsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListWithdrawals(ctx context.Context, params api.ListWithdrawalsParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -508,12 +510,12 @@ func (s *RepositoryReadService) ListWithdrawals(ctx context.Context, params api.
 		},
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) GetTournament(ctx context.Context, params api.GetTournamentParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetTournament(ctx context.Context, params api.GetTournamentParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -535,12 +537,12 @@ func (s *RepositoryReadService) GetTournament(ctx context.Context, params api.Ge
 		"data": data,
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) ListTournaments(ctx context.Context, params api.ListTournamentsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListTournaments(ctx context.Context, params api.ListTournamentsParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -607,12 +609,12 @@ func (s *RepositoryReadService) ListTournaments(ctx context.Context, params api.
 		},
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) GetCommitment(ctx context.Context, params api.GetCommitmentParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetCommitment(ctx context.Context, params api.GetCommitmentParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -641,12 +643,12 @@ func (s *RepositoryReadService) GetCommitment(ctx context.Context, params api.Ge
 		"data": data,
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) ListCommitments(ctx context.Context, params api.ListCommitmentsParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListCommitments(ctx context.Context, params api.ListCommitmentsParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -696,12 +698,12 @@ func (s *RepositoryReadService) ListCommitments(ctx context.Context, params api.
 		},
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) GetMatch(ctx context.Context, params api.GetMatchParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetMatch(ctx context.Context, params api.GetMatchParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -730,12 +732,12 @@ func (s *RepositoryReadService) GetMatch(ctx context.Context, params api.GetMatc
 		"data": data,
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) ListMatches(ctx context.Context, params api.ListMatchesParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListMatches(ctx context.Context, params api.ListMatchesParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -785,12 +787,12 @@ func (s *RepositoryReadService) ListMatches(ctx context.Context, params api.List
 		},
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -827,12 +829,12 @@ func (s *RepositoryReadService) GetMatchAdvanced(ctx context.Context, params api
 		"data": data,
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -878,12 +880,12 @@ func (s *RepositoryReadService) ListMatchAdvances(ctx context.Context, params ap
 		},
 	}
 
-	result, err := json.Marshal(response)
+	result, err := json.Marshal(response, jsonutil.Options)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) GetStandingChange(ctx context.Context, params api.GetStandingChangeParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) GetStandingChange(ctx context.Context, params api.GetStandingChangeParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -926,10 +928,10 @@ func (s *RepositoryReadService) GetStandingChange(ctx context.Context, params ap
 
 	result, err := json.Marshal(response)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
-func (s *RepositoryReadService) ListStandingChanges(ctx context.Context, params api.ListStandingChangesParams) (json.RawMessage, error) {
+func (s *RepositoryReadService) ListStandingChanges(ctx context.Context, params api.ListStandingChangesParams) (jsontext.Value, error) {
 	repo := s.Repository
 	application, err := config.ToApplicationNameOrAddressFromString(params.Application)
 	if err != nil {
@@ -974,7 +976,7 @@ func (s *RepositoryReadService) ListStandingChanges(ctx context.Context, params 
 
 	result, err := json.Marshal(response)
 
-	return json.RawMessage(result), err
+	return jsontext.Value(result), err
 }
 
 func (s *RepositoryReadService) Close() {

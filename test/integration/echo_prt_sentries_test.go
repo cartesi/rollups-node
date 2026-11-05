@@ -7,7 +7,8 @@ package integration
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
@@ -189,16 +191,16 @@ func (s *EchoPrtSuite) checkSentryInspection(app, manager common.Address, sentri
 		data := []byte(text)
 		if command == "summary" {
 			var summary struct {
-				Consensus      json.RawMessage `json:"consensus"`
-				ConsensusError string          `json:"consensus_error"`
+				Consensus      jsontext.Value `json:"consensus"`
+				ConsensusError string         `json:"consensus_error"`
 			}
-			r.NoError(json.Unmarshal(data, &summary))
+			r.NoError(json.Unmarshal(data, &summary, jsonutil.Options))
 			r.Empty(summary.ConsensusError)
 			r.NotEmpty(summary.Consensus)
 			data = summary.Consensus
 		}
 		var got sentryInspection
-		r.NoError(json.Unmarshal(data, &got))
+		r.NoError(json.Unmarshal(data, &got, jsonutil.Options))
 		r.Equal(manager.Hex(), got.Manager)
 		r.Equal(uint64(len(sentries)), got.Count)
 		r.Equal(expected, got.Sentries, "the roster must retain slot IDs and address order")

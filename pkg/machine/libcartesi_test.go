@@ -5,15 +5,18 @@ package machine
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/pkg/emulator"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/pkg/emulator"
 )
 
 func TestLibCartesi(t *testing.T) {
@@ -154,7 +157,7 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesMcycleOverflow() {
 		uint64(0),
 		uint64(0),
 		int32(0),
-		json.RawMessage(nil),
+		jsontext.Value(nil),
 	).Return(result, nil)
 
 	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
@@ -166,10 +169,10 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesMcycleOverflow() {
 
 func (s *LibCartesiSuite) TestRunAndCollectRootHashesContinuesPartialBundle() {
 	require := s.Require()
-	previousPartialBundle := json.RawMessage(
+	previousPartialBundle := jsontext.Value(
 		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":1,"context":["AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
 	)
-	nextPartialBundle := json.RawMessage(
+	nextPartialBundle := jsontext.Value(
 		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":2,"context":["AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
 	)
 	previousHash := Hash{0x11}
@@ -182,18 +185,18 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesContinuesPartialBundle() {
 		PartialBundle:         previousPartialBundle,
 	}
 	result, err := json.Marshal(struct {
-		Hashes         []string        `json:"hashes"`
-		MCyclePhase    uint64          `json:"mcycle_phase"`
-		BreakReason    string          `json:"break_reason"`
-		PartialBundle  json.RawMessage `json:"partial_bundle"`
-		ConsoleIOError string          `json:"console_io_error"`
+		Hashes         []string       `json:"hashes"`
+		MCyclePhase    uint64         `json:"mcycle_phase"`
+		BreakReason    string         `json:"break_reason"`
+		PartialBundle  jsontext.Value `json:"partial_bundle"`
+		ConsoleIOError string         `json:"console_io_error"`
 	}{
 		Hashes:         []string{base64.StdEncoding.EncodeToString(collectedHash[:])},
 		MCyclePhase:    1,
 		BreakReason:    "reached_target_mcycle",
 		PartialBundle:  nextPartialBundle,
 		ConsoleIOError: "console write failed",
-	})
+	}, jsonutil.Options)
 	require.NoError(err)
 
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
@@ -218,7 +221,7 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesContinuesPartialBundle() {
 
 func (s *LibCartesiSuite) TestRunAndCollectRootHashesClearsPartialBundleAtFixedPoint() {
 	require := s.Require()
-	previousPartialBundle := json.RawMessage(
+	previousPartialBundle := jsontext.Value(
 		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":3,"context":["AwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
 	)
 	state := &HashCollectorState{
@@ -248,10 +251,10 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesClearsPartialBundleAtFixedP
 
 func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidHashLeavesStateUnchanged() {
 	require := s.Require()
-	previousPartialBundle := json.RawMessage(
+	previousPartialBundle := jsontext.Value(
 		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":1,"context":["AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
 	)
-	nextPartialBundle := json.RawMessage(
+	nextPartialBundle := jsontext.Value(
 		`{"log2_max_leaves":2,"hash_function":"keccak256","leaf_count":2,"context":["AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="]}`,
 	)
 	previousHash := Hash{0x11}
@@ -265,12 +268,12 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidHashLeavesStateUncha
 	}
 	originalState := *state
 	originalState.Hashes = append([]Hash(nil), state.Hashes...)
-	originalState.PartialBundle = append(json.RawMessage(nil), state.PartialBundle...)
+	originalState.PartialBundle = append(jsontext.Value(nil), state.PartialBundle...)
 	result, err := json.Marshal(struct {
-		Hashes        []string        `json:"hashes"`
-		MCyclePhase   uint64          `json:"mcycle_phase"`
-		BreakReason   string          `json:"break_reason"`
-		PartialBundle json.RawMessage `json:"partial_bundle"`
+		Hashes        []string       `json:"hashes"`
+		MCyclePhase   uint64         `json:"mcycle_phase"`
+		BreakReason   string         `json:"break_reason"`
+		PartialBundle jsontext.Value `json:"partial_bundle"`
 	}{
 		Hashes: []string{
 			base64.StdEncoding.EncodeToString(validHash[:]),
@@ -279,7 +282,7 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidHashLeavesStateUncha
 		MCyclePhase:   1,
 		BreakReason:   "reached_target_mcycle",
 		PartialBundle: nextPartialBundle,
-	})
+	}, jsonutil.Options)
 	require.NoError(err)
 
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
@@ -318,7 +321,7 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidBreakReasonLeavesSta
 		uint64(2),
 		uint64(3),
 		int32(0),
-		json.RawMessage(nil),
+		jsontext.Value(nil),
 	).Return(result, nil)
 
 	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
@@ -341,7 +344,7 @@ func (s *LibCartesiSuite) TestRunAndCollectRootHashesInvalidResultPhaseLeavesSta
 		uint64(2),
 		uint64(3),
 		int32(0),
-		json.RawMessage(nil),
+		jsontext.Value(nil),
 	).Return(result, nil)
 
 	breakReason, err := s.backend.RunAndCollectRootHashes(1000, state, 5*time.Second)
@@ -418,7 +421,7 @@ func (s *LibCartesiSuite) TestGetProofPreservesEmulatorMetadata() {
 		"sibling_hashes":   siblingHashes,
 		"target_address":   expected.TargetAddress,
 		"target_hash":      base64.StdEncoding.EncodeToString(expected.TargetHash[:]),
-	})
+	}, jsonutil.Options)
 	require.NoError(err)
 
 	s.mockRemoteMachine.On("SetTimeout", int64(5000)).Return(nil)
@@ -858,7 +861,7 @@ func (m *MockRemoteMachine) CollectMCycleRootHashes(
 	log2McyclePeriod,
 	mcyclePhase uint64,
 	log2BundleMcycleCount int32,
-	previousPartialBundle json.RawMessage,
+	previousPartialBundle jsontext.Value,
 ) ([]byte, error) {
 	args := m.Called(mcycleEnd, log2McyclePeriod, mcyclePhase, log2BundleMcycleCount, previousPartialBundle)
 	return args.Get(0).([]byte), args.Error(1)

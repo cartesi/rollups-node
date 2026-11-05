@@ -5,7 +5,7 @@ package withdrawalhelpers
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 const (
@@ -111,7 +113,7 @@ func TestAccountsDriveStartIndex_MemoryRanges(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			workDir := t.TempDir()
-			cfg, err := json.Marshal(map[string]any{"config": tt.ranges})
+			cfg, err := json.Marshal(map[string]any{"config": tt.ranges}, jsonutil.Options)
 			require.NoError(t, err)
 			configPath := filepath.Join(workDir, "config.json")
 			writeFixture(t, configPath, string(cfg), fixtureMode)
@@ -179,7 +181,7 @@ printf '%s\n' "$@" >> "$WITHDRAWAL_HELPERS_CLI_LOG"
 				Log2MaxNumOfAccounts    uint8  `json:"log2_max_num_of_accounts"`
 				Log2LeavesPerAccount    uint8  `json:"log2_leaves_per_account"`
 			}
-			require.NoError(t, json.Unmarshal([]byte(flagValue(t, string(calls), "--withdrawal-config")), &withdrawalConfig))
+			require.NoError(t, json.Unmarshal([]byte(flagValue(t, string(calls), "--withdrawal-config")), &withdrawalConfig, jsonutil.Options))
 			require.Equal(t, fixtureStartIndex, withdrawalConfig.AccountsDriveStartIndex)
 			require.Equal(t, uint8(17), withdrawalConfig.Log2MaxNumOfAccounts)
 			require.Zero(t, withdrawalConfig.Log2LeavesPerAccount)

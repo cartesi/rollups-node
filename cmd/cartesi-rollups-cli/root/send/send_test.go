@@ -6,7 +6,8 @@ package send_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"net/http/httptest"
@@ -24,6 +25,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root"
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/send"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
@@ -186,7 +188,7 @@ func runSendInputBoxTest(t *testing.T, byName bool) {
 				return
 			}
 			var result map[string]string
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result, jsonutil.Options))
 			require.Equal(t, tx.Hash().Hex(), result["transaction_hash"])
 			if test.noWait {
 				require.Equal(t, "broadcast", result["status"])
@@ -270,7 +272,7 @@ func (*sendRPC) GetCode(context.Context, common.Address, string) hexutil.Bytes {
 	return hexutil.Bytes{1}
 }
 
-func (b *sendRPC) EstimateGas(context.Context, map[string]json.RawMessage) hexutil.Uint64 {
+func (b *sendRPC) EstimateGas(context.Context, map[string]jsontext.Value) hexutil.Uint64 {
 	b.estimates.Add(1)
 	return sendTestGas
 }

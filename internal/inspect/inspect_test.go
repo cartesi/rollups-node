@@ -7,7 +7,8 @@ import (
 	"bytes"
 	"context"
 	crand "crypto/rand"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -17,15 +18,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	inspectclient "github.com/cartesi/rollups-node/pkg/inspectclient"
 	pkgmachine "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
-
-	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/stretchr/testify/suite"
 )
 
 func TestInspect(t *testing.T) {
@@ -215,7 +216,7 @@ func (s *InspectSuite) TestPostMaxPayloadSize() {
 	s.Equal(http.StatusOK, resp.StatusCode)
 
 	var r InspectResponse
-	err = json.NewDecoder(resp.Body).Decode(&r)
+	err = json.UnmarshalDecode(jsontext.NewDecoder(resp.Body), &r, jsonutil.Options)
 	s.Require().NoError(err)
 	s.Equal("Accepted", r.Status)
 	s.Require().Len(r.Reports, 1)
@@ -340,7 +341,7 @@ func (s *InspectSuite) TestPostResponseMatchesGeneratedClientContract() {
 			s.Equal(http.StatusOK, recorder.Code)
 
 			var got inspectclient.InspectResult
-			s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&got))
+			s.Require().NoError(json.UnmarshalDecode(jsontext.NewDecoder(recorder.Body), &got, jsonutil.Options))
 			s.Equal(test.wantStatus, got.Status)
 			s.EqualValues(test.result.ProcessedInputs, got.ProcessedInputCount)
 			s.Require().Len(got.Reports, len(test.result.Reports))
@@ -385,7 +386,7 @@ func (s *InspectSuite) TestCycleLimitIsSanitizedFailedResultWithoutApplicationFa
 
 	s.Equal(http.StatusOK, recorder.Code)
 	var got inspectclient.InspectResult
-	s.Require().NoError(json.NewDecoder(recorder.Body).Decode(&got))
+	s.Require().NoError(json.UnmarshalDecode(jsontext.NewDecoder(recorder.Body), &got, jsonutil.Options))
 	s.Equal(inspectclient.Failed, got.Status)
 	s.Require().NotNil(got.Error)
 	s.Equal(inspectFailureMessage, *got.Error)
@@ -454,7 +455,7 @@ func (s *InspectSuite) assertResponse(resp *http.Response, payload string) {
 	defer resp.Body.Close()
 
 	var r InspectResponse
-	err := json.NewDecoder(resp.Body).Decode(&r)
+	err := json.UnmarshalDecode(jsontext.NewDecoder(resp.Body), &r, jsonutil.Options)
 	if err != nil {
 		s.FailNow("failed to read response body. ", err)
 	}

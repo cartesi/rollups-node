@@ -7,7 +7,8 @@ import (
 	"bytes"
 	"context"
 	"embed"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/evmreader"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/version"
@@ -156,11 +158,11 @@ func truncatedMethod(method string) string {
 // their appropriate JSON-RPC error without accessing the repository. Each
 // decodable limit is normalized exactly as it is by the list handlers: zero
 // selects the default and values above the per-list maximum are capped.
-func batchExceedsListItemLimit(requests []json.RawMessage) bool {
+func batchExceedsListItemLimit(requests []jsontext.Value) bool {
 	var total uint64
 	for _, rawRequest := range requests {
 		var request RPCRequest
-		if err := json.Unmarshal(rawRequest, &request); err != nil || request.JSONRPC != "2.0" {
+		if err := json.Unmarshal(rawRequest, &request, jsonutil.Options); err != nil || request.JSONRPC != "2.0" {
 			continue
 		}
 
@@ -216,7 +218,7 @@ func (s *Service) writeByte(ctx context.Context, w http.ResponseWriter, c byte) 
 
 // writeRPCError sends a generic error response for internal errors.
 func (s *Service) writeRPCError(
-	ctx context.Context, w http.ResponseWriter, id json.RawMessage, code int, message string,
+	ctx context.Context, w http.ResponseWriter, id jsontext.Value, code int, message string,
 ) bool {
 	err := writeRPCError(w, id, code, message)
 	return s.handleWriteResponse(ctx, err)
@@ -271,18 +273,17 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 	return writeRPCError(w, req.ID, JSONRPC_INTERNAL_ERROR, "Internal server error")
 }
 
-func validRPCID(id json.RawMessage) bool {
+func validRPCID(id jsontext.Value) bool {
 	id = bytes.TrimSpace(id)
 	if len(id) == 0 || bytes.Equal(id, []byte("null")) {
 		return true
 	}
 	if id[0] == '"' {
 		var value string
-		return json.Unmarshal(id, &value) == nil
+		return json.Unmarshal(id, &value, jsonutil.Options) == nil
 	}
 	if (id[0] >= '0' && id[0] <= '9') || id[0] == '-' {
-		var number json.Number
-		return json.Unmarshal(id, &number) == nil
+		return jsontext.Value(id).IsValid(jsonutil.Options)
 	}
 	return false
 }
@@ -358,7 +359,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 	switch body[0] {
 	case '{':
 		var req RPCRequest
-		if err := json.Unmarshal(body, &req); err != nil {
+		if err := json.Unmarshal(body, &req, jsonutil.Options); err != nil {
 			s.writeRPCError(r.Context(), w, nil, JSONRPC_PARSE_ERROR, "Parse error")
 			return
 		}
@@ -368,8 +369,8 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 	case '[':
 		// Keep each batch element raw so malformed requests fail independently and
 		// the list-item limit can be checked before dispatching any request.
-		var reqSeq []json.RawMessage
-		if err := json.Unmarshal(body, &reqSeq); err != nil {
+		var reqSeq []jsontext.Value
+		if err := json.Unmarshal(body, &reqSeq, jsonutil.Options); err != nil {
 			s.writeRPCError(r.Context(), w, nil, JSONRPC_PARSE_ERROR, "Parse error")
 			return
 		}
@@ -402,7 +403,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 				return
 			case context.DeadlineExceeded:
 				s.requestLogger(r.Context()).Warn("RPC method dispatch timeout")
-				if err := json.Unmarshal(rawReq, &req); err != nil {
+				if err := json.Unmarshal(rawReq, &req, jsonutil.Options); err != nil {
 					responded = s.writeRPCError(r.Context(), w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
 				} else if !validRPCID(req.ID) {
 					responded = s.writeRPCError(r.Context(), w, nil, JSONRPC_INVALID_REQUEST, "Invalid request ID")
@@ -410,7 +411,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 					responded = s.writeRPCError(r.Context(), w, req.ID, JSONRPC_TIMEOUT_ERROR, "Request timed out")
 				}
 			default:
-				if err := json.Unmarshal(rawReq, &req); err != nil {
+				if err := json.Unmarshal(rawReq, &req, jsonutil.Options); err != nil {
 					responded = s.writeRPCError(r.Context(), w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
 				} else {
 					s.requestLogger(r.Context()).Debug("Dispatching RPC request", "method", truncatedMethod(req.Method))
@@ -425,7 +426,7 @@ func (s *Service) handleRPC(w http.ResponseWriter, r *http.Request) {
 		s.writeByte(r.Context(), w, ']')
 
 	default:
-		if json.Valid(body) {
+		if jsontext.Value(body).IsValid(jsonutil.Options) {
 			s.writeRPCError(r.Context(), w, nil, JSONRPC_INVALID_REQUEST, "Invalid Request")
 		} else {
 			s.writeRPCError(r.Context(), w, nil, JSONRPC_PARSE_ERROR, "Parse error")

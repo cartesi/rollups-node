@@ -5,25 +5,27 @@ package register
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"os"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
-
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var Cmd = &cobra.Command{
@@ -254,9 +256,8 @@ func run(cmd *cobra.Command, _ []string) {
 		contents, err := os.ReadFile(filePath) //nolint:gosec // The CLI user explicitly supplies this path.
 		cobra.CheckErr(err)
 
-		decoder := json.NewDecoder(strings.NewReader(string(contents)))
-		decoder.DisallowUnknownFields() // Prevent unexpected fields
-		err = decoder.Decode(&application.ExecutionParameters)
+		decoder := jsontext.NewDecoder(strings.NewReader(string(contents)))
+		err = json.UnmarshalDecode(decoder, &application.ExecutionParameters, jsonutil.Options, json.RejectUnknownMembers(true))
 		cobra.CheckErr(err)
 		cobra.CheckErr(application.ExecutionParameters.Validate())
 	}
@@ -265,7 +266,7 @@ func run(cmd *cobra.Command, _ []string) {
 	cobra.CheckErr(err)
 
 	if printAsJSON {
-		jsonData, err := json.Marshal(application)
+		jsonData, err := json.Marshal(application, jsonutil.Options)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error marshalling application to JSON: %v\n", err)
 			os.Exit(1)

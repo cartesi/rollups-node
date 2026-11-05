@@ -5,9 +5,12 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"reflect"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 type StringOrList []string
@@ -16,7 +19,7 @@ func (s *StringOrList) UnmarshalJSON(data []byte) error {
 	data = bytes.TrimSpace(data)
 	if len(data) > 0 && data[0] == '"' {
 		var value string
-		if err := json.Unmarshal(data, &value); err != nil {
+		if err := json.Unmarshal(data, &value, jsonutil.Options); err != nil {
 			return err
 		}
 		*s = []string{value}
@@ -24,7 +27,7 @@ func (s *StringOrList) UnmarshalJSON(data []byte) error {
 	}
 
 	var values []string
-	if err := json.Unmarshal(data, &values); err != nil {
+	if err := json.Unmarshal(data, &values, jsonutil.Options); err != nil {
 		return fmt.Errorf("expected a string or an array of strings: %w", err)
 	}
 	*s = values
@@ -35,7 +38,7 @@ func (s *StringOrList) UnmarshalJSON(data []byte) error {
 type ListApplicationsParams struct {
 	Limit      uint64 `json:"limit"`
 	Offset     uint64 `json:"offset"`
-	Descending bool   `json:"descending,omitempty"`
+	Descending bool   `json:"descending,omitzero"`
 }
 
 // GetApplicationParams aligns with the OpenRPC specification
@@ -46,12 +49,12 @@ type GetApplicationParams struct {
 // ListEpochsParams aligns with the OpenRPC specification
 type ListEpochsParams struct {
 	Application string        `json:"application"`
-	Status      *StringOrList `json:"status,omitempty"`
+	Status      *StringOrList `json:"status,omitzero"`
 	Limit       uint64        `json:"limit"`
 	Offset      uint64        `json:"offset"`
-	Descending  bool          `json:"descending,omitempty"`
-	From        *string       `json:"from,omitempty"` // inclusive lower bound on the epoch index (hex)
-	To          *string       `json:"to,omitempty"`   // inclusive upper bound on the epoch index (hex)
+	Descending  bool          `json:"descending,omitzero"`
+	From        *string       `json:"from,omitzero"` // inclusive lower bound on the epoch index (hex)
+	To          *string       `json:"to,omitzero"`   // inclusive upper bound on the epoch index (hex)
 }
 
 // GetEpochParams aligns with the OpenRPC specification
@@ -74,14 +77,14 @@ type GetLastAcceptedEpochIndexParams struct {
 // ListInputsParams aligns with the OpenRPC specification
 type ListInputsParams struct {
 	Application     string  `json:"application"`
-	EpochIndex      *string `json:"epoch_index,omitempty"`
-	Sender          *string `json:"sender,omitempty"`
-	TransactionHash *string `json:"transaction_hash,omitempty"`
+	EpochIndex      *string `json:"epoch_index,omitzero"`
+	Sender          *string `json:"sender,omitzero"`
+	TransactionHash *string `json:"transaction_hash,omitzero"`
 	Limit           uint64  `json:"limit"`
 	Offset          uint64  `json:"offset"`
-	Descending      bool    `json:"descending,omitempty"`
-	From            *string `json:"from,omitempty"` // inclusive lower bound on the input index (hex)
-	To              *string `json:"to,omitempty"`   // inclusive upper bound on the input index (hex)
+	Descending      bool    `json:"descending,omitzero"`
+	From            *string `json:"from,omitzero"` // inclusive lower bound on the input index (hex)
+	To              *string `json:"to,omitzero"`   // inclusive upper bound on the input index (hex)
 }
 
 // GetInputParams aligns with the OpenRPC specification
@@ -98,16 +101,16 @@ type GetProcessedInputCountParams struct {
 // ListOutputsParams aligns with the OpenRPC specification
 type ListOutputsParams struct {
 	Application    string        `json:"application"`
-	EpochIndex     *string       `json:"epoch_index,omitempty"`
-	InputIndex     *string       `json:"input_index,omitempty"`
-	OutputType     *StringOrList `json:"output_type,omitempty"`
-	VoucherAddress *string       `json:"voucher_address,omitempty"`
+	EpochIndex     *string       `json:"epoch_index,omitzero"`
+	InputIndex     *string       `json:"input_index,omitzero"`
+	OutputType     *StringOrList `json:"output_type,omitzero"`
+	VoucherAddress *string       `json:"voucher_address,omitzero"`
 	Limit          uint64        `json:"limit"`
 	Offset         uint64        `json:"offset"`
-	Descending     bool          `json:"descending,omitempty"`
-	From           *string       `json:"from,omitempty"` // inclusive lower bound on the output index (hex)
-	To             *string       `json:"to,omitempty"`   // inclusive upper bound on the output index (hex)
-	Executed       *bool         `json:"executed,omitempty"`
+	Descending     bool          `json:"descending,omitzero"`
+	From           *string       `json:"from,omitzero"` // inclusive lower bound on the output index (hex)
+	To             *string       `json:"to,omitzero"`   // inclusive upper bound on the output index (hex)
+	Executed       *bool         `json:"executed,omitzero"`
 }
 
 // GetOutputParams aligns with the OpenRPC specification
@@ -119,13 +122,13 @@ type GetOutputParams struct {
 // ListReportsParams aligns with the OpenRPC specification
 type ListReportsParams struct {
 	Application string  `json:"application"`
-	EpochIndex  *string `json:"epoch_index,omitempty"`
-	InputIndex  *string `json:"input_index,omitempty"`
+	EpochIndex  *string `json:"epoch_index,omitzero"`
+	InputIndex  *string `json:"input_index,omitzero"`
 	Limit       uint64  `json:"limit"`
 	Offset      uint64  `json:"offset"`
-	Descending  bool    `json:"descending,omitempty"`
-	From        *string `json:"from,omitempty"` // inclusive lower bound on the report index (hex)
-	To          *string `json:"to,omitempty"`   // inclusive upper bound on the report index (hex)
+	Descending  bool    `json:"descending,omitzero"`
+	From        *string `json:"from,omitzero"` // inclusive lower bound on the report index (hex)
+	To          *string `json:"to,omitzero"`   // inclusive upper bound on the report index (hex)
 }
 
 // GetReportParams aligns with the OpenRPC specification
@@ -137,13 +140,13 @@ type GetReportParams struct {
 // ListTournamentsParams aligns with the OpenRPC specification
 type ListTournamentsParams struct {
 	Application             string  `json:"application"`
-	EpochIndex              *string `json:"epoch_index,omitempty"`
-	Level                   *string `json:"level,omitempty"`
-	ParentTournamentAddress *string `json:"parent_tournament_address,omitempty"`
-	ParentMatchIDHash       *string `json:"parent_match_id_hash,omitempty"`
+	EpochIndex              *string `json:"epoch_index,omitzero"`
+	Level                   *string `json:"level,omitzero"`
+	ParentTournamentAddress *string `json:"parent_tournament_address,omitzero"`
+	ParentMatchIDHash       *string `json:"parent_match_id_hash,omitzero"`
 	Limit                   uint64  `json:"limit"`
 	Offset                  uint64  `json:"offset"`
-	Descending              bool    `json:"descending,omitempty"`
+	Descending              bool    `json:"descending,omitzero"`
 }
 
 // GetTournamentParams aligns with the OpenRPC specification
@@ -155,11 +158,11 @@ type GetTournamentParams struct {
 // ListCommitmentsParams aligns with the OpenRPC specification
 type ListCommitmentsParams struct {
 	Application       string  `json:"application"`
-	EpochIndex        *string `json:"epoch_index,omitempty"`
-	TournamentAddress *string `json:"tournament_address,omitempty"`
+	EpochIndex        *string `json:"epoch_index,omitzero"`
+	TournamentAddress *string `json:"tournament_address,omitzero"`
 	Limit             uint64  `json:"limit"`
 	Offset            uint64  `json:"offset"`
-	Descending        bool    `json:"descending,omitempty"`
+	Descending        bool    `json:"descending,omitzero"`
 }
 
 // GetCommitmentParams aligns with the OpenRPC specification
@@ -173,11 +176,11 @@ type GetCommitmentParams struct {
 // ListMatchesParams aligns with the OpenRPC specification
 type ListMatchesParams struct {
 	Application       string  `json:"application"`
-	EpochIndex        *string `json:"epoch_index,omitempty"`
-	TournamentAddress *string `json:"tournament_address,omitempty"`
+	EpochIndex        *string `json:"epoch_index,omitzero"`
+	TournamentAddress *string `json:"tournament_address,omitzero"`
 	Limit             uint64  `json:"limit"`
 	Offset            uint64  `json:"offset"`
-	Descending        bool    `json:"descending,omitempty"`
+	Descending        bool    `json:"descending,omitzero"`
 }
 
 // GetMatchParams aligns with the OpenRPC specification
@@ -196,7 +199,7 @@ type ListMatchAdvancesParams struct {
 	IDHash            string `json:"id_hash"`
 	Limit             uint64 `json:"limit"`
 	Offset            uint64 `json:"offset"`
-	Descending        bool   `json:"descending,omitempty"`
+	Descending        bool   `json:"descending,omitzero"`
 }
 
 // GetMatchAdvanceParams aligns with the OpenRPC specification
@@ -212,11 +215,11 @@ type GetMatchAdvanceParams struct {
 // ListBondEventsParams selects immutable refund and recovery events.
 type ListBondEventsParams struct {
 	Application       string  `json:"application"`
-	EpochIndex        *string `json:"epoch_index,omitempty"`
-	TournamentAddress *string `json:"tournament_address,omitempty"`
+	EpochIndex        *string `json:"epoch_index,omitzero"`
+	TournamentAddress *string `json:"tournament_address,omitzero"`
 	Limit             uint64  `json:"limit"`
 	Offset            uint64  `json:"offset"`
-	Descending        bool    `json:"descending,omitempty"`
+	Descending        bool    `json:"descending,omitzero"`
 }
 
 // GetBondEventParams identifies an event by its transaction and block log index.
@@ -248,10 +251,10 @@ type GetStandingChangeParams struct {
 // ListWithdrawalsParams aligns with the OpenRPC specification
 type ListWithdrawalsParams struct {
 	Application  string  `json:"application"`
-	AccountIndex *string `json:"account_index,omitempty"`
+	AccountIndex *string `json:"account_index,omitzero"`
 	Limit        uint64  `json:"limit"`
 	Offset       uint64  `json:"offset"`
-	Descending   bool    `json:"descending,omitempty"`
+	Descending   bool    `json:"descending,omitzero"`
 }
 
 // GetWithdrawalParams aligns with the OpenRPC specification
@@ -263,16 +266,16 @@ type GetWithdrawalParams struct {
 // UnmarshalParams supports both by-name (object) and by-position (array) parameter structures.
 // If params is an object, it simply does json.Unmarshal; if it's an array, it will attempt
 // to unmarshal each positional parameter into the target struct field in declaration order.
-func UnmarshalParams(data json.RawMessage, target any) error {
+func UnmarshalParams(data jsontext.Value, target any) error {
 	data = bytes.TrimSpace(data)
 	switch {
-	case len(data) == 0:
+	case len(data) == 0 || bytes.Equal(data, []byte("null")):
 		// Parameters field is absent
 		return nil
 	case data[0] == '[':
-		// Unmarshal positional parameters into a slice of json.RawMessage.
-		var rawParams []json.RawMessage
-		if err := json.Unmarshal(data, &rawParams); err != nil {
+		// Unmarshal positional parameters into a slice of jsontext.Value.
+		var rawParams []jsontext.Value
+		if err := json.Unmarshal(data, &rawParams, jsonutil.Options); err != nil {
 			return err
 		}
 		// Use reflection to set values in the target struct in the order they appear.
@@ -306,7 +309,7 @@ func UnmarshalParams(data json.RawMessage, target any) error {
 					typ.Field(fieldIndex).Name)
 			}
 			// Unmarshal the corresponding raw parameter into the field.
-			if err := json.Unmarshal(rawParams[i], field.Addr().Interface()); err != nil {
+			if err := json.Unmarshal(rawParams[i], field.Addr().Interface(), jsonutil.Options); err != nil {
 				return fmt.Errorf("error unmarshalling positional parameter %d for field %s: %w",
 					i, typ.Field(fieldIndex).Name, err)
 			}
@@ -314,6 +317,6 @@ func UnmarshalParams(data json.RawMessage, target any) error {
 		return nil
 	default:
 		// Otherwise, assume by-name structure.
-		return json.Unmarshal(data, target)
+		return json.Unmarshal(data, target, jsonutil.Options)
 	}
 }

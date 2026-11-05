@@ -5,7 +5,7 @@ package inspectclient
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/oapi-codegen/runtime"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 // Defines values for CompletionStatus.
@@ -61,10 +63,10 @@ type InspectResult struct {
 	// Error Sanitized error description, present only when status is Exception or Failed
 	//
 	// Example: The node could not complete the inspection
-	Error *string `json:"error,omitempty"`
+	Error *string `json:"error,omitzero"`
 
 	// ExceptionData Raw guest-provided CMIO exception payload, present only when status is Exception
-	ExceptionData *Payload `json:"exception_data,omitempty"`
+	ExceptionData *Payload `json:"exception_data,omitzero"`
 
 	// ProcessedInputCount Number of processed inputs since genesis
 	//
@@ -386,7 +388,7 @@ func ParseInspectPostResponse(rsp *http.Response) (*InspectPostResponse, error) 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest InspectResult
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+		if err := json.Unmarshal(bodyBytes, &dest, jsonutil.Options); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest

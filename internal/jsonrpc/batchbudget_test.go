@@ -4,7 +4,8 @@
 package jsonrpc
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func TestMethodErrorListsExcludeBatchWideErrors(t *testing.T) {
@@ -25,7 +28,7 @@ func TestMethodErrorListsExcludeBatchWideErrors(t *testing.T) {
 			} `json:"errors"`
 		} `json:"methods"`
 	}
-	require.NoError(t, json.Unmarshal(data, &spec))
+	require.NoError(t, json.Unmarshal(data, &spec, jsonutil.Options))
 
 	for _, method := range spec.Methods {
 		refs := make(map[string]bool, len(method.Errors))
@@ -60,20 +63,20 @@ func TestBatchListItemLimitSupportsNamedAndPositionalParams(t *testing.T) {
 
 	for method, positional := range positionalAtLimit {
 		t.Run(method, func(t *testing.T) {
-			requests := []json.RawMessage{
-				json.RawMessage(fmt.Sprintf(
+			requests := []jsontext.Value{
+				jsontext.Value(fmt.Sprintf(
 					`{"jsonrpc":"2.0","method":%q,"params":%s,"id":1}`, method, positional)),
-				json.RawMessage(
+				jsontext.Value(
 					`{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":1},"id":2}`),
 			}
 			require.True(t, batchExceedsListItemLimit(requests))
 		})
 	}
 
-	require.False(t, batchExceedsListItemLimit([]json.RawMessage{
-		json.RawMessage(
+	require.False(t, batchExceedsListItemLimit([]jsontext.Value{
+		jsontext.Value(
 			`{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":6000},"id":1}`),
-		json.RawMessage(
+		jsontext.Value(
 			`{"jsonrpc":"2.0","method":"cartesi_listOutputs","params":{"limit":4000},"id":2}`),
 	}))
 }
@@ -89,16 +92,16 @@ func TestBatchListItemLimitRegistryCoversEveryListHandler(t *testing.T) {
 func TestBatchListItemLimitNormalizesLimitsLikeHandlers(t *testing.T) {
 	// A zero limit uses the default, while a value above the per-list maximum
 	// is capped at that maximum.
-	require.False(t, batchExceedsListItemLimit([]json.RawMessage{json.RawMessage(
+	require.False(t, batchExceedsListItemLimit([]jsontext.Value{jsontext.Value(
 		`{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":0},"id":1}`,
 	)}))
-	require.False(t, batchExceedsListItemLimit([]json.RawMessage{json.RawMessage(
+	require.False(t, batchExceedsListItemLimit([]jsontext.Value{jsontext.Value(
 		`{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":20000},"id":1}`,
 	)}))
-	require.True(t, batchExceedsListItemLimit([]json.RawMessage{
-		json.RawMessage(
+	require.True(t, batchExceedsListItemLimit([]jsontext.Value{
+		jsontext.Value(
 			`{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":20000},"id":1}`),
-		json.RawMessage(
+		jsontext.Value(
 			`{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":1},"id":2}`),
 	}))
 }

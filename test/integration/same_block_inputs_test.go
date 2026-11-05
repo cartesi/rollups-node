@@ -10,7 +10,8 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"math/big"
@@ -22,13 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/factory"
-	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -38,6 +32,15 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 )
 
 // SameBlockInputsSuite covers the EVM reader's handling of several InputAdded
@@ -204,7 +207,7 @@ func (s *SameBlockInputsSuite) TestMultipleInputsOneTransactionAuthority() {
 	out, err := runCLI(s.ctx, "read", "inputs", s.appName, "--transaction-hash", spamReceipt.TxHash.Hex())
 	r.NoError(err, "list inputs by spam transaction hash")
 	var cliFiltered api.ListResponse[model.Input]
-	r.NoError(json.Unmarshal([]byte(out), &cliFiltered), "parse filtered inputs")
+	r.NoError(json.Unmarshal([]byte(out), &cliFiltered, jsonutil.Options), "parse filtered inputs")
 	r.Len(cliFiltered.Data, spamCount)
 	for i, input := range cliFiltered.Data {
 		expectedIndex := startIndex + 1 + uint64(i)
@@ -780,7 +783,7 @@ func listInputsByRPC(
 		},
 		ID: 1,
 	}
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(req, jsonutil.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -807,7 +810,7 @@ func listInputsByRPC(
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+	if err := json.UnmarshalDecode(jsontext.NewDecoder(resp.Body), &rpcResp, jsonutil.Options); err != nil {
 		return nil, err
 	}
 	if rpcResp.Error != nil {

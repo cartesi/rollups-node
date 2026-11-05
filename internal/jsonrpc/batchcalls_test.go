@@ -6,7 +6,8 @@ package jsonrpc
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,8 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/pkg/service"
 )
 
 const (
@@ -50,14 +53,14 @@ func newBatchTestService() *Service {
 func decodeRPCResponse(t *testing.T, body []byte) RPCResponse {
 	t.Helper()
 	var response RPCResponse
-	require.NoError(t, json.Unmarshal(body, &response))
+	require.NoError(t, json.Unmarshal(body, &response, jsonutil.Options))
 	return response
 }
 
 func decodeRPCBatch(t *testing.T, body []byte) []RPCResponse {
 	t.Helper()
 	var responses []RPCResponse
-	require.NoError(t, json.Unmarshal(body, &responses))
+	require.NoError(t, json.Unmarshal(body, &responses, jsonutil.Options))
 	return responses
 }
 
@@ -69,10 +72,10 @@ func requireRPCError(t *testing.T, response RPCResponse, id any, code int) {
 	require.Equal(t, code, response.Error.Code)
 }
 
-func decodeRPCID(t *testing.T, id json.RawMessage) any {
+func decodeRPCID(t *testing.T, id jsontext.Value) any {
 	t.Helper()
 	var decoded any
-	require.NoError(t, json.Unmarshal(id, &decoded))
+	require.NoError(t, json.Unmarshal(id, &decoded, jsonutil.Options))
 	return decoded
 }
 
@@ -123,7 +126,7 @@ func TestJSONRPCBatchRejectsEmptyBatchWithSingleObject(t *testing.T) {
 	requireRPCError(t, decodeRPCResponse(t, rr.Body.Bytes()), nil, JSONRPC_INVALID_BATCH)
 
 	var array []RPCResponse
-	require.Error(t, json.Unmarshal(rr.Body.Bytes(), &array),
+	require.Error(t, json.Unmarshal(rr.Body.Bytes(), &array, jsonutil.Options),
 		"an empty batch error must be one JSON-RPC object, not an array")
 }
 
@@ -136,12 +139,12 @@ func TestJSONRPCBatchRejectsMoreThanMaximumBeforeDispatch(t *testing.T) {
 		return true, nil
 	})
 
-	requests := make([]json.RawMessage, testBatchSize+1)
+	requests := make([]jsontext.Value, testBatchSize+1)
 	for i := range requests {
-		requests[i] = json.RawMessage(fmt.Sprintf(
+		requests[i] = jsontext.Value(fmt.Sprintf(
 			`{"jsonrpc":"2.0","method":%q,"id":%d}`, method, i))
 	}
-	body, err := json.Marshal(requests)
+	body, err := json.Marshal(requests, jsonutil.Options)
 	require.NoError(t, err)
 	rr := serveRPC(t, s, body)
 
@@ -176,7 +179,7 @@ func TestJSONRPCDiscoverPreservesLargeIntegerLiterals(t *testing.T) {
 	s := newBatchTestService()
 	data, err := discoverSpec.ReadFile("jsonrpc-discover.json")
 	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(data, &s.discoverSpec))
+	require.NoError(t, json.Unmarshal(data, &s.discoverSpec, jsonutil.Options))
 
 	rr := serveRPC(t, s, []byte(`{"jsonrpc":"2.0","method":"rpc.discover","id":1}`))
 
@@ -336,7 +339,7 @@ func TestJSONRPCBatchAlwaysReturnsHTTP200ForJSONErrors(t *testing.T) {
 			rr := serveRPC(t, s, body)
 			require.Equal(t, http.StatusOK, rr.Code)
 			require.Equal(t, "application/json", rr.Header().Get("Content-Type"))
-			require.True(t, json.Valid(rr.Body.Bytes()))
+			require.True(t, jsontext.Value(rr.Body.Bytes()).IsValid(jsonutil.Options))
 		})
 	}
 }
@@ -351,12 +354,12 @@ func TestJSONRPCBatchReplacesResponsesAtCumulativeResponseBudget(t *testing.T) {
 		return largeResult, nil
 	})
 
-	requests := make([]json.RawMessage, testBatchSize)
+	requests := make([]jsontext.Value, testBatchSize)
 	for i := range requests {
-		requests[i] = json.RawMessage(fmt.Sprintf(
+		requests[i] = jsontext.Value(fmt.Sprintf(
 			`{"jsonrpc":"2.0","method":%q,"params":{"limit":10000},"id":%d}`, method, i))
 	}
-	body, err := json.Marshal(requests)
+	body, err := json.Marshal(requests, jsonutil.Options)
 	require.NoError(t, err)
 	require.Less(t, len(body), 10<<10, "the request cap must not be mistaken for a response cap")
 	rr := serveRPC(t, s, body)
@@ -407,7 +410,7 @@ func TestJSONRPCBatchStopsBetweenEntriesWhenContextIsCanceled(t *testing.T) {
 			continue
 		}
 		var record map[string]any
-		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		require.NoError(t, json.Unmarshal([]byte(line), &record, jsonutil.Options))
 		require.False(t,
 			record["level"] == "ERROR" && strings.Contains(strings.ToLower(line), "context canceled"),
 			"context.Canceled is a graceful stop and must not be ERROR logged")
@@ -443,7 +446,7 @@ func TestJSONRPCBatchStopsSilentlyWhenRepositoryCallIsCanceled(t *testing.T) {
 			continue
 		}
 		var record map[string]any
-		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		require.NoError(t, json.Unmarshal([]byte(line), &record, jsonutil.Options))
 		require.NotEqual(t, "ERROR", record["level"],
 			"context.Canceled must not be logged as an operator error")
 	}
@@ -627,7 +630,7 @@ func TestJSONRPCBatchLoggingHasOneInfoAndDebugMethods(t *testing.T) {
 			continue
 		}
 		var record map[string]any
-		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		require.NoError(t, json.Unmarshal([]byte(line), &record, jsonutil.Options))
 		level, _ := record["level"].(string)
 		encoded := string(line)
 		if level == "INFO" && strings.Contains(strings.ToLower(encoded), "batch") {
@@ -657,7 +660,7 @@ func TestJSONRPCBatchMethodLoggingIsTruncated(t *testing.T) {
 	var found bool
 	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
 		var record map[string]any
-		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		require.NoError(t, json.Unmarshal([]byte(line), &record, jsonutil.Options))
 		if record["method"] == truncatedMethod(method) {
 			require.Equal(t, "DEBUG", record["level"])
 			found = true

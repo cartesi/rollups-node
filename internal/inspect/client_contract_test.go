@@ -6,7 +6,8 @@ package inspect
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -15,12 +16,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/cartesi/rollups-node/internal/inspectmessages"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/manager"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/inspectclient"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/stretchr/testify/require"
 )
 
 type inspectHandlerTransport func(*http.Request) (*http.Response, error)
@@ -37,11 +40,11 @@ const inspectLogRequestID = "11111111-1111-4111-8111-111111111111"
 
 func requireInspectRequestLogs(t *testing.T, logs *bytes.Buffer, levels []slog.Level) {
 	t.Helper()
-	decoder := json.NewDecoder(logs)
+	decoder := jsontext.NewDecoder(logs)
 	var records []map[string]any
 	for {
 		var record map[string]any
-		err := decoder.Decode(&record)
+		err := json.UnmarshalDecode(decoder, &record, jsonutil.Options)
 		if errors.Is(err, io.EOF) {
 			break
 		}

@@ -9,7 +9,8 @@ import (
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	. "github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
@@ -285,7 +287,7 @@ func newFakeKMSServer(t *testing.T) *httptest.Server {
 			var input struct {
 				Message string `json:"Message"`
 			}
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&input))
+			require.NoError(t, json.UnmarshalDecode(jsontext.NewDecoder(r.Body), &input, jsonutil.Options))
 			digest, err := base64.StdEncoding.DecodeString(input.Message)
 			require.NoError(t, err)
 			r, s, err := ecdsa.Sign(rand.Reader, privateKey, digest)
@@ -308,5 +310,5 @@ func newFakeKMSServer(t *testing.T) *httptest.Server {
 
 func writeKMSJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
-	require.NoError(t, json.NewEncoder(w).Encode(value))
+	require.NoError(t, json.MarshalEncode(jsontext.NewEncoder(w), value, jsonutil.Options))
 }

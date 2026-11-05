@@ -7,7 +7,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -22,14 +23,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/errutil"
-	"github.com/cartesi/rollups-node/internal/httpclient"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/errutil"
+	"github.com/cartesi/rollups-node/internal/httpclient"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func secretTestClient(t *testing.T, endpoint string, retry bool, logs *bytes.Buffer, options ...rpc.ClientOption) *ethclient.Client {
@@ -130,8 +133,8 @@ func TestNewEthClientActuallyRetriesWithProtectedRequests(t *testing.T) {
 			http.Error(w, r.RequestURI+" "+r.Header.Get("Authorization"), http.StatusServiceUnavailable)
 			return
 		}
-		var request struct{ ID json.RawMessage }
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+		var request struct{ ID jsontext.Value }
+		require.NoError(t, json.UnmarshalDecode(jsontext.NewDecoder(r.Body), &request, jsonutil.Options))
 		_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":"0x1"}`, request.ID)
 	}))
 	defer server.Close()
@@ -331,14 +334,14 @@ func TestConfinedClientActuallyChunksHTTPErrorRanges(t *testing.T) {
 			var ranges []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var request struct {
-					ID     json.RawMessage `json:"id"`
-					Method string          `json:"method"`
+					ID     jsontext.Value `json:"id"`
+					Method string         `json:"method"`
 					Params []struct {
 						FromBlock string `json:"fromBlock"`
 						ToBlock   string `json:"toBlock"`
 					} `json:"params"`
 				}
-				require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				require.NoError(t, json.UnmarshalDecode(jsontext.NewDecoder(r.Body), &request, jsonutil.Options))
 				require.Equal(t, "eth_getLogs", request.Method)
 				require.Len(t, request.Params, 1)
 				from, err := strconv.ParseUint(strings.TrimPrefix(request.Params[0].FromBlock, "0x"), 16, 64)
@@ -423,9 +426,9 @@ func TestEthClientWireAndOwnedHTTPClient(t *testing.T) {
 				require.Equal(t, "3", password)
 			}
 			var payload struct {
-				ID json.RawMessage `json:"id"`
+				ID jsontext.Value `json:"id"`
 			}
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+			require.NoError(t, json.UnmarshalDecode(jsontext.NewDecoder(r.Body), &payload, jsonutil.Options))
 			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":"0x1","error":null}`, payload.ID)
 		}))
 		endpoint, _ := url.Parse(server.URL + "/base%2Fkey//./rpc?key=a%2Fb&key=second+")

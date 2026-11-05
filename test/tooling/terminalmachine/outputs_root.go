@@ -5,11 +5,12 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
 
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
@@ -55,7 +56,7 @@ func runInvalidOutputsRoot(args []string) error {
 		"processor": map[string]any{"registers": map[string]any{"pc": ramStart}},
 		"ram":       map[string]any{"length": unexpectedYieldRAMSize},
 		"cmio":      map[string]any{"rx_buffer": map[string]any{}, "tx_buffer": map[string]any{}},
-	})
+	}, jsonutil.Options)
 	if err != nil {
 		return fmt.Errorf("encode machine config: %w", err)
 	}

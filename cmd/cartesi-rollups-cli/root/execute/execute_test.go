@@ -6,7 +6,8 @@ package execute
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"math/big"
 	"net/http/httptest"
 	"os"
@@ -24,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/outputs"
 )
@@ -49,7 +51,7 @@ func proofDocument(t *testing.T, output []byte, siblings []common.Hash) string {
 	data, err := json.Marshal(struct {
 		RawData              string        `json:"raw_data"`
 		OutputHashesSiblings []common.Hash `json:"output_hashes_siblings"`
-	}{hexutil.Encode(output), siblings})
+	}{hexutil.Encode(output), siblings}, jsonutil.Options)
 	require.NoError(t, err)
 	return string(data)
 }
@@ -138,7 +140,7 @@ func (*executeRPC) GetTransactionCount(context.Context, common.Address, string) 
 	return 0, nil
 }
 
-func (r *executeRPC) EstimateGas(context.Context, map[string]json.RawMessage) (hexutil.Uint64, error) {
+func (r *executeRPC) EstimateGas(context.Context, map[string]jsontext.Value) (hexutil.Uint64, error) {
 	r.estimates.Add(1)
 	return testGasLimit, nil
 }
@@ -246,7 +248,7 @@ func TestCommandExecutesProofFileWithoutDatabase(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				var result map[string]string
-				require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+				require.NoError(t, json.Unmarshal(stdout.Bytes(), &result, jsonutil.Options))
 				require.Equal(t, tx.Hash().Hex(), result["transaction_hash"])
 				if tt.noWait {
 					require.Equal(t, "broadcast", result["status"])
@@ -348,7 +350,7 @@ func TestCommandRequiresMatchingOutputExecuted(t *testing.T) {
 			}
 			require.NoError(t, err)
 			var result map[string]string
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result, jsonutil.Options))
 			require.Equal(t, tx.Hash().Hex(), result["transaction_hash"])
 			if test.noWait {
 				require.Equal(t, "broadcast", result["status"])
@@ -368,7 +370,7 @@ func TestCommandRejectsInvalidProofBeforeEthereum(t *testing.T) {
 			cmd.SetOut(&bytes.Buffer{})
 			cmd.SetErr(&bytes.Buffer{})
 			cmd.SetArgs([]string{application, "7", proofFileFlag, writeProofFile(t, `{"raw_data":"0xaa","unknown":1}`)})
-			require.ErrorContains(t, cmd.ExecuteContext(t.Context()), "unknown field")
+			require.ErrorIs(t, cmd.ExecuteContext(t.Context()), json.ErrUnknownName)
 			require.Zero(t, service.chainReads.Load())
 			require.Empty(t, service.sent)
 		})

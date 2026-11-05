@@ -6,7 +6,8 @@ package emulator
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,13 +15,15 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 type mcycleRootHashesResult struct {
-	Hashes        []string        `json:"hashes"`
-	MCyclePhase   uint64          `json:"mcycle_phase"`
-	BreakReason   string          `json:"break_reason"`
-	PartialBundle json.RawMessage `json:"partial_bundle,omitempty"`
+	Hashes        []string       `json:"hashes"`
+	MCyclePhase   uint64         `json:"mcycle_phase"`
+	BreakReason   string         `json:"break_reason"`
+	PartialBundle jsontext.Value `json:"partial_bundle,omitzero"`
 }
 
 func createLoopMachine(t *testing.T) *Machine {
@@ -40,7 +43,7 @@ func createLoopMachine(t *testing.T) *Machine {
 				"data_filename": imagePath,
 			},
 		},
-	})
+	}, jsonutil.Options)
 	require.NoError(t, err)
 
 	machine, err := CreateMachine(string(config), "", "")
@@ -59,14 +62,14 @@ func collectMCycleRootHashes(
 	log2Period,
 	phase uint64,
 	log2Bundle int32,
-	partialBundle json.RawMessage,
+	partialBundle jsontext.Value,
 ) mcycleRootHashesResult {
 	t.Helper()
 
 	rawResult, err := machine.CollectMCycleRootHashes(target, log2Period, phase, log2Bundle, partialBundle)
 	require.NoError(t, err)
 	var result mcycleRootHashesResult
-	require.NoError(t, json.Unmarshal(rawResult, &result))
+	require.NoError(t, json.Unmarshal(rawResult, &result, jsonutil.Options))
 	return result
 }
 
@@ -132,7 +135,7 @@ func TestCollectUarchCycleRootHashes_AcceptsOpaqueRevertTail(t *testing.T) {
 	machine := createLoopMachine(t)
 	zeroHash := Hash{}
 	encodedZeroHash := base64.StdEncoding.EncodeToString(zeroHash[:])
-	tail, err := json.Marshal([]string{encodedZeroHash, encodedZeroHash})
+	tail, err := json.Marshal([]string{encodedZeroHash, encodedZeroHash}, jsonutil.Options)
 	require.NoError(t, err)
 
 	rawResult, err := machine.CollectUarchCycleRootHashes(1, 0, RevertUarchTail(tail))
@@ -142,7 +145,7 @@ func TestCollectUarchCycleRootHashes_AcceptsOpaqueRevertTail(t *testing.T) {
 		Hashes      []string `json:"hashes"`
 		BreakReason string   `json:"break_reason"`
 	}
-	require.NoError(t, json.Unmarshal(rawResult, &result))
+	require.NoError(t, json.Unmarshal(rawResult, &result, jsonutil.Options))
 	require.NotEmpty(t, result.Hashes)
 	require.Equal(t, "reached_target_mcycle", result.BreakReason)
 }

@@ -5,7 +5,7 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -18,27 +18,27 @@ var (
 )
 
 type ReadService interface {
-	GetApplication(ctx context.Context, params api.GetApplicationParams) (json.RawMessage, error)
-	GetEpoch(ctx context.Context, params api.GetEpochParams) (json.RawMessage, error)
-	ListEpochs(ctx context.Context, params api.ListEpochsParams) (json.RawMessage, error)
-	GetInput(ctx context.Context, params api.GetInputParams) (json.RawMessage, error)
-	ListInputs(ctx context.Context, params api.ListInputsParams) (json.RawMessage, error)
-	GetOutput(ctx context.Context, params api.GetOutputParams) (json.RawMessage, error)
-	ListOutputs(ctx context.Context, params api.ListOutputsParams) (json.RawMessage, error)
-	GetReport(ctx context.Context, params api.GetReportParams) (json.RawMessage, error)
-	ListReports(ctx context.Context, params api.ListReportsParams) (json.RawMessage, error)
-	GetWithdrawal(ctx context.Context, params api.GetWithdrawalParams) (json.RawMessage, error)
-	ListWithdrawals(ctx context.Context, params api.ListWithdrawalsParams) (json.RawMessage, error)
-	GetTournament(ctx context.Context, params api.GetTournamentParams) (json.RawMessage, error)
-	ListTournaments(ctx context.Context, params api.ListTournamentsParams) (json.RawMessage, error)
-	GetCommitment(ctx context.Context, params api.GetCommitmentParams) (json.RawMessage, error)
-	ListCommitments(ctx context.Context, params api.ListCommitmentsParams) (json.RawMessage, error)
-	GetMatch(ctx context.Context, params api.GetMatchParams) (json.RawMessage, error)
-	ListMatches(ctx context.Context, params api.ListMatchesParams) (json.RawMessage, error)
-	GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (json.RawMessage, error)
-	ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (json.RawMessage, error)
-	GetStandingChange(ctx context.Context, params api.GetStandingChangeParams) (json.RawMessage, error)
-	ListStandingChanges(ctx context.Context, params api.ListStandingChangesParams) (json.RawMessage, error)
+	GetApplication(ctx context.Context, params api.GetApplicationParams) (jsontext.Value, error)
+	GetEpoch(ctx context.Context, params api.GetEpochParams) (jsontext.Value, error)
+	ListEpochs(ctx context.Context, params api.ListEpochsParams) (jsontext.Value, error)
+	GetInput(ctx context.Context, params api.GetInputParams) (jsontext.Value, error)
+	ListInputs(ctx context.Context, params api.ListInputsParams) (jsontext.Value, error)
+	GetOutput(ctx context.Context, params api.GetOutputParams) (jsontext.Value, error)
+	ListOutputs(ctx context.Context, params api.ListOutputsParams) (jsontext.Value, error)
+	GetReport(ctx context.Context, params api.GetReportParams) (jsontext.Value, error)
+	ListReports(ctx context.Context, params api.ListReportsParams) (jsontext.Value, error)
+	GetWithdrawal(ctx context.Context, params api.GetWithdrawalParams) (jsontext.Value, error)
+	ListWithdrawals(ctx context.Context, params api.ListWithdrawalsParams) (jsontext.Value, error)
+	GetTournament(ctx context.Context, params api.GetTournamentParams) (jsontext.Value, error)
+	ListTournaments(ctx context.Context, params api.ListTournamentsParams) (jsontext.Value, error)
+	GetCommitment(ctx context.Context, params api.GetCommitmentParams) (jsontext.Value, error)
+	ListCommitments(ctx context.Context, params api.ListCommitmentsParams) (jsontext.Value, error)
+	GetMatch(ctx context.Context, params api.GetMatchParams) (jsontext.Value, error)
+	ListMatches(ctx context.Context, params api.ListMatchesParams) (jsontext.Value, error)
+	GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (jsontext.Value, error)
+	ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (jsontext.Value, error)
+	GetStandingChange(ctx context.Context, params api.GetStandingChangeParams) (jsontext.Value, error)
+	ListStandingChanges(ctx context.Context, params api.ListStandingChangesParams) (jsontext.Value, error)
 	Close()
 }
 

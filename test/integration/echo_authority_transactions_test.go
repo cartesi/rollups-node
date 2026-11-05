@@ -7,7 +7,8 @@ package integration
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 
 	"github.com/cartesi/rollups-node/internal/cli"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 )
 
@@ -38,7 +40,7 @@ func (s *EchoAuthoritySuite) TestTransactionsWithoutDatabase() {
 	text, err := runCLIWithEnv(s.ctx, sendEnv, "send", address, "", "--yes", "--json")
 	r.NoError(err, "send by address without database access")
 	var sent cli.SendResult
-	r.NoError(json.Unmarshal([]byte(text), &sent))
+	r.NoError(json.Unmarshal([]byte(text), &sent, jsonutil.Options))
 	r.Equal("mined", sent.Status)
 	inputIndex, err := hexutil.DecodeUint64(sent.InputIndex)
 	r.NoError(err)
@@ -74,15 +76,15 @@ func (s *EchoAuthoritySuite) TestTransactionsWithoutDatabase() {
 	text, err = runCLIWithEnv(s.ctx, noDatabase, "read", "outputs", address, indexText, "--jsonrpc")
 	r.NoError(err, "export proof through JSON-RPC without database access")
 	var exported struct {
-		Data map[string]json.RawMessage `json:"data"`
+		Data map[string]jsontext.Value `json:"data"`
 	}
-	r.NoError(json.Unmarshal([]byte(text), &exported))
+	r.NoError(json.Unmarshal([]byte(text), &exported, jsonutil.Options))
 	r.Contains(exported.Data, "raw_data")
 	r.Contains(exported.Data, "output_hashes_siblings")
-	proof, err := json.Marshal(map[string]json.RawMessage{
+	proof, err := json.Marshal(map[string]jsontext.Value{
 		"raw_data":               exported.Data["raw_data"],
 		"output_hashes_siblings": exported.Data["output_hashes_siblings"],
-	})
+	}, jsonutil.Options)
 	r.NoError(err)
 	proofFile := filepath.Join(s.T().TempDir(), "output-proof.json")
 	r.NoError(os.WriteFile(proofFile, proof, 0o600))
@@ -105,7 +107,7 @@ func (s *EchoAuthoritySuite) TestTransactionsWithoutDatabase() {
 	text, err = runCLIWithEnv(s.ctx, executeEnv, "execute", address, indexText, "--proof-file", proofFile, "--yes", "--json")
 	r.NoError(err, "execute with supplied data without database or node API access")
 	var executed cli.TransactionResult
-	r.NoError(json.Unmarshal([]byte(text), &executed))
+	r.NoError(json.Unmarshal([]byte(text), &executed, jsonutil.Options))
 	r.Equal("mined", executed.Status)
 	r.NotEmpty(executed.TransactionHash)
 	execCtx, cancelExecution := context.WithTimeout(s.ctx, inputProcessingTimeout)

@@ -4,11 +4,12 @@
 package repotest
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"sync"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/common"
@@ -99,7 +100,7 @@ func (s *NodeConfigSuite) TestSaveAndLoadNodeConfigRaw() {
 	s.Run("RoundTrip", func() {
 		key := "test-config"
 		value := map[string]string{"foo": "bar"}
-		data, err := json.Marshal(value)
+		data, err := json.Marshal(value, jsonutil.Options)
 		s.Require().NoError(err)
 
 		err = s.Repo.(NodeConfigWriter).SaveNodeConfigRaw(s.Ctx, key, data)
@@ -110,8 +111,8 @@ func (s *NodeConfigSuite) TestSaveAndLoadNodeConfigRaw() {
 
 		// Compare JSON semantically (PostgreSQL may reformat whitespace)
 		var expected, actual map[string]string
-		s.Require().NoError(json.Unmarshal(data, &expected))
-		s.Require().NoError(json.Unmarshal(got, &actual))
+		s.Require().NoError(json.Unmarshal(data, &expected, jsonutil.Options))
+		s.Require().NoError(json.Unmarshal(got, &actual, jsonutil.Options))
 		s.Equal(expected, actual)
 
 		s.False(createdAt.IsZero())
@@ -120,9 +121,9 @@ func (s *NodeConfigSuite) TestSaveAndLoadNodeConfigRaw() {
 
 	s.Run("UpdateExistingKey", func() {
 		key := "update-test"
-		data1, err := json.Marshal("value1")
+		data1, err := json.Marshal("value1", jsonutil.Options)
 		s.Require().NoError(err)
-		data2, err := json.Marshal("value2")
+		data2, err := json.Marshal("value2", jsonutil.Options)
 		s.Require().NoError(err)
 
 		err = s.Repo.(NodeConfigWriter).SaveNodeConfigRaw(s.Ctx, key, data1)
@@ -136,8 +137,8 @@ func (s *NodeConfigSuite) TestSaveAndLoadNodeConfigRaw() {
 
 		// Compare JSON semantically
 		var expected, actual string
-		s.Require().NoError(json.Unmarshal(data2, &expected))
-		s.Require().NoError(json.Unmarshal(got, &actual))
+		s.Require().NoError(json.Unmarshal(data2, &expected, jsonutil.Options))
+		s.Require().NoError(json.Unmarshal(got, &actual, jsonutil.Options))
 		s.Equal(expected, actual)
 	})
 

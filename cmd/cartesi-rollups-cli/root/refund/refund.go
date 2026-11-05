@@ -6,7 +6,8 @@ package refund
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 )
 
@@ -163,9 +165,8 @@ func (o *options) run(cmd *cobra.Command, args []string) error {
 			ApplicationAddr common.Address `json:"application_address"`
 			InputIndex      string         `json:"input_index"`
 		}{TransactionResult: cli.NewTransactionResult(tx, receipt), ApplicationAddr: appAddr, InputIndex: inputIndex.String()}
-		encoder := json.NewEncoder(cmd.OutOrStdout())
-		encoder.SetIndent("", "  ")
-		if err := encoder.Encode(result); err != nil {
+		encoder := jsontext.NewEncoder(cmd.OutOrStdout(), jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+		if err := json.MarshalEncode(encoder, result, jsonutil.Options); err != nil {
 			return fmt.Errorf("write refund result: %w", err)
 		}
 	} else {

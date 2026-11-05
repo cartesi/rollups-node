@@ -5,12 +5,14 @@ package ethutil
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/url"
 
 	"github.com/cartesi/rollups-node/internal/httpclient"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 // nullErrorTransport removes a null "error" member from JSON-RPC responses.
@@ -59,10 +61,10 @@ func validateRPCEnvelope(body []byte) error {
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) > 0 && trimmed[0] == '[' {
 		var batch []envelope
-		return json.NewDecoder(bytes.NewReader(body)).Decode(&batch)
+		return json.UnmarshalDecode(jsontext.NewDecoder(bytes.NewReader(body)), &batch, jsonutil.Options)
 	}
 	var message envelope
-	return json.NewDecoder(bytes.NewReader(body)).Decode(&message)
+	return json.UnmarshalDecode(jsontext.NewDecoder(bytes.NewReader(body)), &message, jsonutil.Options)
 }
 
 var errorMemberName = []byte(`"error"`)
@@ -76,8 +78,8 @@ func dropNullError(body []byte) ([]byte, bool) {
 	}
 	trimmed := bytes.TrimLeft(body, " \t\r\n")
 	if len(trimmed) > 0 && trimmed[0] == '[' {
-		var batch []map[string]json.RawMessage
-		if json.Unmarshal(body, &batch) != nil {
+		var batch []map[string]jsontext.Value
+		if json.Unmarshal(body, &batch, jsonutil.Options) != nil {
 			return body, false
 		}
 		changed := false
@@ -86,14 +88,14 @@ func dropNullError(body []byte) ([]byte, bool) {
 		}
 		return marshalIfChanged(body, batch, changed)
 	}
-	var msg map[string]json.RawMessage
-	if json.Unmarshal(body, &msg) != nil {
+	var msg map[string]jsontext.Value
+	if json.Unmarshal(body, &msg, jsonutil.Options) != nil {
 		return body, false
 	}
 	return marshalIfChanged(body, msg, dropNullErrorMember(msg))
 }
 
-func dropNullErrorMember(msg map[string]json.RawMessage) bool {
+func dropNullErrorMember(msg map[string]jsontext.Value) bool {
 	value, ok := msg["error"]
 	if !ok || !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 		return false
@@ -106,7 +108,7 @@ func marshalIfChanged(body []byte, value any, changed bool) ([]byte, bool) {
 	if !changed {
 		return body, false
 	}
-	fixed, err := json.Marshal(value)
+	fixed, err := json.Marshal(value, jsonutil.Options)
 	if err != nil {
 		return body, false
 	}

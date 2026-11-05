@@ -6,7 +6,6 @@ package inspect
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/httpclient"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/inspectclient"
 )
 
@@ -130,7 +130,7 @@ func run(cmd *cobra.Command, args []string) {
 	checkRequestError(err)
 
 	var prettyJSON bytes.Buffer
-	checkRequestError(httpclient.Diagnostic(ctx, json.Indent(&prettyJSON, respBytes, "", "    "),
+	checkRequestError(httpclient.Diagnostic(ctx, jsonutil.Indent(&prettyJSON, respBytes, "", "    "),
 		"decode inspect response", client.Endpoint()))
 
 	fmt.Print(prettyJSON.String())

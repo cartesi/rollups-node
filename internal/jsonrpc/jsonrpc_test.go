@@ -18,27 +18,29 @@ package jsonrpc
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
 	"os"
-	"time"
-
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/cartesi/rollups-node/internal/evmreader"
-	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/internal/repository/repotest"
-	"github.com/cartesi/rollups-node/internal/version"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/evmreader"
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/internal/repository/repotest"
+	"github.com/cartesi/rollups-node/internal/version"
 )
 
 type jsonrpcSchema struct {
@@ -61,7 +63,7 @@ func TestInvalidJSON(t *testing.T) {
 	}`))
 
 	var resp RPCResponse
-	assert.Nil(t, json.Unmarshal(body, &resp))
+	assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 	assert.Equal(t, JSONRPC_PARSE_ERROR, resp.Error.Code)
 	assert.Equal(t, "Parse error", resp.Error.Message)
 }
@@ -78,7 +80,7 @@ func TestInvalidMethod(t *testing.T) {
 	}`))
 
 	resp := testRPCResponse[any]{}
-	assert.Nil(t, json.Unmarshal(body, &resp))
+	assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 	assert.Equal(t, JSONRPC_METHOD_NOT_FOUND, resp.Error.Code)
 	assert.Equal(t, "Method not found", resp.Error.Message)
 }
@@ -130,7 +132,7 @@ func TestMethod(t *testing.T) {
 			require.NoError(t, err)
 
 			var expected any
-			assert.Nil(t, json.Unmarshal(contents, &expected))
+			assert.Nil(t, json.Unmarshal(contents, &expected, jsonutil.Options))
 
 			body := s.doRequest(t, 0, fmt.Appendf([]byte{}, `{
 				"jsonrpc": "2.0",
@@ -140,7 +142,7 @@ func TestMethod(t *testing.T) {
 				}`))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 		})
 	})
 
@@ -164,7 +166,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -185,11 +187,11 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[model.Application]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, nr, nameToNumber(resp.Result.Data.Name))
 
-			var raw testRPCResponse[map[string]json.RawMessage]
-			require.NoError(t, json.Unmarshal(body, &raw))
+			var raw testRPCResponse[map[string]jsontext.Value]
+			require.NoError(t, json.Unmarshal(body, &raw, jsonutil.Options))
 			require.Contains(t, raw.Result.Data, "iinputbox_address")
 			require.NotContains(t, raw.Result.Data, "data_availability")
 		})
@@ -214,7 +216,7 @@ func TestMethod(t *testing.T) {
 			}`))
 
 			resp := testRPCResponse[any]{}
-			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			require.NotNil(t, resp.Error)
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "EVM Reader config not found", resp.Error.Message)
@@ -247,7 +249,7 @@ func TestMethod(t *testing.T) {
 			}`))
 
 			resp := testRPCResponse[api.NodeInfo]{}
-			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			require.Nil(t, resp.Error)
 			assert.Equal(t, hexutil.EncodeUint64(chainID), resp.Result.Data.ChainID)
 			assert.Equal(t, version.BuildVersion, resp.Result.Data.Version)
@@ -273,7 +275,7 @@ func TestMethod(t *testing.T) {
 				"id": 0
 				}`))
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "EVM Reader config not found", resp.Error.Message)
 		})
@@ -303,7 +305,7 @@ func TestMethod(t *testing.T) {
 				"id": 0
 				}`))
 			resp := testRPCResponse[hex64]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, nr, uint64(resp.Result.Data))
 		})
 	})
@@ -333,7 +335,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), nr))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid epoch index: expected hex encoded value", resp.Error.Message)
 		})
@@ -365,7 +367,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(nr+1)))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Epoch not found", resp.Error.Message)
 		})
@@ -387,7 +389,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr), hexutil.EncodeUint64(0)))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -419,7 +421,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(nr)))
 
 			resp := testRPCResponse[*model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, nr, resp.Result.Data.Index)
 		})
 	})
@@ -446,7 +448,7 @@ func TestMethod(t *testing.T) {
 			}`, numberToName(1)))
 
 			resp := testRPCResponse[any]{}
-			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			require.NotNil(t, resp.Error)
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid parameters", resp.Error.Message)
@@ -477,7 +479,7 @@ func TestMethod(t *testing.T) {
 			}`, numberToName(app), hexutil.EncodeUint64(1)))
 
 			resp := testRPCResponse[any]{}
-			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			require.NotNil(t, resp.Error)
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Epoch not found", resp.Error.Message)
@@ -499,7 +501,7 @@ func TestMethod(t *testing.T) {
 			}`, numberToName(0xdeadbeef)))
 
 			resp := testRPCResponse[any]{}
-			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			require.NotNil(t, resp.Error)
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
@@ -530,7 +532,7 @@ func TestMethod(t *testing.T) {
 			}`, numberToName(app)))
 
 			resp := testRPCResponse[*model.Epoch]{}
-			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			require.Nil(t, resp.Error)
 			require.NotNil(t, resp.Result.Data)
 			assert.Equal(t, uint64(5), resp.Result.Data.Index)
@@ -563,7 +565,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), nr))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid input index: expected hex encoded value", resp.Error.Message)
 		})
@@ -595,7 +597,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(inr)))
 
 			resp := testRPCResponse[*model.Input]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Input not found", resp.Error.Message)
 		})
@@ -617,7 +619,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr), hexutil.EncodeUint64(0)))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -654,7 +656,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(inr)))
 
 			resp := testRPCResponse[*model.Input]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, enr, resp.Result.Data.EpochIndex)
 			assert.Equal(t, inr, resp.Result.Data.Index)
 		})
@@ -682,7 +684,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[hex64]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -705,7 +707,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[hex64]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Epoch not found", resp.Error.Message)
 		})
@@ -734,7 +736,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[hex64]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, epochIndex, uint64(resp.Result.Data))
 		})
 	})
@@ -758,7 +760,7 @@ func TestMethod(t *testing.T) {
 				}`))
 
 			resp := testRPCResponse[string]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, version.BuildVersion, resp.Result.Data)
 		})
 	})
@@ -788,7 +790,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), nr))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid output index: expected hex encoded value", resp.Error.Message)
 		})
@@ -820,7 +822,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(inr)))
 
 			resp := testRPCResponse[*model.Output]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Output not found", resp.Error.Message)
 		})
@@ -842,7 +844,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr), hexutil.EncodeUint64(0)))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -885,13 +887,13 @@ func TestMethod(t *testing.T) {
 				Index      hex64  `json:"index"`
 				RawData    string `json:"raw_data"` // hex encoded
 
-				DecodedData *api.DecodedData `json:"decoded_data,omitempty"`
+				DecodedData *api.DecodedData `json:"decoded_data,omitzero"`
 
 				// ... (ignore the rest of fields for test
 			}
 
 			resp := testRPCResponse[Result]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, inr, uint64(resp.Result.Data.InputIndex))
 			assert.Equal(t, onr, uint64(resp.Result.Data.Index))
 			assert.Equal(t, "0xdeadbeef", resp.Result.Data.DecodedData.Value)
@@ -919,7 +921,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app)))
 
 			resp := testRPCResponse[hex64]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -941,7 +943,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app)))
 
 			resp := testRPCResponse[hex64]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, uint64(0), uint64(resp.Result.Data))
 		})
 
@@ -978,7 +980,7 @@ func TestMethod(t *testing.T) {
 			}`, numberToName(app)))
 
 			resp := testRPCResponse[hex64]{}
-			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Nil(t, resp.Error)
 			assert.Equal(t, uint64(2), uint64(resp.Result.Data))
 		})
@@ -1003,7 +1005,7 @@ func TestMethod(t *testing.T) {
 				}`, method, numberToName(1)))
 
 				resp := testRPCResponse[hex64]{}
-				require.NoError(t, json.Unmarshal(body, &resp))
+				require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 				assert.Equal(t, "Application not found", resp.Error.Message)
 			})
@@ -1022,7 +1024,7 @@ func TestMethod(t *testing.T) {
 				}`, method, numberToName(app)))
 
 				resp := testRPCResponse[hex64]{}
-				require.NoError(t, json.Unmarshal(body, &resp))
+				require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Nil(t, resp.Error)
 				assert.Equal(t, uint64(0), uint64(resp.Result.Data))
 			})
@@ -1069,7 +1071,7 @@ func TestMethod(t *testing.T) {
 				}`, method, numberToName(app)))
 
 				resp := testRPCResponse[hex64]{}
-				require.NoError(t, json.Unmarshal(body, &resp))
+				require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Nil(t, resp.Error)
 				expected := uint64(2)
 				if method == "cartesi_getPendingExecutableOutputCount" {
@@ -1105,7 +1107,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), reportIndex))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid report index: expected hex encoded value", resp.Error.Message)
 		})
@@ -1137,7 +1139,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(rnr)))
 
 			resp := testRPCResponse[*model.Report]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Report not found", resp.Error.Message)
 		})
@@ -1159,7 +1161,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr), hexutil.EncodeUint64(0)))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -1206,7 +1208,7 @@ func TestMethod(t *testing.T) {
 			}
 
 			resp := testRPCResponse[Result]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, inr, uint64(resp.Result.Data.InputIndex))
 			assert.Equal(t, onr, uint64(resp.Result.Data.Index))
 		})
@@ -1235,7 +1237,7 @@ func TestMethod(t *testing.T) {
 				}`, 0, 0, false))
 
 			resp := testRPCResponse[[]model.Application]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
@@ -1259,12 +1261,12 @@ func TestMethod(t *testing.T) {
 				}`, 1, 0, false))
 
 			resp := testRPCResponse[[]model.Application]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 1, len(resp.Result.Data))
 			assert.Equal(t, numberToName(nr), resp.Result.Data[0].Name)
 
-			var raw testRPCResponse[[]map[string]json.RawMessage]
-			require.NoError(t, json.Unmarshal(body, &raw))
+			var raw testRPCResponse[[]map[string]jsontext.Value]
+			require.NoError(t, json.Unmarshal(body, &raw, jsonutil.Options))
 			require.Len(t, raw.Result.Data, 1)
 			require.Contains(t, raw.Result.Data[0], "iinputbox_address")
 			require.NotContains(t, raw.Result.Data[0], "data_availability")
@@ -1286,7 +1288,7 @@ func TestMethod(t *testing.T) {
 				}`, 1, 0, false))
 
 			resp := testRPCResponse[[]model.Application]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 1, len(resp.Result.Data))
 			assert.Equal(t, numberToName(nr), resp.Result.Data[0].Name)
 		})
@@ -1305,7 +1307,7 @@ func TestMethod(t *testing.T) {
 				"id": 0
 			}`))
 			resp := testRPCResponse[[]model.Application]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 1, len(resp.Result.Data))
 			assert.Equal(t, numberToName(nr), resp.Result.Data[0].Name)
 		})
@@ -1335,7 +1337,7 @@ func TestMethod(t *testing.T) {
 					}`, limit, 0, false))
 
 				resp := testRPCResponse[[]model.Application]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
@@ -1356,7 +1358,7 @@ func TestMethod(t *testing.T) {
 					}`, limit, 1, false))
 
 				resp := testRPCResponse[[]model.Application]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
@@ -1377,7 +1379,7 @@ func TestMethod(t *testing.T) {
 					}`, limit, 0, true))
 
 				resp := testRPCResponse[[]model.Application]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
@@ -1398,7 +1400,7 @@ func TestMethod(t *testing.T) {
 					}`, limit, 1, true))
 
 				resp := testRPCResponse[[]model.Application]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
@@ -1428,7 +1430,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -1449,7 +1451,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
@@ -1472,7 +1474,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid epoch status: invalid value 'INVALID' for EpochStatus enum", resp.Error.Message)
 		})
@@ -1493,7 +1495,7 @@ func TestMethod(t *testing.T) {
 			}`))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid epoch status: invalid value 'INVALID' for EpochStatus enum", resp.Error.Message)
 		})
@@ -1514,7 +1516,7 @@ func TestMethod(t *testing.T) {
 			}`))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid epoch status: expected at least one status", resp.Error.Message)
 		})
@@ -1550,7 +1552,7 @@ func TestMethod(t *testing.T) {
 			}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Nil(t, resp.Error)
 			assert.Len(t, resp.Result.Data, 2)
 			assert.Equal(t, model.EpochStatus_Closed, resp.Result.Data[0].Status)
@@ -1589,7 +1591,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(nr), limit, 0, false))
 
 				resp := testRPCResponse[[]model.Epoch]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
@@ -1611,7 +1613,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(nr), limit, 1, false))
 
 				resp := testRPCResponse[[]model.Epoch]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
@@ -1633,7 +1635,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(nr), limit, 0, true))
 
 				resp := testRPCResponse[[]model.Epoch]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
@@ -1655,7 +1657,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(nr), limit, 1, true))
 
 				resp := testRPCResponse[[]model.Epoch]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
@@ -1672,7 +1674,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 				resp := testRPCResponse[[]model.Epoch]{}
-				require.NoError(t, json.Unmarshal(body, &resp))
+				require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				require.Len(t, resp.Result.Data, 3)
 				assert.Equal(t, []uint64{2, 3, 4}, []uint64{
 					resp.Result.Data[0].Index, resp.Result.Data[1].Index, resp.Result.Data[2].Index,
@@ -1701,7 +1703,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -1722,7 +1724,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
@@ -1772,14 +1774,14 @@ func TestMethod(t *testing.T) {
 				"id": 0
 				}`, numberToName(app), txHash.Hex()))
 
-			resp := testRPCResponse[[]map[string]json.RawMessage]{}
-			require.NoError(t, json.Unmarshal(body, &resp))
+			resp := testRPCResponse[[]map[string]jsontext.Value]{}
+			require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			require.Nil(t, resp.Error)
 			require.Len(t, resp.Result.Data, 2)
 
 			var index0, index1 hex64
-			require.NoError(t, json.Unmarshal(resp.Result.Data[0]["index"], &index0))
-			require.NoError(t, json.Unmarshal(resp.Result.Data[1]["index"], &index1))
+			require.NoError(t, json.Unmarshal(resp.Result.Data[0]["index"], &index0, jsonutil.Options))
+			require.NoError(t, json.Unmarshal(resp.Result.Data[1]["index"], &index1, jsonutil.Options))
 			assert.Equal(t, uint64(0), uint64(index0))
 			assert.Equal(t, uint64(2), uint64(index1))
 
@@ -1799,8 +1801,8 @@ func TestMethod(t *testing.T) {
 				"params": {"application": "%v", "from": "0x1", "to": "0x2"},
 				"id": 0
 			}`, numberToName(app)))
-			resp = testRPCResponse[[]map[string]json.RawMessage]{}
-			require.NoError(t, json.Unmarshal(body, &resp))
+			resp = testRPCResponse[[]map[string]jsontext.Value]{}
+			require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			require.Len(t, resp.Result.Data, 2)
 			assert.JSONEq(t, `"0x1"`, string(resp.Result.Data[0]["index"]))
 			assert.JSONEq(t, `"0x2"`, string(resp.Result.Data[1]["index"]))
@@ -1827,7 +1829,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(nr), malformed))
 
 				resp := testRPCResponse[[]model.Input]{}
-				require.NoError(t, json.Unmarshal(body, &resp))
+				require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				require.NotNil(t, resp.Error, "expected error for %q", malformed)
 				assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			}
@@ -1854,7 +1856,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -1875,7 +1877,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
@@ -1913,7 +1915,7 @@ func TestMethod(t *testing.T) {
 				Index      hex64  `json:"index"`
 				RawData    string `json:"raw_data"` // hex encoded
 
-				DecodedData *api.DecodedData `json:"decoded_data,omitempty"`
+				DecodedData *api.DecodedData `json:"decoded_data,omitzero"`
 
 				// ... (ignore the rest of fields for test
 			}
@@ -1932,7 +1934,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, false))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
@@ -1954,7 +1956,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, false))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
@@ -1976,7 +1978,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, true))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
@@ -1998,7 +2000,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, true))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
@@ -2015,7 +2017,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app)))
 
 				resp := testRPCResponse[[]Result]{}
-				require.NoError(t, json.Unmarshal(body, &resp))
+				require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				require.Len(t, resp.Result.Data, 3)
 				for i, expected := range []uint64{2, 3, 4} {
 					assert.Equal(t, expected, uint64(resp.Result.Data[i].Index))
@@ -2057,7 +2059,7 @@ func TestMethod(t *testing.T) {
 			}`, numberToName(app)))
 
 			resp := testRPCResponse[[]model.Output]{}
-			require.NoError(t, json.Unmarshal(body, &resp))
+			require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			require.Nil(t, resp.Error)
 			require.Len(t, resp.Result.Data, 1)
 			assert.Equal(t, uint64(3), resp.Result.Data[0].Index)
@@ -2084,7 +2086,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -2105,7 +2107,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Epoch]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
@@ -2160,7 +2162,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, false))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
@@ -2182,7 +2184,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, false))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
@@ -2204,7 +2206,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, true))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
@@ -2226,7 +2228,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, true))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
@@ -2243,7 +2245,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app)))
 
 				resp := testRPCResponse[[]Result]{}
-				require.NoError(t, json.Unmarshal(body, &resp))
+				require.NoError(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				require.Len(t, resp.Result.Data, 3)
 				for i, expected := range []uint64{2, 3, 4} {
 					assert.Equal(t, expected, uint64(resp.Result.Data[i].Index))
@@ -2277,7 +2279,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), address))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid tournament address: invalid address '0'", resp.Error.Message)
 		})
@@ -2317,7 +2319,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), wrong))
 
 			resp := testRPCResponse[*model.Tournament]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Tournament not found", resp.Error.Message)
 		})
@@ -2339,7 +2341,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr), 0))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -2392,7 +2394,7 @@ func TestMethod(t *testing.T) {
 			}
 
 			resp := testRPCResponse[Result]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, hex64(enr), resp.Result.Data.EpochIndex)
 		})
 	})
@@ -2417,7 +2419,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Tournament]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -2438,7 +2440,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Tournament]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
@@ -2465,7 +2467,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Contains(t, resp.Error.Message, "Invalid parent tournament address")
 		})
@@ -2490,7 +2492,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Contains(t, resp.Error.Message, "Invalid parent match ID hash")
 		})
@@ -2536,7 +2538,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, false))
 
 				resp := testRPCResponse[[]listTournamentsResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
@@ -2558,7 +2560,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, false))
 
 				resp := testRPCResponse[[]listTournamentsResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
@@ -2580,7 +2582,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, true))
 
 				resp := testRPCResponse[[]listTournamentsResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
@@ -2602,7 +2604,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, true))
 
 				resp := testRPCResponse[[]listTournamentsResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
@@ -2637,7 +2639,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), nr))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid epoch index: expected hex encoded value", resp.Error.Message)
 		})
@@ -2671,7 +2673,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(nr+1), 0, 0))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Commitment not found", resp.Error.Message)
 		})
@@ -2695,7 +2697,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr), hexutil.EncodeUint64(0), 0, 0))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -2746,7 +2748,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(nr), address, commitment))
 
 			resp := testRPCResponse[getCommitmentResult]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, hex64(nr), resp.Result.Data.EpochIndex)
 		})
 	})
@@ -2776,7 +2778,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), nr))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid epoch index: expected hex encoded value", resp.Error.Message)
 		})
@@ -2810,7 +2812,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(nr+1), 0, 0))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Match not found", resp.Error.Message)
 		})
@@ -2834,7 +2836,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr), hexutil.EncodeUint64(0), 0, 0))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -2896,7 +2898,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(nr), address, idHash))
 
 			resp := testRPCResponse[getMatchResult]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, idHash, resp.Result.Data.IDHash)
 			assert.Equal(t, hex64(nr), resp.Result.Data.EpochIndex)
 		})
@@ -2931,7 +2933,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), 0, nr))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 			assert.Equal(t, "Invalid log index: expected hex encoded value", resp.Error.Message)
 		})
@@ -2967,7 +2969,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), 0))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Match advanced not found", resp.Error.Message)
 		})
@@ -2993,7 +2995,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr), 0))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -3068,7 +3070,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), nr, address.Hex(), idHash.Hex(), advance.TxHash.Hex(), advance.LogIndex))
 
 			resp := testRPCResponse[getMatchAdvancedResult]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, idHash, resp.Result.Data.IDHash)
 			assert.Equal(t, hex64(nr), resp.Result.Data.EpochIndex)
 			assert.Equal(t, advance.TxHash, resp.Result.Data.TxHash)
@@ -3095,7 +3097,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Match]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -3116,7 +3118,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Match]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
@@ -3188,7 +3190,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, false))
 
 				resp := testRPCResponse[[]listMatchesResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
@@ -3210,7 +3212,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, false))
 
 				resp := testRPCResponse[[]listMatchesResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
@@ -3232,7 +3234,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, true))
 
 				resp := testRPCResponse[[]listMatchesResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
@@ -3254,7 +3256,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, true))
 
 				resp := testRPCResponse[[]listMatchesResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
@@ -3290,7 +3292,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app+1), hexutil.EncodeUint64(nr), 0, 0))
 
 			resp := testRPCResponse[[]listMatchesResult]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -3317,7 +3319,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(nr), 0, 0))
 
 			resp := testRPCResponse[[]listMatchesResult]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
@@ -3399,7 +3401,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), enr, tournamentAddress, idHash, limit, 0, false))
 
 				resp := testRPCResponse[[]listMatchAdvancedResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
@@ -3424,7 +3426,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), enr, tournamentAddress, idHash, limit, 1, false))
 
 				resp := testRPCResponse[[]listMatchAdvancedResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
@@ -3449,7 +3451,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), enr, tournamentAddress, idHash, limit, 0, true))
 
 				resp := testRPCResponse[[]listMatchAdvancedResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
@@ -3474,7 +3476,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), enr, tournamentAddress, idHash, limit, 1, true))
 
 				resp := testRPCResponse[[]listMatchAdvancedResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
@@ -3510,7 +3512,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app+1), hexutil.EncodeUint64(nr), 0, 0))
 
 			resp := testRPCResponse[[]listCommitmentResult]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -3531,7 +3533,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]listCommitmentResult]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
 
@@ -3588,7 +3590,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, false))
 
 				resp := testRPCResponse[[]listCommitmentResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i
@@ -3610,7 +3612,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, false))
 
 				resp := testRPCResponse[[]listCommitmentResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := i + 1
@@ -3632,7 +3634,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, true))
 
 				resp := testRPCResponse[[]listCommitmentResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 1
@@ -3654,7 +3656,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, true))
 
 				resp := testRPCResponse[[]listCommitmentResult]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					nr := many - i - 2
@@ -3687,7 +3689,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), "not-hex"))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 		})
 
@@ -3712,7 +3714,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(0)))
 
 			resp := testRPCResponse[*model.Withdrawal]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -3738,7 +3740,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), hexutil.EncodeUint64(99)))
 
 			resp := testRPCResponse[*model.Withdrawal]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_RESOURCE_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Withdrawal not found", resp.Error.Message)
 		})
@@ -3781,7 +3783,7 @@ func TestMethod(t *testing.T) {
 				LogIndex        hex64       `json:"log_index"`
 			}
 			resp := testRPCResponse[Result]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Nil(t, resp.Error)
 			assert.Equal(t, w.AccountIndex, uint64(resp.Result.Data.AccountIndex))
 			assert.Equal(t, "0x"+common.Bytes2Hex(w.Account), resp.Result.Data.Account)
@@ -3812,7 +3814,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Withdrawal]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_APPLICATION_NOT_FOUND, resp.Error.Code)
 			assert.Equal(t, "Application not found", resp.Error.Message)
 		})
@@ -3833,7 +3835,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(nr)))
 
 			resp := testRPCResponse[[]model.Withdrawal]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Nil(t, resp.Error)
 			assert.Equal(t, 0, len(resp.Result.Data))
 		})
@@ -3857,7 +3859,7 @@ func TestMethod(t *testing.T) {
 				}`, numberToName(app), "not-hex"))
 
 			resp := testRPCResponse[any]{}
-			assert.Nil(t, json.Unmarshal(body, &resp))
+			assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 			assert.Equal(t, JSONRPC_INVALID_PARAMS, resp.Error.Code)
 		})
 
@@ -3902,7 +3904,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, false))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					assert.Equal(t, i, uint64(resp.Result.Data[i].AccountIndex))
@@ -3923,7 +3925,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 1, false))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					assert.Equal(t, i+1, uint64(resp.Result.Data[i].AccountIndex))
@@ -3944,7 +3946,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), limit, 0, true))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, limit, uint64(len(resp.Result.Data)))
 				for i := range limit {
 					assert.Equal(t, many-i-1, uint64(resp.Result.Data[i].AccountIndex))
@@ -3963,7 +3965,7 @@ func TestMethod(t *testing.T) {
 					}`, numberToName(app), hexutil.EncodeUint64(3)))
 
 				resp := testRPCResponse[[]Result]{}
-				assert.Nil(t, json.Unmarshal(body, &resp))
+				assert.Nil(t, json.Unmarshal(body, &resp, jsonutil.Options))
 				assert.Equal(t, 1, len(resp.Result.Data))
 				assert.Equal(t, uint64(3), uint64(resp.Result.Data[0].AccountIndex))
 			}
@@ -3999,18 +4001,18 @@ func TestMethod(t *testing.T) {
 			} else {
 				params["limit"], params["offset"], params["descending"] = 1, 1, false
 			}
-			request, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": params, "id": 0})
+			request, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": params, "id": 0}, jsonutil.Options)
 			require.NoError(t, err)
 			body := s.doRequest(t, 0, request)
 			if method == "cartesi_getBondEvent" {
 				var response testRPCResponse[model.BondEvent]
-				require.NoError(t, json.Unmarshal(body, &response))
+				require.NoError(t, json.Unmarshal(body, &response, jsonutil.Options))
 				require.Nil(t, response.Error)
 				require.Equal(t, second.LogIndex, response.Result.Data.LogIndex)
 				require.Equal(t, second.Refund, response.Result.Data.Refund)
 			} else {
 				var response testRPCResponse[[]model.BondEvent]
-				require.NoError(t, json.Unmarshal(body, &response))
+				require.NoError(t, json.Unmarshal(body, &response, jsonutil.Options))
 				require.Nil(t, response.Error)
 				require.Len(t, response.Result.Data, 1)
 				require.Equal(t, second.LogIndex, response.Result.Data[0].LogIndex)
@@ -4072,7 +4074,7 @@ func TestMethod(t *testing.T) {
 	require.NoError(t, err)
 
 	var schema jsonrpcSchema
-	err = json.Unmarshal(data, &schema)
+	err = json.Unmarshal(data, &schema, jsonutil.Options)
 	require.NoError(t, err)
 
 	allMethods := make(map[string]bool)
@@ -4236,7 +4238,7 @@ func TestRequestMethodIsInfoLogged(t *testing.T) {
 	var methodLogs int
 	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
 		var record map[string]any
-		require.NoError(t, json.Unmarshal([]byte(line), &record))
+		require.NoError(t, json.Unmarshal([]byte(line), &record, jsonutil.Options))
 		if record["method"] == truncatedMethod(method) {
 			require.Equal(t, "INFO", record["level"])
 			methodLogs++

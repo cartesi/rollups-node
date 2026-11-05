@@ -5,17 +5,19 @@ package jsonrpc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"log/slog"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/cartesi/rollups-node/internal/evmreader"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/stretchr/testify/require"
 )
 
 type savedConfigRepository struct {
@@ -76,7 +78,7 @@ func TestNodeInfoAndChainIDValidateSavedConfig(t *testing.T) {
 					return
 				}
 				require.NoError(t, err)
-				encoded, err := json.Marshal(result)
+				encoded, err := json.Marshal(result, jsonutil.Options)
 				require.NoError(t, err)
 				require.Contains(t, string(encoded), "0x7a69")
 			})

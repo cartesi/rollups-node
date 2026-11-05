@@ -10,7 +10,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"net"
@@ -22,6 +23,7 @@ import (
 	"syscall"
 
 	"github.com/cartesi/rollups-node/internal/errutil"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 // Validate accepts HTTP(S) endpoints with a DNS name or IP address. Its errors never
@@ -187,7 +189,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		resp.Header.Del("Transfer-Encoding")
 		resp.Header.Del("Content-Encoding")
 		contentType := "text/plain; charset=utf-8"
-		if json.Valid(body) {
+		if jsontext.Value(body).IsValid(jsonutil.Options) {
 			contentType = "application/json"
 		}
 		resp.Header.Set("Content-Type", contentType)
@@ -255,7 +257,7 @@ func diagnosticResponse(body []byte, allowedErrorMessages []string) []byte {
 			Code *int `json:"code"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(body, &input) == nil && input.Error != nil && input.Error.Code != nil {
+	if json.Unmarshal(body, &input, jsonutil.Options) == nil && input.Error != nil && input.Error.Code != nil {
 		response := struct {
 			JSONRPC string `json:"jsonrpc"`
 			Error   struct {
@@ -265,7 +267,7 @@ func diagnosticResponse(body []byte, allowedErrorMessages []string) []byte {
 		}{JSONRPC: "2.0"}
 		response.Error.Code = *input.Error.Code
 		response.Error.Message = rpcMessage
-		encoded, _ := json.Marshal(response) // Integers and strings cannot fail to marshal.
+		encoded, _ := json.Marshal(response, jsonutil.Options) // Integers and strings cannot fail to marshal.
 		return encoded
 	}
 	if rpcMessage == nonceLowMessage {

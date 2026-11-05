@@ -9,7 +9,8 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io/fs"
 	"log"
@@ -18,6 +19,8 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 const rollupsContractsPath = "../../rollups-contracts/"
@@ -153,9 +156,9 @@ func readFilesFromDir(files map[string]bool) map[string][]byte {
 // Get the .abi key from the json
 func getAbi(rawJson []byte) []byte {
 	var contents struct {
-		Abi json.RawMessage `json:"abi"`
+		Abi jsontext.Value `json:"abi"`
 	}
-	err := json.Unmarshal(rawJson, &contents)
+	err := json.Unmarshal(rawJson, &contents, jsonutil.Options)
 	checkErr("decode json", err)
 	return contents.Abi
 }

@@ -6,7 +6,7 @@ package cli
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"math/big"
@@ -18,6 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 type transactionRPC struct {
@@ -249,7 +251,7 @@ func TestWriteTransactionResult(t *testing.T) {
 			require.Empty(t, stderr.String())
 			if asJSON {
 				var result map[string]string
-				require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+				require.NoError(t, json.Unmarshal(stdout.Bytes(), &result, jsonutil.Options))
 				require.NotContains(t, result, "block_number")
 			}
 			cmd.SetOut(failingTransactionWriter{})

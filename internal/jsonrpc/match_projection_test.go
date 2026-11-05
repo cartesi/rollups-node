@@ -5,16 +5,19 @@ package jsonrpc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
-	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 )
 
 type matchProjectionRepository struct {
@@ -41,17 +44,17 @@ func TestMatchDeletionTransactionProjection(t *testing.T) {
 				match.DeletionTxHash = new(common.Hash)
 			}
 			params, err := json.Marshal(api.GetMatchParams{Application: "app", EpochIndex: "0x0",
-				TournamentAddress: match.TournamentAddress.Hex(), IDHash: match.IDHash.Hex()})
+				TournamentAddress: match.TournamentAddress.Hex(), IDHash: match.IDHash.Hex()}, jsonutil.Options)
 			require.NoError(t, err)
 			s := &Service{repository: &matchProjectionRepository{match: match}}
 			response, err := handleGetMatch(s, httptest.NewRequest(http.MethodPost, "/", nil), RPCRequest{Params: params})
 			require.NoError(t, err)
-			data, err := json.Marshal(response)
+			data, err := json.Marshal(response, jsonutil.Options)
 			require.NoError(t, err)
 			var decoded struct {
-				Data map[string]json.RawMessage `json:"data"`
+				Data map[string]jsontext.Value `json:"data"`
 			}
-			require.NoError(t, json.Unmarshal(data, &decoded))
+			require.NoError(t, json.Unmarshal(data, &decoded, jsonutil.Options))
 			if deleted {
 				require.JSONEq(t, `"`+(common.Hash{}).Hex()+`"`, string(decoded.Data["deletion_tx_hash"]))
 			} else {
@@ -67,11 +70,11 @@ func TestDiscoverySchemaNullableMatchDeletionTransaction(t *testing.T) {
 	var spec struct {
 		Components struct {
 			Schemas map[string]struct {
-				Properties map[string]json.RawMessage `json:"properties"`
+				Properties map[string]jsontext.Value `json:"properties"`
 			} `json:"schemas"`
 		} `json:"components"`
 	}
-	require.NoError(t, json.Unmarshal(data, &spec))
+	require.NoError(t, json.Unmarshal(data, &spec, jsonutil.Options))
 	require.JSONEq(t, `{"oneOf":[{"$ref":"#/components/schemas/Hash"},{"type":"null"}]}`,
 		string(spec.Components.Schemas["Match"].Properties["deletion_tx_hash"]))
 }

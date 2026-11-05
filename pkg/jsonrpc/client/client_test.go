@@ -5,7 +5,8 @@ package client
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 const endpointSecret = "credential-0123456789abcdef0123456789abcdef" //nolint:gosec // Synthetic credential for leak regression tests.
@@ -36,7 +39,7 @@ func TestClientConfinesEndpointAndPreservesRequests(t *testing.T) {
 		require.Equal(t, endpointSecret, password)
 		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		var request rpcRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+		require.NoError(t, json.UnmarshalDecode(jsontext.NewDecoder(r.Body), &request, jsonutil.Options))
 		require.Equal(t, "cartesi_getApplication", request.Method)
 		ids = append(ids, request.ID)
 		w.Header().Set("Content-Type", "application/json")
@@ -137,7 +140,7 @@ func TestClientFailuresHavePublicEndpointAndNoCredentials(t *testing.T) {
 		require.Error(t, err)
 		require.NotContains(t, err.Error(), "1234567890123456789012345678901234567890")
 		require.Contains(t, err.Error(), server.URL)
-		var typeError *json.UnmarshalTypeError
+		var typeError *json.SemanticError
 		require.ErrorAs(t, err, &typeError)
 	})
 }
@@ -203,7 +206,7 @@ func TestClientConcurrentRequestsHaveDistinctIDs(t *testing.T) {
 	c := NewClient("http://example.invalid/rpc?key=" + endpointSecret)
 	c.HTTPClient = &http.Client{Transport: testTransport(func(req *http.Request) (*http.Response, error) {
 		var request rpcRequest
-		if err := json.NewDecoder(req.Body).Decode(&request); err != nil {
+		if err := json.UnmarshalDecode(jsontext.NewDecoder(req.Body), &request, jsonutil.Options); err != nil {
 			return nil, err
 		}
 		requestID := req.Header.Get("X-Request-ID")

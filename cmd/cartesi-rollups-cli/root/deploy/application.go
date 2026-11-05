@@ -5,14 +5,22 @@ package deploy
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/spf13/cobra"
+
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
@@ -22,12 +30,16 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorumfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iselfhostedapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/spf13/cobra"
 )
+
+// Keep this report's application fields flat without promoting Application's
+// custom JSON methods, which would hide the transaction in JSON v2.
+type applicationDeploymentFields model.Application
+
+type applicationDeploymentReport struct {
+	applicationDeploymentFields
+	Transaction cli.TransactionResult `json:"transaction"`
+}
 
 var (
 	applicationConsensusAddressParam string
@@ -221,9 +233,8 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		contents, err := os.ReadFile(filePath)
 		cobra.CheckErr(err)
 
-		decoder := json.NewDecoder(strings.NewReader(string(contents)))
-		decoder.DisallowUnknownFields() // Prevent unexpected fields
-		err = decoder.Decode(&application.ExecutionParameters)
+		decoder := jsontext.NewDecoder(strings.NewReader(string(contents)))
+		err = json.UnmarshalDecode(decoder, &application.ExecutionParameters, jsonutil.Options, json.RejectUnknownMembers(true))
 		cobra.CheckErr(err)
 		cobra.CheckErr(application.ExecutionParameters.Validate())
 
@@ -360,13 +371,12 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	}
 
 	if asJSONParam {
-		report := struct {
-			model.Application
-			Transaction cli.TransactionResult `json:"transaction"`
-		}{Application: application, Transaction: cli.NewTransactionResult(tx, receipt)}
-		encoder := json.NewEncoder(cmd.OutOrStdout())
-		encoder.SetIndent("", "  ")
-		cobra.CheckErr(encoder.Encode(report))
+		report := applicationDeploymentReport{
+			applicationDeploymentFields: applicationDeploymentFields(application),
+			Transaction:                 cli.NewTransactionResult(tx, receipt),
+		}
+		encoder := jsontext.NewEncoder(cmd.OutOrStdout(), jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+		cobra.CheckErr(json.MarshalEncode(encoder, report, jsonutil.Options))
 	} else {
 		cobra.CheckErr(cli.WriteTransactionResult(cmd, tx, receipt))
 		_, err := fmt.Fprint(cmd.OutOrStdout(), result)

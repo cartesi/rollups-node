@@ -8,7 +8,7 @@ package integration
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"math/big"
@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
@@ -198,7 +199,7 @@ func runRefundLifecycle(s *WithdrawalLifecycleSuite, consensus withdrawalConsens
 	var submitted struct {
 		Status string `json:"status"`
 	}
-	r.NoError(json.Unmarshal([]byte(result), &submitted))
+	r.NoError(json.Unmarshal([]byte(result), &submitted, jsonutil.Options))
 	if consensus == withdrawalConsensusQuorum {
 		r.Equal("broadcast", submitted.Status)
 	} else {
@@ -253,7 +254,7 @@ func (f *refundLifecycleFixture) exportInput(event *iinputbox.IInputBoxInputAdde
 	var response api.SingleResponse[struct {
 		RawData string `json:"raw_data"`
 	}]
-	r.NoError(json.Unmarshal([]byte(out), &response))
+	r.NoError(json.Unmarshal([]byte(out), &response, jsonutil.Options))
 	r.Equal(hexutil.Encode(event.Input), response.Data.RawData, "data.raw_data must equal the full InputAdded.input")
 	return f.inputFile("exported-input.hex", response.Data.RawData)
 }
@@ -332,7 +333,7 @@ func (f *refundLifecycleFixture) cliReceipt(out string) *types.Receipt {
 		Status             string         `json:"status"`
 		BlockNumber        string         `json:"block_number"`
 	}
-	r.NoError(json.Unmarshal([]byte(out), &result))
+	r.NoError(json.Unmarshal([]byte(out), &result, jsonutil.Options))
 	r.Equal(f.app.appAddress, result.ApplicationAddress)
 	r.NotEqual(common.Hash{}, result.TransactionHash)
 	if result.Status == "mined" {

@@ -25,7 +25,7 @@ package emulator
 import "C"
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"math"
 	"runtime"
 	"sync"
@@ -41,7 +41,7 @@ type Hash = [HashSize]byte
 // hashes for the reset-delimited uarch period corresponding to a revert root.
 // It remains opaque so collector output can be passed back without decoding and
 // re-encoding every hash.
-type RevertUarchTail json.RawMessage
+type RevertUarchTail jsontext.Value
 
 // -----------------------------------------------------------------------------
 // Machine Methods
@@ -412,7 +412,7 @@ func (m *Machine) CollectMCycleRootHashes(
 	log2McyclePeriod,
 	mcyclePhase uint64,
 	log2BundleMcycleCount int32,
-	previousPartialBundle json.RawMessage,
+	previousPartialBundle jsontext.Value,
 ) ([]byte, error) {
 	var err error
 	var result []byte

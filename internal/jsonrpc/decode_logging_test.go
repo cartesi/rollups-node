@@ -5,15 +5,16 @@ package jsonrpc
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"log/slog"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	contractinputs "github.com/cartesi/rollups-node/pkg/contracts/inputs"
 	contractoutputs "github.com/cartesi/rollups-node/pkg/contracts/outputs"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestDecodeFailuresAreAggregatedInLogs(t *testing.T) {
@@ -43,7 +44,7 @@ func TestDecodeFailuresAreAggregatedInLogs(t *testing.T) {
 	warns := map[string]map[string]any{}
 	for _, line := range bytes.Split(bytes.TrimSpace(logs.Bytes()), []byte("\n")) {
 		var record map[string]any
-		require.NoError(t, json.Unmarshal(line, &record))
+		require.NoError(t, json.Unmarshal(line, &record, jsonutil.Options))
 		switch record["level"] {
 		case "DEBUG":
 			debugCount++

@@ -4,10 +4,13 @@
 package api
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func TestListOutputsParamsStringOrList(t *testing.T) {
@@ -32,7 +35,7 @@ func TestListOutputsParamsStringOrList(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			var params ListOutputsParams
-			require.NoError(t, json.Unmarshal([]byte(test.input), &params))
+			require.NoError(t, json.Unmarshal([]byte(test.input), &params, jsonutil.Options))
 			require.NotNil(t, params.OutputType)
 			require.Equal(t, test.expected, *params.OutputType)
 		})
@@ -61,7 +64,7 @@ func TestListEpochsParamsStringOrList(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			var params ListEpochsParams
-			require.NoError(t, json.Unmarshal([]byte(test.input), &params))
+			require.NoError(t, json.Unmarshal([]byte(test.input), &params, jsonutil.Options))
 			require.NotNil(t, params.Status)
 			require.Equal(t, test.expected, *params.Status)
 		})
@@ -70,16 +73,16 @@ func TestListEpochsParamsStringOrList(t *testing.T) {
 
 func TestListOutputsParamsExecutedIsOptional(t *testing.T) {
 	var omitted ListOutputsParams
-	require.NoError(t, json.Unmarshal([]byte(`{}`), &omitted))
+	require.NoError(t, json.Unmarshal([]byte(`{}`), &omitted, jsonutil.Options))
 	require.Nil(t, omitted.Executed)
 
 	var executed ListOutputsParams
-	require.NoError(t, json.Unmarshal([]byte(`{"executed":true}`), &executed))
+	require.NoError(t, json.Unmarshal([]byte(`{"executed":true}`), &executed, jsonutil.Options))
 	require.NotNil(t, executed.Executed)
 	require.True(t, *executed.Executed)
 
 	var pending ListOutputsParams
-	require.NoError(t, json.Unmarshal([]byte(`{"executed":false}`), &pending))
+	require.NoError(t, json.Unmarshal([]byte(`{"executed":false}`), &pending, jsonutil.Options))
 	require.NotNil(t, pending.Executed)
 	require.False(t, *pending.Executed)
 }
@@ -240,10 +243,10 @@ func TestPositionalParamsDeclarationOrder(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			expected := test.newTarget()
-			require.NoError(t, json.Unmarshal([]byte(test.named), expected))
+			require.NoError(t, json.Unmarshal([]byte(test.named), expected, jsonutil.Options))
 
 			actual := test.newTarget()
-			require.NoError(t, UnmarshalParams(json.RawMessage(test.positional), actual))
+			require.NoError(t, UnmarshalParams(jsontext.Value(test.positional), actual))
 
 			require.Equal(t, expected, actual)
 		})
@@ -251,10 +254,10 @@ func TestPositionalParamsDeclarationOrder(t *testing.T) {
 }
 
 func TestUnmarshalParamsEmptyRepresentationsLeaveTargetUnchanged(t *testing.T) {
-	for name, data := range map[string]json.RawMessage{
+	for name, data := range map[string]jsontext.Value{
 		"omitted":     nil,
-		"null":        json.RawMessage(`null`),
-		"empty array": json.RawMessage(`[]`),
+		"null":        jsontext.Value(`null`),
+		"empty array": jsontext.Value(`[]`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			params := ListApplicationsParams{Limit: 7, Offset: 3, Descending: true}
@@ -268,7 +271,7 @@ func TestUnmarshalParamsEmptyRepresentationsLeaveTargetUnchanged(t *testing.T) {
 
 func TestUnmarshalParamsRejectsPositionalOverArity(t *testing.T) {
 	var params GetApplicationParams
-	err := UnmarshalParams(json.RawMessage(`["app","extra"]`), &params)
+	err := UnmarshalParams(jsontext.Value(`["app","extra"]`), &params)
 
 	require.EqualError(t, err, "error unmarshalling positional parameters, expected 1 params, got 2")
 }
@@ -281,13 +284,13 @@ func TestUnmarshalParamsPositionalOrderSkipsIgnoredJSONFields(t *testing.T) {
 	}
 
 	params := paramsWithIgnoredField{Ignored: "unchanged"}
-	require.NoError(t, UnmarshalParams(json.RawMessage(`["one","two"]`), &params))
+	require.NoError(t, UnmarshalParams(jsontext.Value(`["one","two"]`), &params))
 	require.Equal(t, paramsWithIgnoredField{
 		First:   "one",
 		Ignored: "unchanged",
 		Second:  "two",
 	}, params)
 
-	err := UnmarshalParams(json.RawMessage(`["one","two","extra"]`), &params)
+	err := UnmarshalParams(jsontext.Value(`["one","two","extra"]`), &params)
 	require.EqualError(t, err, "error unmarshalling positional parameters, expected 2 params, got 3")
 }

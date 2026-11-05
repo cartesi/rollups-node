@@ -307,14 +307,26 @@
     "updated_at": "0001-01-01T00:00:00Z"
   },
   "LeafMatchSeal/populated": {
+    "agree_state": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "divergence_position": "0x11000000000000001100000000000000110000000000000011",
+    "final_state_one": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "final_state_two": "0x1111111111111111111111111111111111111111111111111111111111111111",
     "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
     "eliminable_at": "0x11",
+    "deadline_two": "0x11",
+    "deadline_one": "0x11",
     "block_number": "0x11",
     "log_index": "0x11"
   },
   "LeafMatchSeal/zero": {
+    "agree_state": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "divergence_position": "0x0",
+    "final_state_one": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "final_state_two": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "eliminable_at": "0x0",
+    "deadline_two": "0x0",
+    "deadline_one": "0x0",
     "block_number": "0x0",
     "log_index": "0x0"
   },
@@ -326,8 +338,14 @@
     "left_of_two": "0x1111111111111111111111111111111111111111111111111111111111111111",
     "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
     "leaf_seal": {
+      "agree_state": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "divergence_position": "0x11000000000000001100000000000000110000000000000011",
+      "final_state_one": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "final_state_two": "0x1111111111111111111111111111111111111111111111111111111111111111",
       "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
       "eliminable_at": "0x11",
+      "deadline_two": "0x11",
+      "deadline_one": "0x11",
       "block_number": "0x11",
       "log_index": "0x11"
     },
@@ -362,6 +380,7 @@
     "block_number": "0x11",
     "log_index": "0x11",
     "eliminable_at": "0x11",
+    "responder_deadline": "0x11",
     "deletion_block_number": "0x11",
     "deletion_log_index": "0x11"
   },
@@ -390,6 +409,7 @@
     "block_number": "0x0",
     "log_index": "0x0",
     "eliminable_at": "0x0",
+    "responder_deadline": "0x0",
     "deletion_block_number": "0x0",
     "deletion_log_index": null
   },
@@ -404,6 +424,8 @@
     "updated_at": "2026-01-02T03:04:05Z",
     "epoch_index": "0x11",
     "eliminable_at": "0x11",
+    "responder_deadline": "0x11",
+    "current_height": "0x11",
     "block_number": "0x11",
     "log_index": "0x11"
   },
@@ -418,6 +440,8 @@
     "updated_at": "0001-01-01T00:00:00Z",
     "epoch_index": "0x0",
     "eliminable_at": "0x0",
+    "responder_deadline": "0x0",
+    "current_height": "0x0",
     "block_number": "0x0",
     "log_index": "0x0"
   },
@@ -534,6 +558,9 @@
     "parent_match_id_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
     "initial_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
     "base_cycle": "0x11000000000000001100000000000000110000000000000011",
+    "bond_value": "0x11000000000000001100000000000000110000000000000011",
+    "contested_final_state_one": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "contested_final_state_two": "0x1111111111111111111111111111111111111111111111111111111111111111",
     "kind": "fixture\u003c\u003e\u0026雪",
     "creation_event": {
       "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
@@ -577,6 +604,9 @@
     "parent_match_id_hash": null,
     "initial_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "base_cycle": "0x0",
+    "bond_value": "0x0",
+    "contested_final_state_one": null,
+    "contested_final_state_two": null,
     "kind": "",
     "creation_event": null,
     "snapshot": {

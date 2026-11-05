@@ -7,7 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -16,14 +16,15 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
-
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
 )
 
 const cliBinary = "cartesi-rollups-cli"
@@ -174,7 +175,7 @@ func deployApplicationWithConsensus(
 		IApplicationAddress string `json:"iapplication_address"`
 		IConsensusAddress   string `json:"iconsensus_address"`
 	}
-	if err := json.Unmarshal([]byte(out), &app); err != nil {
+	if err := json.Unmarshal([]byte(out), &app, jsonutil.Options); err != nil {
 		return "", "", fmt.Errorf("parse deploy output: %w", err)
 	}
 	if app.IApplicationAddress == "" || app.IConsensusAddress == "" {
@@ -210,7 +211,7 @@ func inspectApplication(ctx context.Context, appName, payload string) (*inspectR
 		return nil, fmt.Errorf("inspect %s: %w", appName, err)
 	}
 	var result inspectResult
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
+	if err := json.Unmarshal([]byte(out), &result, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("parse inspect output: %w", err)
 	}
 	return &result, nil
@@ -223,7 +224,7 @@ func sendInput(ctx context.Context, appName string, payload string) (uint64, uin
 		return 0, 0, fmt.Errorf("send: %w", err)
 	}
 	var result cli.SendResult
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
+	if err := json.Unmarshal([]byte(out), &result, jsonutil.Options); err != nil {
 		return 0, 0, fmt.Errorf("parse send output: %w", err)
 	}
 	inputIndex, err := hexutil.DecodeUint64(result.InputIndex)
@@ -244,7 +245,7 @@ func readOutputs(ctx context.Context, appName string) (*api.ListResponse[api.Dec
 		return nil, err
 	}
 	var resp api.ListResponse[api.DecodedOutput]
-	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("parse outputs: %w", err)
 	}
 	return &resp, nil
@@ -257,7 +258,7 @@ func readOutput(ctx context.Context, appName string, index uint64) (*api.Decoded
 		return nil, err
 	}
 	var resp api.SingleResponse[api.DecodedOutput]
-	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("parse output: %w", err)
 	}
 	return &resp.Data, nil
@@ -271,7 +272,7 @@ func readReports(ctx context.Context, appName string, args ...string) (*api.List
 		return nil, err
 	}
 	var resp api.ListResponse[model.Report]
-	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("parse reports: %w", err)
 	}
 	return &resp, nil
@@ -284,7 +285,7 @@ func readReport(ctx context.Context, appName string, index uint64, args ...strin
 		return nil, err
 	}
 	var resp api.SingleResponse[model.Report]
-	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("parse report: %w", err)
 	}
 	return &resp.Data, nil
@@ -297,7 +298,7 @@ func readEpoch(ctx context.Context, appName string, epochIndex uint64) (*model.E
 		return nil, err
 	}
 	var resp api.SingleResponse[model.Epoch]
-	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("parse epoch: %w", err)
 	}
 	return &resp.Data, nil
@@ -310,7 +311,7 @@ func readInput(ctx context.Context, appName string, inputIndex uint64) (*model.I
 		return nil, err
 	}
 	var resp api.SingleResponse[model.Input]
-	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("parse input: %w", err)
 	}
 	return &resp.Data, nil
@@ -323,7 +324,7 @@ func executeOutput(ctx context.Context, appName string, index uint64) (string, e
 		return "", fmt.Errorf("execute: %w", err)
 	}
 	var result cli.TransactionResult
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
+	if err := json.Unmarshal([]byte(out), &result, jsonutil.Options); err != nil {
 		return "", fmt.Errorf("parse execute output: %w", err)
 	}
 	return result.TransactionHash, nil
@@ -345,7 +346,7 @@ func readTournaments(
 		return nil, err
 	}
 	var resp api.ListResponse[model.Tournament]
-	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("parse tournaments: %w", err)
 	}
 	return &resp, nil
@@ -361,7 +362,7 @@ func readCommitments(
 		return nil, err
 	}
 	var resp api.ListResponse[model.Commitment]
-	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+	if err := json.Unmarshal([]byte(out), &resp, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("parse commitments: %w", err)
 	}
 	return &resp, nil

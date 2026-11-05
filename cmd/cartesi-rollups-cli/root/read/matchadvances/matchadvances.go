@@ -6,16 +6,17 @@ package matchadvances
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"os"
+
+	"github.com/spf13/cobra"
 
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/root/read/service"
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/jsonrpc"
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
-
-	"github.com/spf13/cobra"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 const (
@@ -106,7 +107,7 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 
 	var out bytes.Buffer
-	err = json.Indent(&out, result, "", "    ")
+	err = jsonutil.Indent(&out, result, "", "    ")
 	cobra.CheckErr(err)
 	out.WriteString("\n")
 
@@ -114,7 +115,7 @@ func run(cmd *cobra.Command, args []string) {
 	cobra.CheckErr(err)
 }
 
-func readMatchAdvances(ctx context.Context, readServ service.ReadService, args []string) (json.RawMessage, error) {
+func readMatchAdvances(ctx context.Context, readServ service.ReadService, args []string) (jsontext.Value, error) {
 	epochIndex, err := config.AsHexString(args[1])
 	if err != nil {
 		return nil, err

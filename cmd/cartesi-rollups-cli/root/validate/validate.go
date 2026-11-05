@@ -4,16 +4,18 @@
 package validate
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
-
-	"github.com/spf13/cobra"
 )
 
 var Cmd = &cobra.Command{
@@ -104,7 +106,7 @@ func run(cmd *cobra.Command, args []string) {
 
 	if asJSONParam {
 		result := cli.ValidateResult{Valid: true}
-		jsonBytes, err := json.MarshalIndent(&result, "", "  ")
+		jsonBytes, err := json.Marshal(&result, jsonutil.Options, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
 		cobra.CheckErr(err)
 		fmt.Println(string(jsonBytes))
 	} else {
