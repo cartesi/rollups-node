@@ -61,6 +61,29 @@ func writeRPCError(w io.Writer, id json.RawMessage, code int, message string) er
 }
 
 func writeRPCResult(w io.Writer, id json.RawMessage, result any) error {
+	if streamed, ok := result.(interface{ WriteJSON(io.Writer) error }); ok {
+		if _, err := io.WriteString(w, `{"jsonrpc":"2.0","result":`); err != nil {
+			return err
+		}
+		if err := streamed.WriteJSON(w); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, `,"id":`); err != nil {
+			return err
+		}
+		if len(id) == 0 {
+			id = json.RawMessage("null")
+		}
+		data, err := json.Marshal(id)
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(data); err != nil {
+			return err
+		}
+		_, err = io.WriteString(w, "}\n")
+		return err
+	}
 	resp := RPCResponse{
 		JSONRPC: "2.0",
 		Result:  result,

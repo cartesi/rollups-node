@@ -253,9 +253,11 @@ Each admitted request pins its body buffer for the full request lifetime
 The dominant JSON-RPC term is response buffering: each of the 64 admitted
 requests has a 10 MiB response budget, for up to `64 × 10 MiB = 640 MiB` of
 response buffers under saturation, or approximately 704 MiB including request
-bodies. The budget is enforced while encoding the response, after repository
-rows and decoded response objects have already been materialized; that working
-set is additional and is not bounded by the 10 MiB serialized-response limit.
+bodies. List responses are encoded one item at a time, stopping as soon as
+the response budget is exceeded, without serializing the entire list first.
+Repository rows and decoded response objects have already been materialized;
+that working set, and the temporary encoding of an individual item, are
+additional and are not bounded by the 10 MiB serialized-response limit.
 Operators should size process RAM headroom accordingly, on top of machine
 state, database connections, and other working memory.
 
