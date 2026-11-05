@@ -5,7 +5,8 @@ package jsonrpc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -19,11 +20,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
-	. "github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	. "github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 )
 
 const (
@@ -156,17 +159,17 @@ func (r *observerAPIRepository) GetMatch(context.Context, string, uint64, string
 	return r.match, r.err
 }
 
-func observerAPIRequest(t *testing.T, repo *observerAPIRepository, method string, params any) (json.RawMessage, error) {
+func observerAPIRequest(t *testing.T, repo *observerAPIRepository, method string, params any) (jsontext.Value, error) {
 	t.Helper()
 	s := &Service{repository: repo}
 	s.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-	encoded, err := json.Marshal(params)
+	encoded, err := json.Marshal(params, jsonutil.Options)
 	require.NoError(t, err)
 	result, err := jsonrpcHandlers[method](s, httptest.NewRequest(http.MethodPost, "/", nil), RPCRequest{Params: encoded})
 	if err != nil {
 		return nil, err
 	}
-	data, err := json.Marshal(result)
+	data, err := json.Marshal(result, jsonutil.Options)
 	require.NoError(t, err)
 	return data, nil
 }
@@ -281,10 +284,10 @@ func TestTournamentEventAPIListFilters(t *testing.T) {
 func TestMatchAdvanceAPIRequiresMatchScope(t *testing.T) {
 	for _, method := range []string{observerListMatchAdvancesMethod, observerGetMatchAdvanceMethod} {
 		for field, invalidValues := range map[string][]any{
-			observerApplicationKey:       {nil, json.RawMessage("null"), "", "invalid/name"},
-			observerEpochIndexKey:        {nil, json.RawMessage("null"), "", "1", observerUint64Overflow},
-			observerTournamentAddressKey: {nil, json.RawMessage("null"), "", "not-an-address"},
-			observerMatchIDKey:           {nil, json.RawMessage("null"), "", "0x01"},
+			observerApplicationKey:       {nil, jsontext.Value("null"), "", "invalid/name"},
+			observerEpochIndexKey:        {nil, jsontext.Value("null"), "", "1", observerUint64Overflow},
+			observerTournamentAddressKey: {nil, jsontext.Value("null"), "", "not-an-address"},
+			observerMatchIDKey:           {nil, jsontext.Value("null"), "", "0x01"},
 		} {
 			for _, value := range invalidValues {
 				t.Run(fmt.Sprintf("%s/%s/%v", method, field, value), func(t *testing.T) {
@@ -319,9 +322,9 @@ func TestBondEventAPIKeepsExactOutcomes(t *testing.T) {
 		})
 		require.NoError(t, err)
 		var data struct {
-			Data map[string]json.RawMessage `json:"data"`
+			Data map[string]jsontext.Value `json:"data"`
 		}
-		require.NoError(t, json.Unmarshal(response, &data))
+		require.NoError(t, json.Unmarshal(response, &data, jsonutil.Options))
 		require.Equal(t, "null", string(data.Data["recovery"]))
 		require.JSONEq(t, fmt.Sprintf(`{"recipient":%q,"value":%q,"success":%t}`,
 			repo.bond.Refund.Recipient.Hex(), "0x"+strings.Repeat("f", 64), success), string(data.Data["refund"]))
@@ -336,7 +339,7 @@ func TestBondEventAPIKeepsExactOutcomes(t *testing.T) {
 	var result struct {
 		Data BondEvent `json:"data"`
 	}
-	require.NoError(t, json.Unmarshal(response, &result))
+	require.NoError(t, json.Unmarshal(response, &result, jsonutil.Options))
 	require.Nil(t, result.Data.Refund)
 	require.Equal(t, repo.bond.Recovery, result.Data.Recovery)
 }
@@ -353,14 +356,14 @@ func TestTournamentAPISeparatesCurrentStateFromFacts(t *testing.T) {
 		api.GetTournamentParams{Application: observerTestApplication, Address: address.Hex()})
 	require.NoError(t, err)
 	var decoded struct {
-		Data map[string]json.RawMessage `json:"data"`
+		Data map[string]jsontext.Value `json:"data"`
 	}
-	require.NoError(t, json.Unmarshal(response, &decoded))
+	require.NoError(t, json.Unmarshal(response, &decoded, jsonutil.Options))
 	for _, field := range []string{"winner_commitment", "final_state_hash", "finished_at_block"} {
 		require.NotContains(t, decoded.Data, field, "current result must not have a duplicate top-level field")
 	}
-	var snapshot map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(decoded.Data["snapshot"], &snapshot))
+	var snapshot map[string]jsontext.Value
+	require.NoError(t, json.Unmarshal(decoded.Data["snapshot"], &snapshot, jsonutil.Options))
 	require.Equal(t, `"0x64"`, string(snapshot["as_of_block"]))
 	require.Equal(t, `"`+candidate.Hex()+`"`, string(snapshot["candidate"]))
 	require.Equal(t, "null", string(snapshot["winner_commitment"]))
@@ -396,7 +399,7 @@ func TestMatchAPIPreservesPhasePayloads(t *testing.T) {
 					Snapshot MatchSnapshot `json:"snapshot"`
 				} `json:"data"`
 			}
-			require.NoError(t, json.Unmarshal(response, &result))
+			require.NoError(t, json.Unmarshal(response, &result, jsonutil.Options))
 			require.Equal(t, match.Snapshot, result.Data.Snapshot)
 		})
 	}
@@ -412,7 +415,7 @@ func TestCommitmentAPIKeepsOriginalSubmitterAfterRecovery(t *testing.T) {
 	var decoded struct {
 		Data Commitment `json:"data"`
 	}
-	require.NoError(t, json.Unmarshal(response, &decoded))
+	require.NoError(t, json.Unmarshal(response, &decoded, jsonutil.Options))
 	require.Equal(t, commitment.SubmitterAddress, decoded.Data.SubmitterAddress)
 	require.Equal(t, commitment.FinalStateHash, decoded.Data.FinalStateHash)
 	require.Equal(t, common.Address{}, decoded.Data.Snapshot.Claimer)
@@ -426,7 +429,7 @@ func TestMatchAdvanceAPIKeepsFullWidthPosition(t *testing.T) {
 		IDHash: common.HexToHash("0x34"), OtherParent: common.HexToHash("0x56"), LeftNode: common.HexToHash("0x78"),
 		BlockNumber: 100, TxHash: common.HexToHash("0x90"), SegmentStartPosition: position, EliminableAt: 300, LogIndex: 4,
 		CurrentHeight: 1, ResponderDeadline: 211}
-	expected, err := json.Marshal(advance)
+	expected, err := json.Marshal(advance, jsonutil.Options)
 	require.NoError(t, err)
 	for _, method := range []string{observerGetMatchAdvanceMethod, observerListMatchAdvancesMethod} {
 		t.Run(method, func(t *testing.T) {
@@ -438,12 +441,12 @@ func TestMatchAdvanceAPIKeepsFullWidthPosition(t *testing.T) {
 			response, err := observerAPIRequest(t, &observerAPIRepository{advance: advance}, method, params)
 			require.NoError(t, err)
 			var result struct {
-				Data json.RawMessage `json:"data"`
+				Data jsontext.Value `json:"data"`
 			}
-			require.NoError(t, json.Unmarshal(response, &result))
+			require.NoError(t, json.Unmarshal(response, &result, jsonutil.Options))
 			if method == observerListMatchAdvancesMethod {
-				var records []json.RawMessage
-				require.NoError(t, json.Unmarshal(result.Data, &records))
+				var records []jsontext.Value
+				require.NoError(t, json.Unmarshal(result.Data, &records, jsonutil.Options))
 				require.Len(t, records, 1)
 				result.Data = records[0]
 			}
@@ -456,7 +459,7 @@ func TestMatchAdvanceAPIKeepsFullWidthPosition(t *testing.T) {
 				LogIndex          string      `json:"log_index"`
 				TxHash            common.Hash `json:"tx_hash"`
 			}
-			require.NoError(t, json.Unmarshal(result.Data, &decoded))
+			require.NoError(t, json.Unmarshal(result.Data, &decoded, jsonutil.Options))
 			require.Equal(t, position, decoded.Position)
 			require.Equal(t, "0x1", decoded.Height)
 			require.Equal(t, "0xd3", decoded.ResponderDeadline)
@@ -479,10 +482,10 @@ func TestDiscoverySchemaPassiveObserver(t *testing.T) {
 			} `json:"params"`
 		} `json:"methods"`
 		Components struct {
-			Schemas map[string]json.RawMessage `json:"schemas"`
+			Schemas map[string]jsontext.Value `json:"schemas"`
 		} `json:"components"`
 	}
-	require.NoError(t, json.Unmarshal(data, &spec))
+	require.NoError(t, json.Unmarshal(data, &spec, jsonutil.Options))
 	expected := map[string][]string{
 		observerGetBondEventMethod: {observerApplicationKey, observerTxHashKey, observerLogIndexKey},
 		observerListBondEventsMethod: {
@@ -519,7 +522,7 @@ func TestDiscoverySchemaPassiveObserver(t *testing.T) {
 	var wide struct {
 		Pattern string `json:"pattern"`
 	}
-	require.NoError(t, json.Unmarshal(spec.Components.Schemas["Uint256"], &wide))
+	require.NoError(t, json.Unmarshal(spec.Components.Schemas["Uint256"], &wide, jsonutil.Options))
 	pattern, err := regexp.Compile(wide.Pattern)
 	require.NoError(t, err)
 	for _, valid := range []string{"0x0", "0x1", observerUint64Overflow, "0x" + strings.Repeat("f", 64)} {
@@ -530,9 +533,9 @@ func TestDiscoverySchemaPassiveObserver(t *testing.T) {
 	}
 	for _, name := range []string{"Tournament", "Commitment", "Match"} {
 		var schema struct {
-			Properties map[string]json.RawMessage `json:"properties"`
+			Properties map[string]jsontext.Value `json:"properties"`
 		}
-		require.NoError(t, json.Unmarshal(spec.Components.Schemas[name], &schema))
+		require.NoError(t, json.Unmarshal(spec.Components.Schemas[name], &schema, jsonutil.Options))
 		require.Contains(t, schema.Properties, "snapshot")
 		if name == "Tournament" {
 			require.NotContains(t, schema.Properties, "winner_commitment")
@@ -568,7 +571,7 @@ func TestStandingChangesScopeAndPagination(t *testing.T) {
 			require.True(t, repo.descending)
 			require.Zero(t, repo.appLookups, "nonempty results need no application lookup")
 			var decoded api.ListResponse[*StandingChanged]
-			require.NoError(t, json.Unmarshal(response, &decoded))
+			require.NoError(t, json.Unmarshal(response, &decoded, jsonutil.Options))
 			require.Equal(t, api.Pagination{TotalCount: 29, Limit: test.wantLimit, Offset: math.MaxInt64}, decoded.Pagination)
 
 			params = map[string]string{observerApplicationKey: observerTestApplication, observerEpochIndexKey: test.epoch,
@@ -702,17 +705,17 @@ func TestStandingChangesWireFacts(t *testing.T) {
 		response, err := observerAPIRequest(t, repo, method, params)
 		require.NoError(t, err)
 		var envelope struct {
-			Data json.RawMessage `json:"data"`
+			Data jsontext.Value `json:"data"`
 		}
-		require.NoError(t, json.Unmarshal(response, &envelope))
+		require.NoError(t, json.Unmarshal(response, &envelope, jsonutil.Options))
 		if method == observerListStandingChangesMethod {
-			var rows []json.RawMessage
-			require.NoError(t, json.Unmarshal(envelope.Data, &rows))
+			var rows []jsontext.Value
+			require.NoError(t, json.Unmarshal(envelope.Data, &rows, jsonutil.Options))
 			require.Len(t, rows, 1)
 			envelope.Data = rows[0]
 		}
-		var fields map[string]json.RawMessage
-		require.NoError(t, json.Unmarshal(envelope.Data, &fields))
+		var fields map[string]jsontext.Value
+		require.NoError(t, json.Unmarshal(envelope.Data, &fields, jsonutil.Options))
 		require.Len(t, fields, 12)
 		for key, want := range map[string]string{
 			observerEpochIndexKey: `"0x7"`, "match_count": `"0x100000000000000000000000000000000000000000000000000"`,
@@ -754,12 +757,12 @@ func TestAlpha6TournamentAndSealWireFacts(t *testing.T) {
 			api.GetTournamentParams{Application: observerTestApplication, Address: common.HexToAddress("0x12").Hex()})
 		require.NoError(t, err)
 		var result struct {
-			Data map[string]json.RawMessage `json:"data"`
+			Data map[string]jsontext.Value `json:"data"`
 		}
-		require.NoError(t, json.Unmarshal(response, &result))
+		require.NoError(t, json.Unmarshal(response, &result, jsonutil.Options))
 		require.Equal(t, `"0x100000000000000000000000000000000000000000000000000"`, string(result.Data["bond_value"]))
-		var creation map[string]json.RawMessage
-		require.NoError(t, json.Unmarshal(result.Data["creation_event"], &creation))
+		var creation map[string]jsontext.Value
+		require.NoError(t, json.Unmarshal(result.Data["creation_event"], &creation, jsonutil.Options))
 		if child {
 			require.Equal(t, `"0x7"`, string(creation["block_number"]))
 			require.Equal(t, `"0x0"`, string(creation[observerLogIndexKey]))
@@ -780,20 +783,20 @@ func TestAlpha6TournamentAndSealWireFacts(t *testing.T) {
 			TournamentAddress: common.HexToAddress("0x12").Hex(), IDHash: common.HexToHash("0x44").Hex()})
 	require.NoError(t, err)
 	var result struct {
-		Data map[string]json.RawMessage `json:"data"`
+		Data map[string]jsontext.Value `json:"data"`
 	}
-	require.NoError(t, json.Unmarshal(response, &result))
+	require.NoError(t, json.Unmarshal(response, &result, jsonutil.Options))
 	require.Equal(t, `"0xd3"`, string(result.Data["responder_deadline"]))
-	var seal map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(result.Data["leaf_seal"], &seal))
+	var seal map[string]jsontext.Value
+	require.NoError(t, json.Unmarshal(result.Data["leaf_seal"], &seal, jsonutil.Options))
 	for key, want := range map[string]string{"agree_state": `"` + common.HexToHash("0x11").Hex() + `"`,
 		"divergence_position": `"0x100000000000000000000000000000000000000000000000000"`,
 		"final_state_one":     `"` + common.HexToHash("0x22").Hex() + `"`, "final_state_two": `"` + common.HexToHash("0x33").Hex() + `"`,
 		"deadline_one": `"0x12d"`, "deadline_two": `"0x1fd"`, "eliminable_at": `"0x1fd"`, observerLogIndexKey: `"0x0"`} {
 		require.Equal(t, want, string(seal[key]), key)
 	}
-	var snapshot map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(result.Data["snapshot"], &snapshot))
+	var snapshot map[string]jsontext.Value
+	require.NoError(t, json.Unmarshal(result.Data["snapshot"], &snapshot, jsonutil.Options))
 	require.Equal(t, obsNullJSON, string(snapshot["sealed"]), "deletion must not erase the durable leaf-seal facts")
 }
 
@@ -833,7 +836,7 @@ func TestAlpha6DiscoveryContract(t *testing.T) {
 			} `json:"errors"`
 		} `json:"components"`
 	}
-	require.NoError(t, json.Unmarshal(data, &spec))
+	require.NoError(t, json.Unmarshal(data, &spec, jsonutil.Options))
 	for _, methodName := range []string{observerListStandingChangesMethod, observerGetStandingChangeMethod} {
 		found := false
 		for _, method := range spec.Methods {

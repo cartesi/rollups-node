@@ -6,7 +6,8 @@ package execute
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 )
 
@@ -227,12 +229,11 @@ func loadOutputProof(path string) ([]byte, [][32]byte, error) {
 		RawData              string   `json:"raw_data"`
 		OutputHashesSiblings []string `json:"output_hashes_siblings"`
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&data); err != nil {
+	decoder := jsontext.NewDecoder(bytes.NewReader(raw))
+	if err := json.UnmarshalDecode(decoder, &data, jsonutil.Options, json.RejectUnknownMembers(true)); err != nil {
 		return nil, nil, fmt.Errorf("parse output proof file: %w", err)
 	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+	if err := json.UnmarshalDecode(decoder, new(any), jsonutil.Options, json.RejectUnknownMembers(true)); !errors.Is(err, io.EOF) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("parse output proof file trailing data: %w", err)
 		}

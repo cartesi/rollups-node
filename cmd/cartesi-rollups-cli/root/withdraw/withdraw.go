@@ -6,7 +6,8 @@ package withdraw
 import (
 	"bytes"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
@@ -198,9 +200,8 @@ func run(cmd *cobra.Command, args []string) error {
 			cli.TransactionResult
 			ApplicationAddr common.Address `json:"application_address"`
 		}{TransactionResult: cli.NewTransactionResult(tx, receipt), ApplicationAddr: appAddr}
-		encoder := json.NewEncoder(cmd.OutOrStdout())
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(result)
+		encoder := jsontext.NewEncoder(cmd.OutOrStdout(), jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+		return json.MarshalEncode(encoder, result, jsonutil.Options)
 	}
 	return cli.WriteTransactionResult(cmd, tx, receipt)
 }
@@ -212,9 +213,8 @@ func loadProof(path string) ([]byte, iapplication.AccountValidityProof, error) {
 		return nil, zero, fmt.Errorf("read proof file %s: %w", path, err)
 	}
 	var aux withdrawProofJSON
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&aux); err != nil {
+	dec := jsontext.NewDecoder(bytes.NewReader(raw))
+	if err := json.UnmarshalDecode(dec, &aux, jsonutil.Options, json.RejectUnknownMembers(true)); err != nil {
 		return nil, zero, fmt.Errorf("parse proof file %s: %w", path, err)
 	}
 

@@ -4,24 +4,26 @@
 package send
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"math/big"
 	"os"
 	"strings"
 
-	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
-	"github.com/cartesi/rollups-node/internal/cli"
-	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
-	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/spf13/cobra"
+
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
+	"github.com/cartesi/rollups-node/internal/cli"
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 )
 
 var Cmd = &cobra.Command{
@@ -216,9 +218,8 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if asJSONParam {
-		encoder := json.NewEncoder(cmd.OutOrStdout())
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(result)
+		encoder := jsontext.NewEncoder(cmd.OutOrStdout(), jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+		return json.MarshalEncode(encoder, result, jsonutil.Options)
 	}
 	if receipt != nil {
 		_, err := fmt.Fprintf(cmd.OutOrStdout(), "Input sent to app at %s. Index: %s BlockNumber: %s Tx-hash: %s\n",

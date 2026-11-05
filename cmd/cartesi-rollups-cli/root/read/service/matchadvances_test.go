@@ -5,18 +5,21 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
+
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/jsonrpc/client"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
 )
 
 const invalidMatchAdvanceLogIndex = "invalid log index"
@@ -97,7 +100,7 @@ func TestRepositoryMatchAdvanceUsesScopedEventIdentity(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, called)
 	var response api.SingleResponse[*model.MatchAdvanced]
-	require.NoError(t, json.Unmarshal(result, &response))
+	require.NoError(t, json.Unmarshal(result, &response, jsonutil.Options))
 	require.Equal(t, common.HexToHash(params.TxHash), response.Data.TxHash)
 	require.Zero(t, response.Data.LogIndex)
 }
@@ -122,7 +125,7 @@ func TestRepositoryMatchAdvanceListKeepsMatchScopeAndPagination(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, called)
 	var response api.ListResponse[*model.MatchAdvanced]
-	require.NoError(t, json.Unmarshal(result, &response))
+	require.NoError(t, json.Unmarshal(result, &response, jsonutil.Options))
 	require.Equal(t, uint64(7), response.Pagination.TotalCount)
 	require.Equal(t, uint64(3), response.Pagination.Limit)
 	require.Equal(t, uint64(2), response.Pagination.Offset)
@@ -150,7 +153,7 @@ func TestJSONRPCMatchAdvanceSendsScopedParams(t *testing.T) {
 					Method string
 					Params map[string]any
 				}
-				require.NoError(t, json.NewDecoder(request.Body).Decode(&wire))
+				require.NoError(t, json.UnmarshalDecode(jsontext.NewDecoder(request.Body), &wire, jsonutil.Options))
 				require.NoError(t, request.Body.Close())
 				require.Equal(t, method, wire.Method)
 				require.Equal(t, identity.Application, wire.Params["application"])

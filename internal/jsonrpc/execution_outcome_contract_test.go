@@ -4,11 +4,14 @@
 package jsonrpc
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"testing"
 
-	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
 )
 
 func TestDiscoverySchemaExecutionOutcomeContract(t *testing.T) {
@@ -17,15 +20,15 @@ func TestDiscoverySchemaExecutionOutcomeContract(t *testing.T) {
 
 	var spec struct {
 		Components struct {
-			Schemas map[string]json.RawMessage `json:"schemas"`
+			Schemas map[string]jsontext.Value `json:"schemas"`
 		} `json:"components"`
 	}
-	require.NoError(t, json.Unmarshal(data, &spec))
+	require.NoError(t, json.Unmarshal(data, &spec, jsonutil.Options))
 
 	var completionStatus struct {
 		Enum []string `json:"enum"`
 	}
-	require.NoError(t, json.Unmarshal(spec.Components.Schemas["InputCompletionStatus"], &completionStatus))
+	require.NoError(t, json.Unmarshal(spec.Components.Schemas["InputCompletionStatus"], &completionStatus, jsonutil.Options))
 	require.Equal(t, []string{
 		"NONE",
 		"ACCEPTED",
@@ -44,7 +47,7 @@ func TestDiscoverySchemaExecutionOutcomeContract(t *testing.T) {
 	var applicationStatus struct {
 		Enum []string `json:"enum"`
 	}
-	require.NoError(t, json.Unmarshal(spec.Components.Schemas["ApplicationStatus"], &applicationStatus))
+	require.NoError(t, json.Unmarshal(spec.Components.Schemas["ApplicationStatus"], &applicationStatus, jsonutil.Options))
 	require.Equal(t, []string{
 		"OK",
 		"FAILED",
@@ -62,17 +65,17 @@ func TestDiscoverySchemaExecutionOutcomeContract(t *testing.T) {
 	}
 
 	var input struct {
-		Properties map[string]json.RawMessage `json:"properties"`
+		Properties map[string]jsontext.Value `json:"properties"`
 	}
-	require.NoError(t, json.Unmarshal(spec.Components.Schemas["Input"], &input))
+	require.NoError(t, json.Unmarshal(spec.Components.Schemas["Input"], &input, jsonutil.Options))
 	require.Contains(t, input.Properties, "exception_data")
 	require.Contains(t, input.Properties, "tx_buffer_data_block")
 	require.NotContains(t, input.Properties, "outputs_hash")
 
 	var epoch struct {
-		Properties map[string]json.RawMessage `json:"properties"`
+		Properties map[string]jsontext.Value `json:"properties"`
 	}
-	require.NoError(t, json.Unmarshal(spec.Components.Schemas["Epoch"], &epoch))
+	require.NoError(t, json.Unmarshal(spec.Components.Schemas["Epoch"], &epoch, jsonutil.Options))
 	for _, field := range []string{
 		"tx_buffer_data_block",
 		"tx_buffer_proof",
@@ -87,9 +90,9 @@ func TestDiscoverySchemaExecutionOutcomeContract(t *testing.T) {
 	require.NotContains(t, epoch.Properties, "outputs_merkle_proof")
 
 	var executionParameters struct {
-		Properties map[string]json.RawMessage `json:"properties"`
+		Properties map[string]jsontext.Value `json:"properties"`
 	}
-	require.NoError(t, json.Unmarshal(spec.Components.Schemas["ExecutionParameters"], &executionParameters))
+	require.NoError(t, json.Unmarshal(spec.Components.Schemas["ExecutionParameters"], &executionParameters, jsonutil.Options))
 	require.Contains(t, executionParameters.Properties, "advance_inc_cycles")
 	require.Contains(t, executionParameters.Properties, "inspect_inc_cycles")
 	require.Contains(t, executionParameters.Properties, "advance_max_cycles")
@@ -101,7 +104,7 @@ func TestDiscoverySchemaExecutionOutcomeContract(t *testing.T) {
 		var property struct {
 			Description string `json:"description"`
 		}
-		require.NoError(t, json.Unmarshal(executionParameters.Properties[field], &property))
+		require.NoError(t, json.Unmarshal(executionParameters.Properties[field], &property, jsonutil.Options))
 		require.Equal(t,
 			"Optional "+operation+
 				" execution delta from the starting mcycle in range 0..2^48-1; "+

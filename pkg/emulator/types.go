@@ -348,7 +348,7 @@ const (
 )
 
 type MachineRuntimeConfig struct {
-	Concurrency      *ConcurrencyRuntimeConfig `json:"concurrency,omitempty"`
+	Concurrency      *ConcurrencyRuntimeConfig `json:"concurrency,omitzero"`
 	SkipVersionCheck bool                      `json:"skip_version_check"`
 	SoftYield        bool                      `json:"soft_yield"`
 }

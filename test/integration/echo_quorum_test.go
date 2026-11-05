@@ -7,7 +7,7 @@ package integration
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"os"
@@ -16,15 +16,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 const (
@@ -433,7 +435,7 @@ func (s *EchoQuorumSuite) deployQuorumApp(prefix, dappPath string, extraApplicat
 	var quorumDeployment struct {
 		Address string `json:"address"`
 	}
-	r.NoError(json.Unmarshal([]byte(out), &quorumDeployment), "parse quorum deployment")
+	r.NoError(json.Unmarshal([]byte(out), &quorumDeployment, jsonutil.Options), "parse quorum deployment")
 	r.NotEmpty(quorumDeployment.Address, "quorum deployment missing address")
 
 	appName := uniqueAppName(prefix)

@@ -5,7 +5,7 @@ package client
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -17,9 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/pkg/service"
 )
 
 var clientRequestIDSuffix = regexp.MustCompile(` \(request_id=([^()]+)\)$`)
@@ -107,7 +108,7 @@ func TestClientEnvelopeDecodeErrorsHaveNoRawEndpoint(t *testing.T) {
 				require.Contains(t, err.Error(), "empty response")
 				require.ErrorIs(t, err, io.EOF)
 			} else {
-				var cause *json.UnmarshalTypeError
+				var cause *json.SemanticError
 				require.ErrorAs(t, err, &cause)
 			}
 		})
@@ -145,7 +146,7 @@ func TestClientLocalFailuresHaveNoRequestIDOrDispatch(t *testing.T) {
 			require.NotContains(t, err.Error(), "request_id")
 			require.NotContains(t, err.Error(), endpointSecret)
 			if test.name == "marshal" {
-				var cause *json.UnsupportedTypeError
+				var cause *json.SemanticError
 				require.ErrorAs(t, err, &cause)
 			}
 		})

@@ -4,7 +4,8 @@
 package execution
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"os"
@@ -12,11 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
-
-	"github.com/spf13/cobra"
 )
 
 var Cmd = &cobra.Command{
@@ -266,7 +268,7 @@ func runDump(cmd *cobra.Command, args []string) {
 	params, err := repo.GetExecutionParameters(ctx, app.ID)
 	cobra.CheckErr(err)
 
-	jsonData, err := json.MarshalIndent(params, "", "  ")
+	jsonData, err := json.Marshal(params, jsonutil.Options, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
 	cobra.CheckErr(err)
 	fmt.Println(string(jsonData))
 }
@@ -306,9 +308,8 @@ func runLoad(cmd *cobra.Command, args []string) {
 	}
 
 	var params model.ExecutionParameters
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields() // Prevent unexpected fields
-	err = decoder.Decode(&params)
+	decoder := jsontext.NewDecoder(strings.NewReader(string(data)))
+	err = json.UnmarshalDecode(decoder, &params, jsonutil.Options, json.RejectUnknownMembers(true))
 	cobra.CheckErr(err)
 
 	// Validate the loaded parameters

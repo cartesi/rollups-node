@@ -6,7 +6,8 @@ package integration
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,6 +17,8 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 const (
@@ -30,15 +33,15 @@ const (
 // This test-only codec has no integration build tag. Its pure tests must run
 // without TestMain starting a node or connecting to the development database.
 func patchPassiveObserverConfig(raw []byte, overrides map[string]any) ([]byte, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	var fields map[string]jsontext.Value
+	if err := json.Unmarshal(raw, &fields, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("decode passive observer config: %w", err)
 	}
 	for key, value := range overrides {
 		if _, exists := fields[key]; !exists {
 			return nil, fmt.Errorf("passive observer config is missing field %s", key)
 		}
-		encoded, err := json.Marshal(value)
+		encoded, err := json.Marshal(value, jsonutil.Options)
 		if err != nil {
 			return nil, fmt.Errorf("encode passive observer config field %s: %w", key, err)
 		}
@@ -54,7 +57,7 @@ func patchPassiveObserverConfig(raw []byte, overrides map[string]any) ([]byte, e
 		}
 		fields[passiveSignerField] = encoded
 	}
-	return json.Marshal(fields)
+	return json.Marshal(fields, jsonutil.Options)
 }
 
 func registerPassiveObserverCleanup(t *testing.T, stop, restore, restart func()) {
@@ -138,8 +141,8 @@ func TestPassiveObserverConfigPreservesOriginalAndUnrelatedFields(t *testing.T) 
 	updated, err := patchPassiveObserverConfig(raw, map[string]any{passiveDefaultBlockField: "LATEST", passiveClaimSubmissionField: false})
 	require.NoError(t, err)
 	require.Equal(t, original, raw, "cleanup must retain the original payload unchanged")
-	var fields map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(updated, &fields))
+	var fields map[string]jsontext.Value
+	require.NoError(t, json.Unmarshal(updated, &fields, jsonutil.Options))
 	require.Equal(t, `"LATEST"`, string(fields[passiveDefaultBlockField]))
 	require.Equal(t, "false", string(fields[passiveClaimSubmissionField]))
 	require.JSONEq(t, `"0x0000000000000000000000000000000000000000"`, string(fields[passiveSignerField]))

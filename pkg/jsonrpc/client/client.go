@@ -10,14 +10,17 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
 	"sync/atomic"
 
-	"github.com/cartesi/rollups-node/internal/httpclient"
 	"github.com/google/uuid"
+
+	"github.com/cartesi/rollups-node/internal/httpclient"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 // Client is a JSON-RPC 2.0 client over HTTP.
@@ -56,16 +59,16 @@ type rpcRequest struct {
 }
 
 type rpcResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *rpcError       `json:"error,omitempty"`
-	ID      uint64          `json:"id"`
+	JSONRPC string         `json:"jsonrpc"`
+	Result  jsontext.Value `json:"result,omitzero"`
+	Error   *rpcError      `json:"error,omitzero"`
+	ID      uint64         `json:"id"`
 }
 
 type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
+	Data    any    `json:"data,omitzero"`
 }
 
 func (e *rpcError) Error() string {
@@ -89,7 +92,7 @@ func (c *Client) Call(ctx context.Context, method string, params any, result any
 		Params:  params,
 		ID:      c.nextID(),
 	}
-	reqBody, err := json.Marshal(reqObj)
+	reqBody, err := json.Marshal(reqObj, jsonutil.Options)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -127,14 +130,14 @@ func (c *Client) Call(ctx context.Context, method string, params any, result any
 	}
 
 	var rpcResp rpcResponse
-	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+	if err := json.UnmarshalDecode(jsontext.NewDecoder(resp.Body), &rpcResp, jsonutil.Options); err != nil {
 		return httpclient.Diagnostic(ctx, err, "decode JSON-RPC response", endpoint)
 	}
 	if rpcResp.Error != nil {
 		return rpcResp.Error
 	}
 	if result != nil {
-		if err := json.Unmarshal(rpcResp.Result, result); err != nil {
+		if err := json.Unmarshal(rpcResp.Result, result, jsonutil.Options); err != nil {
 			return httpclient.Diagnostic(ctx, err, "decode JSON-RPC result", endpoint)
 		}
 	}

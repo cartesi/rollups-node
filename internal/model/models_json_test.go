@@ -4,12 +4,15 @@
 package model
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func TestApplicationJSONRoundtrip(t *testing.T) {
@@ -26,16 +29,16 @@ func TestApplicationJSONRoundtrip(t *testing.T) {
 		Status:              ApplicationStatus_OK,
 	}
 
-	data, err := json.Marshal(&original)
+	data, err := json.Marshal(&original, jsonutil.Options)
 	require.NoError(t, err)
 
-	var fields map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(data, &fields))
+	var fields map[string]jsontext.Value
+	require.NoError(t, json.Unmarshal(data, &fields, jsonutil.Options))
 	require.Contains(t, fields, "iinputbox_address")
 	require.NotContains(t, fields, "data_availability")
 
 	var decoded Application
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded, jsonutil.Options))
 	require.Equal(t, original, decoded)
 }
 
@@ -62,7 +65,7 @@ func TestEpochJSONRoundtrip(t *testing.T) {
 		UpdatedAt:            time.Now().Truncate(time.Microsecond).UTC(),
 	}
 
-	data, err := json.Marshal(&original)
+	data, err := json.Marshal(&original, jsonutil.Options)
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"tx_buffer_data_block"`)
 	require.Contains(t, string(data), `"tx_buffer_proof"`)
@@ -70,7 +73,7 @@ func TestEpochJSONRoundtrip(t *testing.T) {
 	require.NotContains(t, string(data), `"outputs_merkle_proof"`)
 
 	var decoded Epoch
-	err = json.Unmarshal(data, &decoded)
+	err = json.Unmarshal(data, &decoded, jsonutil.Options)
 	require.NoError(t, err)
 
 	// ApplicationID is json:"-" (DB-only FK), intentionally lost in JSON roundtrip.
@@ -182,7 +185,7 @@ func TestInputJSONRoundtrip(t *testing.T) {
 		UpdatedAt:          time.Now().Truncate(time.Microsecond).UTC(),
 	}
 
-	data, err := json.Marshal(&original)
+	data, err := json.Marshal(&original, jsonutil.Options)
 	require.NoError(t, err)
 
 	// LogIndex must be hex-encoded like the other uint64 fields.
@@ -192,7 +195,7 @@ func TestInputJSONRoundtrip(t *testing.T) {
 	require.NotContains(t, string(data), `"outputs_hash"`)
 
 	var decoded Input
-	err = json.Unmarshal(data, &decoded)
+	err = json.Unmarshal(data, &decoded, jsonutil.Options)
 	require.NoError(t, err)
 
 	// EpochApplicationID is json:"-" (DB-only FK), intentionally lost in JSON roundtrip.
@@ -211,12 +214,12 @@ func TestInputJSONRoundtrip(t *testing.T) {
 
 func TestInputJSONDistinguishesMissingAndEmptyExceptionData(t *testing.T) {
 	base := Input{}
-	data, err := json.Marshal(&base)
+	data, err := json.Marshal(&base, jsonutil.Options)
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"exception_data":null`)
 
 	base.ExceptionData = []byte{}
-	data, err = json.Marshal(&base)
+	data, err = json.Marshal(&base, jsonutil.Options)
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"exception_data":"0x"`)
 }
@@ -248,7 +251,7 @@ func TestInputUnmarshalJSONInvalidHex(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var input Input
-			err := json.Unmarshal([]byte(tt.json), &input)
+			err := json.Unmarshal([]byte(tt.json), &input, jsonutil.Options)
 			require.Error(t, err)
 			require.ErrorContains(t, err, tt.wantErr)
 		})
@@ -256,14 +259,14 @@ func TestInputUnmarshalJSONInvalidHex(t *testing.T) {
 
 	t.Run("valid minimal input", func(t *testing.T) {
 		var input Input
-		require.NoError(t, json.Unmarshal([]byte(validJSON), &input))
+		require.NoError(t, json.Unmarshal([]byte(validJSON), &input, jsonutil.Options))
 	})
 
 	// Regression: JSON without any alias-level field must return a parse error,
 	// not nil-dereference the embedded alias pointer.
 	t.Run("empty object does not panic", func(t *testing.T) {
 		var input Input
-		err := json.Unmarshal([]byte(`{}`), &input)
+		err := json.Unmarshal([]byte(`{}`), &input, jsonutil.Options)
 		require.Error(t, err)
 	})
 }
@@ -284,11 +287,11 @@ func TestOutputJSONRoundtrip(t *testing.T) {
 		UpdatedAt:                time.Now().Truncate(time.Microsecond).UTC(),
 	}
 
-	data, err := json.Marshal(&original)
+	data, err := json.Marshal(&original, jsonutil.Options)
 	require.NoError(t, err)
 
 	var decoded Output
-	err = json.Unmarshal(data, &decoded)
+	err = json.Unmarshal(data, &decoded, jsonutil.Options)
 	require.NoError(t, err)
 
 	// InputEpochApplicationID is json:"-" (DB-only FK), intentionally lost in JSON roundtrip.
@@ -313,11 +316,11 @@ func TestReportJSONRoundtrip(t *testing.T) {
 		UpdatedAt:               time.Now().Truncate(time.Microsecond).UTC(),
 	}
 
-	data, err := json.Marshal(&original)
+	data, err := json.Marshal(&original, jsonutil.Options)
 	require.NoError(t, err)
 
 	var decoded Report
-	err = json.Unmarshal(data, &decoded)
+	err = json.Unmarshal(data, &decoded, jsonutil.Options)
 	require.NoError(t, err)
 
 	// InputEpochApplicationID is json:"-" (DB-only FK), intentionally lost in JSON roundtrip.
@@ -352,11 +355,11 @@ func TestTournamentJSONRoundtrip(t *testing.T) {
 		UpdatedAt: time.Now().Truncate(time.Microsecond).UTC(),
 	}
 
-	data, err := json.Marshal(&original)
+	data, err := json.Marshal(&original, jsonutil.Options)
 	require.NoError(t, err)
 
 	var decoded Tournament
-	err = json.Unmarshal(data, &decoded)
+	err = json.Unmarshal(data, &decoded, jsonutil.Options)
 	require.NoError(t, err)
 
 	// ApplicationID is json:"-" (DB-only FK), intentionally lost in JSON roundtrip.
@@ -386,11 +389,11 @@ func TestCommitmentJSONRoundtrip(t *testing.T) {
 		UpdatedAt:         time.Now().Truncate(time.Microsecond).UTC(),
 	}
 
-	data, err := json.Marshal(&original)
+	data, err := json.Marshal(&original, jsonutil.Options)
 	require.NoError(t, err)
 
 	var decoded Commitment
-	err = json.Unmarshal(data, &decoded)
+	err = json.Unmarshal(data, &decoded, jsonutil.Options)
 	require.NoError(t, err)
 
 	// ApplicationID is json:"-" (DB-only FK), intentionally lost in JSON roundtrip.
@@ -412,11 +415,11 @@ func TestOutputJSONRoundtripZeroValues(t *testing.T) {
 		RawData:    []byte{},
 	}
 
-	data, err := json.Marshal(&original)
+	data, err := json.Marshal(&original, jsonutil.Options)
 	require.NoError(t, err)
 
 	var decoded Output
-	err = json.Unmarshal(data, &decoded)
+	err = json.Unmarshal(data, &decoded, jsonutil.Options)
 	require.NoError(t, err)
 
 	require.Equal(t, original.EpochIndex, decoded.EpochIndex)
@@ -449,7 +452,7 @@ func TestOutputUnmarshalJSONInvalidHex(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var output Output
-			err := json.Unmarshal([]byte(tt.json), &output)
+			err := json.Unmarshal([]byte(tt.json), &output, jsonutil.Options)
 			require.Error(t, err)
 			require.ErrorContains(t, err, tt.wantErr)
 		})
@@ -459,7 +462,7 @@ func TestOutputUnmarshalJSONInvalidHex(t *testing.T) {
 func TestReportUnmarshalJSONInvalidHex(t *testing.T) {
 	invalidJSON := `{"epoch_index":"0x0","input_index":"bad","index":"0x0","raw_data":"0x"}`
 	var report Report
-	err := json.Unmarshal([]byte(invalidJSON), &report)
+	err := json.Unmarshal([]byte(invalidJSON), &report, jsonutil.Options)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "InputIndex")
 }

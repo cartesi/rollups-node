@@ -5,13 +5,15 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
 
-	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	. "github.com/cartesi/rollups-node/internal/model"
 )
 
 var (
@@ -556,7 +558,7 @@ func LoadNodeConfig[T any](
 		return nil, fmt.Errorf("node config %q has no JSON value", key)
 	}
 	var val T
-	if err := json.Unmarshal(raw, &val); err != nil {
+	if err := json.Unmarshal(raw, &val, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("unmarshal node_config value failed: %w", err)
 	}
 	return &NodeConfig[T]{

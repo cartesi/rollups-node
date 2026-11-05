@@ -4,7 +4,7 @@
 package machine
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"time"
 )
 
@@ -25,7 +25,7 @@ type HashCollectorState struct {
 	MCyclePhase           uint64
 	Log2BundleMCycleCount int32
 	Hashes                []Hash
-	PartialBundle         json.RawMessage
+	PartialBundle         jsontext.Value
 	ConsoleIOError        string
 }
 

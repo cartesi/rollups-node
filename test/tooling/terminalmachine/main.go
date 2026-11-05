@@ -7,7 +7,7 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
 
@@ -128,7 +129,7 @@ func runUnexpectedYield(args []string) error {
 			"rx_buffer": map[string]any{},
 			"tx_buffer": map[string]any{},
 		},
-	})
+	}, jsonutil.Options)
 	if err != nil {
 		return fmt.Errorf("encode machine config: %w", err)
 	}

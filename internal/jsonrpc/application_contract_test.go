@@ -4,10 +4,13 @@
 package jsonrpc
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func TestDiscoverySchemaApplicationInputBox(t *testing.T) {
@@ -17,11 +20,11 @@ func TestDiscoverySchemaApplicationInputBox(t *testing.T) {
 	var spec struct {
 		Components struct {
 			Schemas map[string]struct {
-				Properties map[string]json.RawMessage `json:"properties"`
+				Properties map[string]jsontext.Value `json:"properties"`
 			} `json:"schemas"`
 		} `json:"components"`
 	}
-	require.NoError(t, json.Unmarshal(data, &spec))
+	require.NoError(t, json.Unmarshal(data, &spec, jsonutil.Options))
 
 	properties := spec.Components.Schemas["Application"].Properties
 	require.Contains(t, properties, "iinputbox_address")

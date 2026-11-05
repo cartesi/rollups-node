@@ -5,15 +5,16 @@ package model
 
 import (
 	"database/sql/driver"
-	"encoding/json"
 	"encoding/json/jsontext"
-	jsonv2 "encoding/json/v2"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"math/big"
 	"strings"
 
 	"github.com/holiman/uint256"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 // Uint256 stores a Solidity unsigned integer without narrowing its value.
@@ -75,17 +76,17 @@ func (value Uint256) Value() (driver.Value, error) {
 
 // MarshalJSON retains the byte-slice API for existing callers.
 func (value Uint256) MarshalJSON() ([]byte, error) {
-	return jsonv2.Marshal(value, json.DefaultOptionsV1())
+	return json.Marshal(value, jsonutil.Options)
 }
 
 // MarshalJSONTo streams the wire representation without a complete JSON buffer.
 func (value Uint256) MarshalJSONTo(enc *jsontext.Encoder) error {
-	return jsonv2.MarshalEncode(enc, (*uint256.Int)(&value).Hex())
+	return json.MarshalEncode(enc, (*uint256.Int)(&value).Hex())
 }
 
 func (value *Uint256) UnmarshalJSON(data []byte) error {
 	var text string
-	if err := json.Unmarshal(data, &text); err != nil {
+	if err := json.Unmarshal(data, &text, jsonutil.Options); err != nil {
 		return err
 	}
 	var parsed uint256.Int

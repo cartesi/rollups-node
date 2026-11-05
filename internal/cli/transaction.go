@@ -5,7 +5,8 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -18,6 +19,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/spf13/cobra"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 const (
@@ -179,9 +182,8 @@ func WriteTransactionResult(cmd *cobra.Command, tx *types.Transaction, receipt *
 		return err
 	}
 	if asJSON {
-		encoder := json.NewEncoder(cmd.OutOrStdout())
-		encoder.SetIndent("", "  ")
-		err = encoder.Encode(result)
+		encoder := jsontext.NewEncoder(cmd.OutOrStdout(), jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+		err = json.MarshalEncode(encoder, result, jsonutil.Options)
 	} else {
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Transaction %s: %s\n", result.Status, result.TransactionHash)
 	}

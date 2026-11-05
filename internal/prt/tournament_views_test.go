@@ -5,16 +5,14 @@ package prt
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
 	"math/big"
 	"testing"
 
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -24,19 +22,24 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 type tournamentViewRPC struct{ mock.Mock }
 
 func (m *tournamentViewRPC) Call(
-	_ context.Context, call map[string]json.RawMessage, block rpc.BlockNumber,
+	_ context.Context, call map[string]jsontext.Value, block rpc.BlockNumber,
 ) (hexutil.Bytes, error) {
 	var address common.Address
 	var input hexutil.Bytes
-	if err := json.Unmarshal(call["to"], &address); err != nil {
+	if err := json.Unmarshal(call["to"], &address, jsonutil.Options); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(call["input"], &input); err != nil {
+	if err := json.Unmarshal(call["input"], &input, jsonutil.Options); err != nil {
 		return nil, err
 	}
 	args := m.Called(address, []byte(input), block)

@@ -8,22 +8,25 @@ package integration
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/require"
+
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
 	contractoutputs "github.com/cartesi/rollups-node/pkg/contracts/outputs"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/require"
 )
 
 // TestListOutputsConcurrentResponseBudget reproduces whole-response encoder
@@ -115,7 +118,7 @@ func TestListOutputsConcurrentResponseBudget(t *testing.T) {
 					Code int `json:"code"`
 				} `json:"error"`
 			}
-			err = json.NewDecoder(http.MaxBytesReader(nil, resp.Body, 4096)).Decode(&reply)
+			err = json.UnmarshalDecode(jsontext.NewDecoder(http.MaxBytesReader(nil, resp.Body, 4096)), &reply, jsonutil.Options)
 			if err == nil && (resp.StatusCode != http.StatusOK || reply.ID != id || reply.Error == nil || reply.Error.Code != -31003) {
 				err = fmt.Errorf("request %d: expected response-size error -31003, got HTTP %d, reply %+v", id, resp.StatusCode, reply)
 			}
@@ -135,10 +138,10 @@ func TestListOutputsConcurrentResponseBudget(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	var reply struct {
-		Result json.RawMessage `json:"result"`
-		Error  json.RawMessage `json:"error"`
+		Result jsontext.Value `json:"result"`
+		Error  jsontext.Value `json:"error"`
 	}
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&reply))
+	require.NoError(t, json.UnmarshalDecode(jsontext.NewDecoder(resp.Body), &reply, jsonutil.Options))
 	require.NotEmpty(t, reply.Result)
 	require.Empty(t, reply.Error)
 }

@@ -4,11 +4,12 @@
 package config
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"slices"
 
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -37,7 +38,7 @@ func (c *PersistentChainConfig) UnmarshalJSON(data []byte) error {
 		DefaultBlock *model.DefaultBlock
 		ChainID      *uint64
 	}
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := json.Unmarshal(data, &raw, jsonutil.Options); err != nil {
 		return err
 	}
 	if raw.DefaultBlock == nil || raw.ChainID == nil {
@@ -100,14 +101,14 @@ func (c PersistentSubmitterConfig) Validate() error {
 
 func (c *PersistentSubmitterConfig) UnmarshalJSON(data []byte) error {
 	var chain PersistentChainConfig
-	if err := json.Unmarshal(data, &chain); err != nil {
+	if err := json.Unmarshal(data, &chain, jsonutil.Options); err != nil {
 		return err
 	}
 	var raw struct {
 		ClaimSubmissionEnabled *bool
 		ResolvedSignerAddress  common.Address
 	}
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := json.Unmarshal(data, &raw, jsonutil.Options); err != nil {
 		return err
 	}
 	if raw.ClaimSubmissionEnabled == nil {

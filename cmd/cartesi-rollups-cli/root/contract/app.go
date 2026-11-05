@@ -4,15 +4,18 @@
 package contract
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"os"
 
-	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/spf13/cobra"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 var appCmd = &cobra.Command{
@@ -177,9 +180,8 @@ func formatBool(b bool) string {
 }
 
 func outputJSON(v any) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
+	enc := jsontext.NewEncoder(os.Stdout, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+	return json.MarshalEncode(enc, v, jsonutil.Options)
 }
 
 // getConsensusAddress is a helper that reads the consensus address from the app contract.

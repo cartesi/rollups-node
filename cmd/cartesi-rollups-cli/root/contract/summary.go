@@ -4,18 +4,20 @@
 package contract
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"math/big"
 	"os"
 
-	"github.com/cartesi/rollups-node/pkg/contracts/iauthority"
-	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/pkg/contracts/iauthority"
+	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
+	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 )
 
 const daveConsensusContractName = "DaveConsensus"
@@ -145,7 +147,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		if cr.err != nil {
 			result.ConsensusError = cr.err.Error()
 		} else if cr.result != nil {
-			result.Consensus, _ = json.Marshal(cr.result)
+			result.Consensus, _ = json.Marshal(cr.result, jsonutil.Options)
 		}
 		if inputBoxErr != nil {
 			result.InputBoxError = inputBoxErr.Error()
