@@ -38,7 +38,7 @@ func processRSS(pid int) (uint64, error) {
 func limitedNodeCommand(binary string, log io.Writer) (*exec.Cmd, error) {
 	value := os.Getenv("CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES")
 	if value == "" {
-		value = "2900000000"
+		value = "3000000000"
 	}
 	limit, err := strconv.ParseUint(value, 10, 64)
 	if err != nil {

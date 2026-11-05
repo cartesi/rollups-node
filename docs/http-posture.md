@@ -253,11 +253,15 @@ Each admitted request pins its body buffer for the full request lifetime
 The dominant JSON-RPC term is response buffering: each of the 64 admitted
 requests has a 10 MiB response budget, for up to `64 × 10 MiB = 640 MiB` of
 response buffers under saturation, or approximately 704 MiB including request
-bodies. List responses are encoded one item at a time, stopping as soon as
-the response budget is exceeded, without serializing the entire list first.
-Repository rows and decoded response objects have already been materialized;
-that working set, and the temporary encoding of an individual item, are
-additional and are not bounded by the 10 MiB serialized-response limit.
+bodies. Responses use JSON v2 streaming encoding, so the budget can stop
+serialization before the entire result has been encoded. Custom response
+models implement `MarshalJSONTo`, including decoded inputs and outputs, so
+encoding does not build and merge intermediate JSON objects. Repository rows
+and decoded response objects have already been materialized; that working
+set, field conversions, external field encoders, and the encoder's streaming
+buffer are additional and are not bounded by the 10 MiB serialized-response
+limit. The response budget limits buffer length; capacity growth can allocate
+more memory temporarily, so the figures above are not hard process-memory bounds.
 Operators should size process RAM headroom accordingly, on top of machine
 state, database connections, and other working memory.
 

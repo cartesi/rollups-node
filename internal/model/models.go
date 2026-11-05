@@ -6,6 +6,8 @@ package model
 import (
 	"encoding/hex"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"math"
@@ -98,8 +100,14 @@ type WithdrawalConfig struct {
 	WithdrawalOutputBuilder common.Address `json:"withdrawal_output_builder"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (w WithdrawalConfig) MarshalJSON() ([]byte, error) {
-	return json.Marshal(&struct {
+	return jsonv2.Marshal(w, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (w WithdrawalConfig) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return jsonv2.MarshalEncode(enc, &struct {
 		Guardian                common.Address `json:"guardian"`
 		Log2LeavesPerAccount    string         `json:"log2_leaves_per_account"`
 		Log2MaxNumOfAccounts    string         `json:"log2_max_num_of_accounts"`
@@ -157,8 +165,14 @@ func (w *WithdrawalConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (a *Application) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
+	return jsonv2.Marshal(a, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (a *Application) MarshalJSONTo(enc *jsontext.Encoder) error {
+	// Use an alias to avoid recursively invoking custom JSON methods.
 	type Alias Application
 	// Define a new structure that embeds the alias but overrides the hex fields.
 	aux := &struct {
@@ -192,7 +206,7 @@ func (a *Application) MarshalJSON() ([]byte, error) {
 		ForecloseBlock:                    fmt.Sprintf("0x%x", a.ForecloseBlock),
 		AccountsDriveProvedBlock:          fmt.Sprintf("0x%x", a.AccountsDriveProvedBlock),
 	}
-	return json.Marshal(aux)
+	return jsonv2.MarshalEncode(enc, aux)
 }
 
 func (a *Application) UnmarshalJSON(in []byte) error {
@@ -478,8 +492,14 @@ type ExecutionParameters struct {
 	UpdatedAt             time.Time      `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (e *ExecutionParameters) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
+	return jsonv2.Marshal(e, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (e *ExecutionParameters) MarshalJSONTo(enc *jsontext.Encoder) error {
+	// Use an alias to avoid recursively invoking custom JSON methods.
 	type Alias ExecutionParameters
 	// Define a new structure that embeds the alias but overrides the hex fields.
 	aux := &struct {
@@ -509,7 +529,7 @@ func (e *ExecutionParameters) MarshalJSON() ([]byte, error) {
 		FastDeadline:       fmt.Sprintf("0x%x", uint64(e.FastDeadline)),
 		Alias:              (*Alias)(e),
 	}
-	return json.Marshal(aux)
+	return jsonv2.MarshalEncode(enc, aux)
 }
 
 func (e *ExecutionParameters) UnmarshalJSON(data []byte) error {
@@ -761,8 +781,14 @@ type Epoch struct {
 	UpdatedAt            time.Time       `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (e *Epoch) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
+	return jsonv2.Marshal(e, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (e *Epoch) MarshalJSONTo(enc *jsontext.Encoder) error {
+	// Use an alias to avoid recursively invoking custom JSON methods.
 	type Alias Epoch
 	// Define a new structure that embeds the alias but overrides the hex fields.
 	aux := &struct {
@@ -787,7 +813,7 @@ func (e *Epoch) MarshalJSON() ([]byte, error) {
 		s := fmt.Sprintf("0x%x", *e.StagedAtBlock)
 		aux.StagedAtBlock = &s
 	}
-	return json.Marshal(aux)
+	return jsonv2.MarshalEncode(enc, aux)
 }
 
 func (e *Epoch) UnmarshalJSON(in []byte) error {
@@ -920,33 +946,14 @@ type Input struct {
 	UpdatedAt          time.Time             `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (i *Input) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
-	type Alias Input
-	// Define a new structure that embeds the alias but overrides the hex fields.
-	var exceptionData *string
-	if i.ExceptionData != nil {
-		encoded := hexutil.Encode(i.ExceptionData)
-		exceptionData = &encoded
-	}
-	aux := &struct {
-		EpochIndex    string  `json:"epoch_index"`
-		Index         string  `json:"index"`
-		BlockNumber   string  `json:"block_number"`
-		RawData       string  `json:"raw_data"`
-		ExceptionData *string `json:"exception_data"`
-		LogIndex      string  `json:"log_index"`
-		*Alias
-	}{
-		EpochIndex:    fmt.Sprintf("0x%x", i.EpochIndex),
-		Index:         fmt.Sprintf("0x%x", i.Index),
-		BlockNumber:   fmt.Sprintf("0x%x", i.BlockNumber),
-		RawData:       "0x" + hex.EncodeToString(i.RawData),
-		ExceptionData: exceptionData,
-		LogIndex:      fmt.Sprintf("0x%x", i.LogIndex),
-		Alias:         (*Alias)(i),
-	}
-	return json.Marshal(aux)
+	return jsonv2.Marshal(i, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (i *Input) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return jsonv2.MarshalEncode(enc, i.JSONFields())
 }
 
 func (i *Input) UnmarshalJSON(in []byte) error {
@@ -1098,24 +1105,14 @@ type Output struct {
 	UpdatedAt                time.Time     `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (o *Output) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
-	type Alias Output
-	// Define a new structure that embeds the alias but overrides the hex fields.
-	aux := &struct {
-		EpochIndex string `json:"epoch_index"`
-		InputIndex string `json:"input_index"`
-		Index      string `json:"index"`
-		RawData    string `json:"raw_data"`
-		*Alias
-	}{
-		EpochIndex: fmt.Sprintf("0x%x", o.EpochIndex),
-		InputIndex: fmt.Sprintf("0x%x", o.InputIndex),
-		Index:      fmt.Sprintf("0x%x", o.Index),
-		RawData:    "0x" + hex.EncodeToString(o.RawData),
-		Alias:      (*Alias)(o),
-	}
-	return json.Marshal(aux)
+	return jsonv2.Marshal(o, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (o *Output) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return jsonv2.MarshalEncode(enc, o.JSONFields())
 }
 
 func (o *Output) UnmarshalJSON(data []byte) error {
@@ -1176,7 +1173,13 @@ type Withdrawal struct {
 	UpdatedAt       time.Time   `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (w *Withdrawal) MarshalJSON() ([]byte, error) {
+	return jsonv2.Marshal(w, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (w *Withdrawal) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias Withdrawal
 	aux := &struct {
 		AccountIndex string `json:"account_index"`
@@ -1193,7 +1196,7 @@ func (w *Withdrawal) MarshalJSON() ([]byte, error) {
 		LogIndex:     fmt.Sprintf("0x%x", w.LogIndex),
 		Alias:        (*Alias)(w),
 	}
-	return json.Marshal(aux)
+	return jsonv2.MarshalEncode(enc, aux)
 }
 
 func (w *Withdrawal) UnmarshalJSON(data []byte) error {
@@ -1247,8 +1250,14 @@ type Report struct {
 	UpdatedAt               time.Time `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (r *Report) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
+	return jsonv2.Marshal(r, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (r *Report) MarshalJSONTo(enc *jsontext.Encoder) error {
+	// Use an alias to avoid recursively invoking custom JSON methods.
 	type Alias Report
 	// Define a new structure that embeds the alias but overrides the hex fields.
 	aux := &struct {
@@ -1264,7 +1273,7 @@ func (r *Report) MarshalJSON() ([]byte, error) {
 		RawData:    "0x" + hex.EncodeToString(r.RawData),
 		Alias:      (*Alias)(r),
 	}
-	return json.Marshal(aux)
+	return jsonv2.MarshalEncode(enc, aux)
 }
 
 func (r *Report) UnmarshalJSON(data []byte) error {
@@ -1512,9 +1521,15 @@ type Tournament struct {
 	UpdatedAt               time.Time                `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value Tournament) MarshalJSON() ([]byte, error) {
+	return jsonv2.Marshal(value, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value Tournament) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias Tournament
-	return json.Marshal(struct {
+	return jsonv2.MarshalEncode(enc, struct {
 		*Alias
 		EpochIndex   hexutil.Uint64 `json:"epoch_index"`
 		MaxLevel     hexutil.Uint64 `json:"max_level"`
@@ -1577,9 +1592,15 @@ type Commitment struct {
 	UpdatedAt         time.Time          `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value Commitment) MarshalJSON() ([]byte, error) {
+	return jsonv2.Marshal(value, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value Commitment) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias Commitment
-	return json.Marshal(struct {
+	return jsonv2.MarshalEncode(enc, struct {
 		*Alias
 		EpochIndex  hexutil.Uint64 `json:"epoch_index"`
 		BlockNumber hexutil.Uint64 `json:"block_number"`
@@ -1635,9 +1656,15 @@ type Match struct {
 	UpdatedAt           time.Time           `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value Match) MarshalJSON() ([]byte, error) {
+	return jsonv2.Marshal(value, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value Match) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias Match
-	return json.Marshal(struct {
+	return jsonv2.MarshalEncode(enc, struct {
 		*Alias
 		EpochIndex          hexutil.Uint64  `json:"epoch_index"`
 		BlockNumber         hexutil.Uint64  `json:"block_number"`
@@ -1703,9 +1730,15 @@ type MatchAdvanced struct {
 	UpdatedAt            time.Time      `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value MatchAdvanced) MarshalJSON() ([]byte, error) {
+	return jsonv2.Marshal(value, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value MatchAdvanced) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias MatchAdvanced
-	return json.Marshal(struct {
+	return jsonv2.MarshalEncode(enc, struct {
 		*Alias
 		EpochIndex        hexutil.Uint64 `json:"epoch_index"`
 		EliminableAt      hexutil.Uint64 `json:"eliminable_at"`
@@ -1847,7 +1880,12 @@ type EpochStateHash struct {
 }
 
 func (s *StateHash) MarshalJSON() ([]byte, error) {
-	// Create an alias to avoid infinite recursion in MarshalJSON.
+	return jsonv2.Marshal(s, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (s *StateHash) MarshalJSONTo(enc *jsontext.Encoder) error {
+	// Use an alias to avoid recursively invoking custom JSON methods.
 	type Alias StateHash
 	// Define a new structure that embeds the alias but overrides the hex fields.
 	aux := &struct {
@@ -1863,7 +1901,7 @@ func (s *StateHash) MarshalJSON() ([]byte, error) {
 		Repetitions: fmt.Sprintf("0x%x", s.Repetitions),
 		Alias:       (*Alias)(s),
 	}
-	return json.Marshal(aux)
+	return jsonv2.MarshalEncode(enc, aux)
 }
 
 func (s *StateHash) UnmarshalJSON(data []byte) error {

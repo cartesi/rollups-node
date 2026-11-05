@@ -1,0 +1,703 @@
+{
+  "Application/populated": {
+    "name": "fixture\u003c\u003e\u0026雪",
+    "iapplication_address": "0x1111111111111111111111111111111111111111",
+    "iconsensus_address": "0x1111111111111111111111111111111111111111",
+    "iinputbox_address": "0x1111111111111111111111111111111111111111",
+    "template_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "withdrawal_config": {
+      "guardian": "0x1111111111111111111111111111111111111111",
+      "log2_leaves_per_account": "0x11",
+      "log2_max_num_of_accounts": "0x11",
+      "accounts_drive_start_index": "0x11",
+      "withdrawal_output_builder": "0x1111111111111111111111111111111111111111"
+    },
+    "consensus_type": "fixture\u003c\u003e\u0026雪",
+    "enabled": true,
+    "status": "fixture\u003c\u003e\u0026雪",
+    "reason": "fixture\u003c\u003e\u0026雪",
+    "foreclose_transaction": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "accounts_drive_proved_transaction": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "accounts_drive_merkle_root": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z",
+    "execution_parameters": {
+      "advance_inc_cycles": "0x11",
+      "advance_max_cycles": "0x11",
+      "inspect_inc_cycles": "0x11",
+      "inspect_max_cycles": "0x11",
+      "advance_inc_deadline": "0x11",
+      "advance_max_deadline": "0x11",
+      "inspect_inc_deadline": "0x11",
+      "inspect_max_deadline": "0x11",
+      "load_deadline": "0x11",
+      "store_deadline": "0x11",
+      "fast_deadline": "0x11",
+      "snapshot_policy": "fixture\u003c\u003e\u0026雪",
+      "max_concurrent_inspects": 17,
+      "created_at": "2026-01-02T03:04:05Z",
+      "updated_at": "2026-01-02T03:04:05Z"
+    },
+    "iinputbox_block": "0x11",
+    "last_epoch_check_block": "0x11",
+    "last_input_check_block": "0x11",
+    "last_output_check_block": "0x11",
+    "last_tournament_check_block": "0x11",
+    "last_foreclose_check_block": "0x11",
+    "last_accounts_drive_proved_check_block": "0x11",
+    "last_withdrawal_check_block": "0x11",
+    "epoch_length": "0x11",
+    "claim_staging_period": "0x11",
+    "processed_inputs": "0x11",
+    "foreclose_block": "0x11",
+    "accounts_drive_proved_block": "0x11"
+  },
+  "Application/zero": {
+    "name": "",
+    "iapplication_address": "0x0000000000000000000000000000000000000000",
+    "iconsensus_address": "0x0000000000000000000000000000000000000000",
+    "iinputbox_address": "0x0000000000000000000000000000000000000000",
+    "template_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "withdrawal_config": {
+      "guardian": "0x0000000000000000000000000000000000000000",
+      "log2_leaves_per_account": "0x0",
+      "log2_max_num_of_accounts": "0x0",
+      "accounts_drive_start_index": "0x0",
+      "withdrawal_output_builder": "0x0000000000000000000000000000000000000000"
+    },
+    "consensus_type": "",
+    "enabled": false,
+    "status": "",
+    "reason": null,
+    "foreclose_transaction": null,
+    "accounts_drive_proved_transaction": null,
+    "accounts_drive_merkle_root": null,
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z",
+    "execution_parameters": {
+      "advance_inc_cycles": "0x0",
+      "advance_max_cycles": "0x0",
+      "inspect_inc_cycles": "0x0",
+      "inspect_max_cycles": "0x0",
+      "advance_inc_deadline": "0x0",
+      "advance_max_deadline": "0x0",
+      "inspect_inc_deadline": "0x0",
+      "inspect_max_deadline": "0x0",
+      "load_deadline": "0x0",
+      "store_deadline": "0x0",
+      "fast_deadline": "0x0",
+      "snapshot_policy": "",
+      "max_concurrent_inspects": 0,
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z"
+    },
+    "iinputbox_block": "0x0",
+    "last_epoch_check_block": "0x0",
+    "last_input_check_block": "0x0",
+    "last_output_check_block": "0x0",
+    "last_tournament_check_block": "0x0",
+    "last_foreclose_check_block": "0x0",
+    "last_accounts_drive_proved_check_block": "0x0",
+    "last_withdrawal_check_block": "0x0",
+    "epoch_length": "0x0",
+    "claim_staging_period": "0x0",
+    "processed_inputs": "0x0",
+    "foreclose_block": "0x0",
+    "accounts_drive_proved_block": "0x0"
+  },
+  "BondEvent/populated": {
+    "tournament_address": "0x1111111111111111111111111111111111111111",
+    "type": "fixture\u003c\u003e\u0026雪",
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "refund": {
+      "recipient": "0x1111111111111111111111111111111111111111",
+      "value": "0x11000000000000001100000000000000110000000000000011",
+      "success": true
+    },
+    "recovery": {
+      "commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "claimer": "0x1111111111111111111111111111111111111111",
+      "payment": "0x11000000000000001100000000000000110000000000000011",
+      "burned": "0x11000000000000001100000000000000110000000000000011"
+    },
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z",
+    "epoch_index": "0x11",
+    "block_number": "0x11",
+    "log_index": "0x11"
+  },
+  "BondEvent/zero": {
+    "tournament_address": "0x0000000000000000000000000000000000000000",
+    "type": "",
+    "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "refund": null,
+    "recovery": null,
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z",
+    "epoch_index": "0x0",
+    "block_number": "0x0",
+    "log_index": "0x0"
+  },
+  "Commitment/populated": {
+    "tournament_address": "0x1111111111111111111111111111111111111111",
+    "commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "final_state_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "submitter_address": "0x1111111111111111111111111111111111111111",
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "snapshot": {
+      "claimer": "0x1111111111111111111111111111111111111111",
+      "clock_running": true,
+      "as_of_block": "0x11",
+      "clock_deadline": "0x11",
+      "clock_allowance": "0x11"
+    },
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z",
+    "epoch_index": "0x11",
+    "block_number": "0x11",
+    "log_index": "0x11"
+  },
+  "Commitment/zero": {
+    "tournament_address": "0x0000000000000000000000000000000000000000",
+    "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "final_state_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "submitter_address": "0x0000000000000000000000000000000000000000",
+    "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "snapshot": {
+      "claimer": "0x0000000000000000000000000000000000000000",
+      "clock_running": false,
+      "as_of_block": "0x0",
+      "clock_deadline": "0x0",
+      "clock_allowance": "0x0"
+    },
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z",
+    "epoch_index": "0x0",
+    "block_number": "0x0",
+    "log_index": "0x0"
+  },
+  "CommitmentSnapshot/populated": {
+    "claimer": "0x1111111111111111111111111111111111111111",
+    "clock_running": true,
+    "as_of_block": "0x11",
+    "clock_deadline": "0x11",
+    "clock_allowance": "0x11"
+  },
+  "CommitmentSnapshot/zero": {
+    "claimer": "0x0000000000000000000000000000000000000000",
+    "clock_running": false,
+    "as_of_block": "0x0",
+    "clock_deadline": "0x0",
+    "clock_allowance": "0x0"
+  },
+  "Epoch/populated": {
+    "index": "0x11",
+    "first_block": "0x11",
+    "last_block": "0x11",
+    "input_index_lower_bound": "0x11",
+    "input_index_upper_bound": "0x11",
+    "staged_at_block": "0x11",
+    "virtual_index": "0x11",
+    "machine_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "tx_buffer_data_block": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "tx_buffer_proof": [
+      "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "0x1111111111111111111111111111111111111111111111111111111111111111"
+    ],
+    "iflags_y_data_block": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "iflags_y_proof": [
+      "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "0x1111111111111111111111111111111111111111111111111111111111111111"
+    ],
+    "htif_tohost_data_block": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "htif_tohost_proof": [
+      "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "0x1111111111111111111111111111111111111111111111111111111111111111"
+    ],
+    "claim_transaction_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "commitment_proof": [
+      "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "0x1111111111111111111111111111111111111111111111111111111111111111"
+    ],
+    "tournament_address": "0x1111111111111111111111111111111111111111",
+    "status": "fixture\u003c\u003e\u0026雪",
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z"
+  },
+  "Epoch/zero": {
+    "index": "0x0",
+    "first_block": "0x0",
+    "last_block": "0x0",
+    "input_index_lower_bound": "0x0",
+    "input_index_upper_bound": "0x0",
+    "staged_at_block": null,
+    "virtual_index": "0x0",
+    "machine_hash": null,
+    "tx_buffer_data_block": null,
+    "iflags_y_data_block": null,
+    "htif_tohost_data_block": null,
+    "claim_transaction_hash": null,
+    "commitment": null,
+    "tournament_address": null,
+    "status": "",
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z"
+  },
+  "ExecutionParameters/populated": {
+    "advance_inc_cycles": "0x11",
+    "advance_max_cycles": "0x11",
+    "inspect_inc_cycles": "0x11",
+    "inspect_max_cycles": "0x11",
+    "advance_inc_deadline": "0x11",
+    "advance_max_deadline": "0x11",
+    "inspect_inc_deadline": "0x11",
+    "inspect_max_deadline": "0x11",
+    "load_deadline": "0x11",
+    "store_deadline": "0x11",
+    "fast_deadline": "0x11",
+    "snapshot_policy": "fixture\u003c\u003e\u0026雪",
+    "max_concurrent_inspects": 17,
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z"
+  },
+  "ExecutionParameters/zero": {
+    "advance_inc_cycles": "0x0",
+    "advance_max_cycles": "0x0",
+    "inspect_inc_cycles": "0x0",
+    "inspect_max_cycles": "0x0",
+    "advance_inc_deadline": "0x0",
+    "advance_max_deadline": "0x0",
+    "inspect_inc_deadline": "0x0",
+    "inspect_max_deadline": "0x0",
+    "load_deadline": "0x0",
+    "store_deadline": "0x0",
+    "fast_deadline": "0x0",
+    "snapshot_policy": "",
+    "max_concurrent_inspects": 0,
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z"
+  },
+  "Input/populated": {
+    "epoch_index": "0x11",
+    "index": "0x11",
+    "block_number": "0x11",
+    "raw_data": "0x1111",
+    "exception_data": "0x1111",
+    "log_index": "0x11",
+    "status": "fixture\u003c\u003e\u0026雪",
+    "machine_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "tx_buffer_data_block": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "transaction_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z"
+  },
+  "Input/zero": {
+    "epoch_index": "0x0",
+    "index": "0x0",
+    "block_number": "0x0",
+    "raw_data": "0x",
+    "exception_data": null,
+    "log_index": "0x0",
+    "status": "",
+    "machine_hash": null,
+    "tx_buffer_data_block": null,
+    "transaction_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z"
+  },
+  "LeafMatchSeal/populated": {
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "eliminable_at": "0x11",
+    "block_number": "0x11",
+    "log_index": "0x11"
+  },
+  "LeafMatchSeal/zero": {
+    "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "eliminable_at": "0x0",
+    "block_number": "0x0",
+    "log_index": "0x0"
+  },
+  "Match/populated": {
+    "tournament_address": "0x1111111111111111111111111111111111111111",
+    "id_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "commitment_one": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "commitment_two": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "left_of_two": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "leaf_seal": {
+      "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "eliminable_at": "0x11",
+      "block_number": "0x11",
+      "log_index": "0x11"
+    },
+    "winner_commitment": "fixture\u003c\u003e\u0026雪",
+    "deletion_reason": "fixture\u003c\u003e\u0026雪",
+    "deletion_tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "snapshot": {
+      "phase": "fixture\u003c\u003e\u0026雪",
+      "bisection": {
+        "revealing_parent": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "waiting_left": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "waiting_right": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "segment_start_position": "0x11000000000000001100000000000000110000000000000011",
+        "segment_start_cycle": "0x11000000000000001100000000000000110000000000000011",
+        "responder": "fixture\u003c\u003e\u0026雪",
+        "current_height": "0x11"
+      },
+      "sealed": {
+        "agree_state": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "divergence_position": "0x11000000000000001100000000000000110000000000000011",
+        "divergence_cycle": "0x11000000000000001100000000000000110000000000000011",
+        "final_state_one": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "final_state_two": "0x1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "timeout_outcome": "fixture\u003c\u003e\u0026雪",
+      "as_of_block": "0x11",
+      "deferred_charge": "0x11"
+    },
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z",
+    "epoch_index": "0x11",
+    "block_number": "0x11",
+    "log_index": "0x11",
+    "eliminable_at": "0x11",
+    "deletion_block_number": "0x11",
+    "deletion_log_index": "0x11"
+  },
+  "Match/zero": {
+    "tournament_address": "0x0000000000000000000000000000000000000000",
+    "id_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "commitment_one": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "commitment_two": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "left_of_two": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "leaf_seal": null,
+    "winner_commitment": "",
+    "deletion_reason": "",
+    "deletion_tx_hash": null,
+    "snapshot": {
+      "phase": "",
+      "bisection": null,
+      "sealed": null,
+      "timeout_outcome": "",
+      "as_of_block": "0x0",
+      "deferred_charge": "0x0"
+    },
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z",
+    "epoch_index": "0x0",
+    "block_number": "0x0",
+    "log_index": "0x0",
+    "eliminable_at": "0x0",
+    "deletion_block_number": "0x0",
+    "deletion_log_index": null
+  },
+  "MatchAdvanced/populated": {
+    "tournament_address": "0x1111111111111111111111111111111111111111",
+    "id_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "other_parent": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "left_node": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "segment_start_position": "0x11000000000000001100000000000000110000000000000011",
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z",
+    "epoch_index": "0x11",
+    "eliminable_at": "0x11",
+    "block_number": "0x11",
+    "log_index": "0x11"
+  },
+  "MatchAdvanced/zero": {
+    "tournament_address": "0x0000000000000000000000000000000000000000",
+    "id_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "other_parent": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "left_node": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "segment_start_position": "0x0",
+    "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z",
+    "epoch_index": "0x0",
+    "eliminable_at": "0x0",
+    "block_number": "0x0",
+    "log_index": "0x0"
+  },
+  "MatchBisectionSnapshot/populated": {
+    "revealing_parent": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "waiting_left": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "waiting_right": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "segment_start_position": "0x11000000000000001100000000000000110000000000000011",
+    "segment_start_cycle": "0x11000000000000001100000000000000110000000000000011",
+    "responder": "fixture\u003c\u003e\u0026雪",
+    "current_height": "0x11"
+  },
+  "MatchBisectionSnapshot/zero": {
+    "revealing_parent": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "waiting_left": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "waiting_right": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "segment_start_position": "0x0",
+    "segment_start_cycle": "0x0",
+    "responder": "",
+    "current_height": null
+  },
+  "MatchSnapshot/populated": {
+    "phase": "fixture\u003c\u003e\u0026雪",
+    "bisection": {
+      "revealing_parent": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "waiting_left": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "waiting_right": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "segment_start_position": "0x11000000000000001100000000000000110000000000000011",
+      "segment_start_cycle": "0x11000000000000001100000000000000110000000000000011",
+      "responder": "fixture\u003c\u003e\u0026雪",
+      "current_height": "0x11"
+    },
+    "sealed": {
+      "agree_state": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "divergence_position": "0x11000000000000001100000000000000110000000000000011",
+      "divergence_cycle": "0x11000000000000001100000000000000110000000000000011",
+      "final_state_one": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "final_state_two": "0x1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "timeout_outcome": "fixture\u003c\u003e\u0026雪",
+    "as_of_block": "0x11",
+    "deferred_charge": "0x11"
+  },
+  "MatchSnapshot/zero": {
+    "phase": "",
+    "bisection": null,
+    "sealed": null,
+    "timeout_outcome": "",
+    "as_of_block": "0x0",
+    "deferred_charge": "0x0"
+  },
+  "Output/populated": {
+    "epoch_index": "0x11",
+    "input_index": "0x11",
+    "index": "0x11",
+    "raw_data": "0x1111",
+    "hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "output_hashes_siblings": [
+      "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "0x1111111111111111111111111111111111111111111111111111111111111111"
+    ],
+    "execution_transaction_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z"
+  },
+  "Output/zero": {
+    "epoch_index": "0x0",
+    "input_index": "0x0",
+    "index": "0x0",
+    "raw_data": "0x",
+    "hash": null,
+    "output_hashes_siblings": null,
+    "execution_transaction_hash": null,
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z"
+  },
+  "Report/populated": {
+    "epoch_index": "0x11",
+    "input_index": "0x11",
+    "index": "0x11",
+    "raw_data": "0x1111",
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z"
+  },
+  "Report/zero": {
+    "epoch_index": "0x0",
+    "input_index": "0x0",
+    "index": "0x0",
+    "raw_data": "0x",
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z"
+  },
+  "StateHash/populated": {
+    "epoch_index": "0x11",
+    "input_index": "0x11",
+    "index": "0x11",
+    "repetitions": "0x11",
+    "machine_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z"
+  },
+  "StateHash/zero": {
+    "epoch_index": "0x0",
+    "input_index": "0x0",
+    "index": "0x0",
+    "repetitions": "0x0",
+    "machine_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z"
+  },
+  "Tournament/populated": {
+    "address": "0x1111111111111111111111111111111111111111",
+    "parent_tournament_address": "0x1111111111111111111111111111111111111111",
+    "parent_match_id_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "initial_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "base_cycle": "0x11000000000000001100000000000000110000000000000011",
+    "kind": "fixture\u003c\u003e\u0026雪",
+    "creation_event": {
+      "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "block_number": "0x11",
+      "log_index": "0x11"
+    },
+    "snapshot": {
+      "standing": "fixture\u003c\u003e\u0026雪",
+      "accepts_joins": true,
+      "candidate": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "winner_commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "final_state_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "parent_commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "inner_result": {
+        "disposition": "fixture\u003c\u003e\u0026雪",
+        "parent_commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "paused_allowance": "0x11"
+      },
+      "bond_recovery": {
+        "disposition": "fixture\u003c\u003e\u0026雪",
+        "claimer": "0x1111111111111111111111111111111111111111",
+        "payment": "0x11000000000000001100000000000000110000000000000011"
+      },
+      "as_of_block": "0x11",
+      "finished_at_block": "0x11",
+      "winner_expires_at": "0x11"
+    },
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z",
+    "epoch_index": "0x11",
+    "max_level": "0x11",
+    "level": "0x11",
+    "log2step": "0x11",
+    "height": "0x11",
+    "start_instant": "0x11",
+    "allowance": "0x11"
+  },
+  "Tournament/zero": {
+    "address": "0x0000000000000000000000000000000000000000",
+    "parent_tournament_address": null,
+    "parent_match_id_hash": null,
+    "initial_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "base_cycle": "0x0",
+    "kind": "",
+    "creation_event": null,
+    "snapshot": {
+      "standing": "",
+      "accepts_joins": false,
+      "candidate": null,
+      "winner_commitment": null,
+      "final_state_hash": null,
+      "parent_commitment": null,
+      "inner_result": null,
+      "bond_recovery": {
+        "disposition": "",
+        "claimer": null,
+        "payment": null
+      },
+      "as_of_block": "0x0",
+      "finished_at_block": "0x0",
+      "winner_expires_at": "0x0"
+    },
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z",
+    "epoch_index": "0x0",
+    "max_level": "0x0",
+    "level": "0x0",
+    "log2step": "0x0",
+    "height": "0x0",
+    "start_instant": "0x0",
+    "allowance": "0x0"
+  },
+  "TournamentCreationEvent/populated": {
+    "tx_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "block_number": "0x11",
+    "log_index": "0x11"
+  },
+  "TournamentCreationEvent/zero": {
+    "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "block_number": "0x0",
+    "log_index": "0x0"
+  },
+  "TournamentInnerResult/populated": {
+    "disposition": "fixture\u003c\u003e\u0026雪",
+    "parent_commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "paused_allowance": "0x11"
+  },
+  "TournamentInnerResult/zero": {
+    "disposition": "",
+    "parent_commitment": null,
+    "paused_allowance": "0x0"
+  },
+  "TournamentSnapshot/populated": {
+    "standing": "fixture\u003c\u003e\u0026雪",
+    "accepts_joins": true,
+    "candidate": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "winner_commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "final_state_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "parent_commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "inner_result": {
+      "disposition": "fixture\u003c\u003e\u0026雪",
+      "parent_commitment": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "paused_allowance": "0x11"
+    },
+    "bond_recovery": {
+      "disposition": "fixture\u003c\u003e\u0026雪",
+      "claimer": "0x1111111111111111111111111111111111111111",
+      "payment": "0x11000000000000001100000000000000110000000000000011"
+    },
+    "as_of_block": "0x11",
+    "finished_at_block": "0x11",
+    "winner_expires_at": "0x11"
+  },
+  "TournamentSnapshot/zero": {
+    "standing": "",
+    "accepts_joins": false,
+    "candidate": null,
+    "winner_commitment": null,
+    "final_state_hash": null,
+    "parent_commitment": null,
+    "inner_result": null,
+    "bond_recovery": {
+      "disposition": "",
+      "claimer": null,
+      "payment": null
+    },
+    "as_of_block": "0x0",
+    "finished_at_block": "0x0",
+    "winner_expires_at": "0x0"
+  },
+  "Uint256/populated": "0x11000000000000001100000000000000110000000000000011",
+  "Uint256/zero": "0x0",
+  "Withdrawal/populated": {
+    "account_index": "0x11",
+    "account": "0x1111",
+    "output": "0x1111",
+    "block_number": "0x11",
+    "log_index": "0x11",
+    "transaction_hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "created_at": "2026-01-02T03:04:05Z",
+    "updated_at": "2026-01-02T03:04:05Z"
+  },
+  "Withdrawal/zero": {
+    "account_index": "0x0",
+    "account": "0x",
+    "output": "0x",
+    "block_number": "0x0",
+    "log_index": "0x0",
+    "transaction_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "created_at": "0001-01-01T00:00:00Z",
+    "updated_at": "0001-01-01T00:00:00Z"
+  },
+  "WithdrawalConfig/populated": {
+    "guardian": "0x1111111111111111111111111111111111111111",
+    "log2_leaves_per_account": "0x11",
+    "log2_max_num_of_accounts": "0x11",
+    "accounts_drive_start_index": "0x11",
+    "withdrawal_output_builder": "0x1111111111111111111111111111111111111111"
+  },
+  "WithdrawalConfig/zero": {
+    "guardian": "0x0000000000000000000000000000000000000000",
+    "log2_leaves_per_account": "0x0",
+    "log2_max_num_of_accounts": "0x0",
+    "accounts_drive_start_index": "0x0",
+    "withdrawal_output_builder": "0x0000000000000000000000000000000000000000"
+  }
+}
