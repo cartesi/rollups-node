@@ -5,6 +5,7 @@ package jsonrpc
 
 import (
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"io"
 	"regexp"
@@ -57,7 +58,7 @@ func writeRPCError(w io.Writer, id json.RawMessage, code int, message string) er
 		},
 		ID: id,
 	}
-	return json.NewEncoder(w).Encode(resp)
+	return writeRPCResponse(w, resp)
 }
 
 func writeRPCResult(w io.Writer, id json.RawMessage, result any) error {
@@ -66,7 +67,19 @@ func writeRPCResult(w io.Writer, id json.RawMessage, result any) error {
 		Result:  result,
 		ID:      id,
 	}
-	return json.NewEncoder(w).Encode(resp)
+	return writeRPCResponse(w, resp)
+}
+
+// MarshalWrite streams composite values, allowing the response budget to stop
+// encoding before the entire result has been serialized. Preserve v1 wire
+// semantics and Encode's trailing newline. Response models use MarshalJSONTo
+// to stream their fields without constructing intermediate JSON byte slices.
+func writeRPCResponse(w io.Writer, resp RPCResponse) error {
+	if err := jsonv2.MarshalWrite(w, resp, json.DefaultOptionsV1()); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w, "\n")
+	return err
 }
 
 // -----------------------------------------------------------------------------

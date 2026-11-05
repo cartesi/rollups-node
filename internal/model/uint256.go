@@ -6,6 +6,8 @@ package model
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"math/big"
@@ -71,8 +73,14 @@ func (value Uint256) Value() (driver.Value, error) {
 	return (*uint256.Int)(&value).Value()
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value Uint256) MarshalJSON() ([]byte, error) {
-	return json.Marshal((*uint256.Int)(&value).Hex())
+	return jsonv2.Marshal(value, json.DefaultOptionsV1())
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value Uint256) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return jsonv2.MarshalEncode(enc, (*uint256.Int)(&value).Hex())
 }
 
 func (value *Uint256) UnmarshalJSON(data []byte) error {
