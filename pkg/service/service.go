@@ -69,8 +69,8 @@ func NewLogger(name string, level slog.Level, color bool) *slog.Logger {
 	opts := &tint.Options{
 		Level:     level,
 		AddSource: level == slog.LevelDebug,
-		// RFC3339 with milliseconds and without timezone
-		TimeFormat: "2006-01-02T15:04:05.000",
+		// RFC3339 with milliseconds and an explicit timezone offset
+		TimeFormat: "2006-01-02T15:04:05.000-07:00",
 		NoColor:    !color,
 	}
 	handler := tint.NewTextHandler(os.Stdout, opts)

@@ -46,6 +46,7 @@ func startNodeSubprocess(name string, cmd *exec.Cmd) (*nodeSubprocess, error) {
 		return nil, fmt.Errorf("cannot start %s: integration deadline cleanup has begun", name)
 	}
 	if err := cmd.Start(); err != nil {
+		removeNodeEnvironment(cmd)
 		managedNodeProcesses.Unlock()
 		return nil, err
 	}
@@ -54,6 +55,15 @@ func startNodeSubprocess(name string, cmd *exec.Cmd) (*nodeSubprocess, error) {
 	managedNodeProcesses.Unlock()
 	go func() {
 		err := cmd.Wait()
+		removeNodeEnvironment(cmd)
+		if name := nodeContainerName(cmd); name != "" {
+			// SIGKILL of the attached client does not kill the container. Bound cleanup
+			// and remove only this subprocess's uniquely named container. --rm may
+			// already have removed it after normal exit.
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = exec.CommandContext(ctx, cmd.Path, "rm", "--force", name).Run()
+			cancel()
+		}
 		p.mu.Lock()
 		p.waitErr = err
 		p.mu.Unlock()
