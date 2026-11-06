@@ -31,10 +31,9 @@ import (
 
 // TestListOutputsConcurrentResponseBudget reproduces whole-response encoder
 // allocation with five independent HTTP requests (not a sequential RPC batch).
-// Run against a test-managed node with CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES set
-// to constrain its address space; the existing default is 2900000000 bytes.
-// Use GOMEMLIMIT=256MiB alongside that virtual-memory cap so Go collects
-// temporary objects before its address-space reservations exhaust the cap.
+// Run against a test-managed node to enforce the default 1 GiB cgroup memory
+// limit with swap disabled. CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES overrides it.
+// An externally managed node must have its memory limit configured separately.
 // Before incremental list encoding, these requests can exhaust the API process
 // before it can return the response-size error. A transport failure is a test
 // failure, not an acceptable substitute for that error.
