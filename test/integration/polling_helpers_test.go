@@ -8,6 +8,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -109,7 +110,7 @@ func waitForInputIndexed(
 }
 
 // waitForEpochStatus polls until the epoch at the given index reaches the
-// desired status using the CLI.
+// any of the desired statuses using the CLI.
 //
 // Error discrimination: CLI exit errors (the epoch doesn't exist yet) are
 // retried. Structural errors fail immediately.
@@ -118,8 +119,11 @@ func waitForEpochStatus(
 	t testing.TB,
 	appName string,
 	epochIndex uint64,
-	status model.EpochStatus,
+	statuses ...model.EpochStatus,
 ) (*model.Epoch, error) {
+	if len(statuses) == 0 {
+		return nil, fmt.Errorf("wait for epoch status requires at least one status")
+	}
 	var lastErr error
 	var result *model.Epoch
 	err := pollUntil(ctx, 3*time.Second, func() (bool, error) {
@@ -132,7 +136,7 @@ func waitForEpochStatus(
 			}
 			return false, fmt.Errorf("poll epoch %d: %w", epochIndex, err)
 		}
-		if epoch.Status == status {
+		if slices.Contains(statuses, epoch.Status) {
 			result = epoch
 			return true, nil
 		}

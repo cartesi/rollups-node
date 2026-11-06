@@ -618,9 +618,13 @@ func isQuorumClaimReadyStatus(status model.EpochStatus) bool {
 
 func (s *EchoQuorumSuite) waitForQuorumAccepted(appName string, epochIndex uint64) {
 	stagedCtx, stagedCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
-	staged, err := waitForEpochStatus(stagedCtx, s.T(), appName, epochIndex, model.EpochStatus_ClaimStaged)
+	staged, err := waitForEpochStatus(stagedCtx, s.T(), appName, epochIndex,
+		model.EpochStatus_ClaimStaged, model.EpochStatus_ClaimAccepted)
 	stagedCancel()
-	s.Require().NoError(err, "wait for quorum claim to stage")
+	s.Require().NoError(err, "wait for quorum claim to stage or be accepted")
+	if staged.Status == model.EpochStatus_ClaimAccepted {
+		return
+	}
 
 	if staged.StagedAtBlock != nil {
 		s.minePastBlock(*staged.StagedAtBlock + quorumClaimStagingPeriod)
