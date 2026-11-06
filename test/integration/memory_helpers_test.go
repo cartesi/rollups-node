@@ -28,17 +28,20 @@ func processRSS(pid int) (uint64, error) {
 	return 0, fmt.Errorf("process %d has no VmRSS", pid)
 }
 
-// limitedNodeCommand applies a per-process Linux address-space limit before
-// exec, preserving the node PID and signal handling. Allocation failures appear
-// in the node log. This is virtual memory, not RSS: Go reservations and machine
-// mappings count too. Children inherit the limit, each with its own allowance.
-// CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES overrides the default 2.5 GiB; 0 disables
-// the limit. This setting belongs to the test runner, not extraEnv. Externally
-// managed nodes are unaffected. Enforcing the limit requires util-linux prlimit.
+// limitedNodeCommand uses a systemd scope to apply the same cgroup memory
+// controls as a memory-limited container, without changing the node's filesystem
+// or network. The default is 1 GiB for the process and all its descendants
+// combined; swap is disabled so it cannot hide memory pressure. Scope mode
+// preserves the PID, environment, working directory, and signal handling.
+// CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES overrides the limit; 0 disables it.
+// This setting belongs to the test runner, not extraEnv. Externally managed
+// nodes are unaffected. Each service in multiprocess mode gets its own scope.
+// Requires systemd-run and a user systemd manager with memory controller support
+// (including when the integration runner itself runs inside a container).
 func limitedNodeCommand(binary string, log io.Writer) (*exec.Cmd, error) {
 	value := os.Getenv("CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES")
 	if value == "" {
-		value = "3000000000"
+		value = "1073741824"
 	}
 	limit, err := strconv.ParseUint(value, 10, 64)
 	if err != nil {
@@ -48,11 +51,13 @@ func limitedNodeCommand(binary string, log io.Writer) (*exec.Cmd, error) {
 		fmt.Fprintf(log, "%s: memory limit disabled\n", binary)
 		return exec.Command(binary), nil //nolint:gosec
 	}
-	prlimit, err := exec.LookPath("prlimit")
+	launcher, err := exec.LookPath("systemd-run")
 	if err != nil {
-		return nil, fmt.Errorf("memory limit requires util-linux prlimit: %w", err)
+		return nil, fmt.Errorf("memory limit requires systemd-run and a user systemd manager: %w", err)
 	}
 	value = strconv.FormatUint(limit, 10)
-	fmt.Fprintf(log, "%s: virtual memory limit %s bytes per process\n", binary, value)
-	return exec.Command(prlimit, "--as="+value+":"+value, "--", binary), nil //nolint:gosec
+	fmt.Fprintf(log, "%s: cgroup memory limit %s bytes (including descendants), swap disabled\n", binary, value)
+	return exec.Command(launcher, "--user", "--scope", "--quiet",
+		"--property=MemoryMax="+value, "--property=MemorySwapMax=0",
+		"--", binary), nil //nolint:gosec
 }
