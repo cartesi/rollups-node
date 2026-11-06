@@ -142,27 +142,25 @@ func startNodeWithLog(logPath string, extraEnv ...string) (*nodeProcess, error) 
 		return nil, fmt.Errorf("open log file %s: %w", logPath, err)
 	}
 
-	cmd, err := limitedNodeCommand(nodeBinary, logFile)
-	if err != nil {
-		logFile.Close()
-		return nil, err
-	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	if workDir := os.Getenv("CARTESI_TEST_NODE_WORKDIR"); workDir != "" {
-		if err := os.MkdirAll(workDir, 0755); err != nil { //nolint:mnd
+	workDir := os.Getenv("CARTESI_TEST_NODE_WORKDIR")
+	if workDir != "" {
+		if err := os.MkdirAll(workDir, 0755); err != nil {
 			logFile.Close()
 			return nil, fmt.Errorf("create node workdir %s: %w", workDir, err)
 		}
-		cmd.Dir = workDir
 	}
-	cmd.Env = append(os.Environ(),
+	env := append(os.Environ(),
 		"CARTESI_ADVANCER_POLLING_INTERVAL=1",
 		"CARTESI_VALIDATOR_POLLING_INTERVAL=1",
 		"CARTESI_CLAIMER_POLLING_INTERVAL=1",
 		"CARTESI_PRT_POLLING_INTERVAL=1",
 	)
-	cmd.Env = append(append(cmd.Env, developmentDeliveryEnv()...), extraEnv...)
+	cmd, err := limitedNodeCommand(nodeBinary, logFile, append(append(env, developmentDeliveryEnv()...), extraEnv...), workDir)
+	if err != nil {
+		logFile.Close()
+		return nil, err
+	}
+	cmd.Stdout, cmd.Stderr = logFile, logFile
 
 	proc, err := startNodeSubprocess(nodeBinary, cmd)
 	if err != nil {

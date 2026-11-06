@@ -6,7 +6,9 @@
 package integration
 
 import (
+	"context"
 	"fmt"
+	"os/exec"
 	"sync"
 	"time"
 )
@@ -20,6 +22,7 @@ type rssMeasurement struct {
 // monitorNodeRSS sums the managed service processes in multiprocess mode.
 // Shared resident pages can be counted more than once. Child machine processes
 // are excluded. The peak is sampled every 10 ms; shorter spikes may be missed.
+// Docker measurements require a docker exec per sample and may run slower.
 // Call stop before reading the result; repeated stops return the same result.
 func monitorNodeRSS(node nodeHandle) (stop func() rssMeasurement, err error) {
 	var procs []*nodeSubprocess
@@ -34,7 +37,21 @@ func monitorNodeRSS(node nodeHandle) (stop func() rssMeasurement, err error) {
 	read := func() (uint64, error) {
 		var total uint64
 		for _, p := range procs {
-			rss, err := processRSS(p.cmd.Process.Pid)
+			var rss uint64
+			var err error
+			if name := nodeContainerName(p.cmd); name != "" {
+				// PID 1 is the node because Docker starts the executable directly.
+				// Read inside its PID namespace, not the attached Docker client's RSS.
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				var data []byte
+				data, err = exec.CommandContext(ctx, p.cmd.Path, "exec", name, "cat", "/proc/1/status").Output()
+				cancel()
+				if err == nil {
+					rss, err = parseProcessRSS(data)
+				}
+			} else {
+				rss, err = processRSS(p.cmd.Process.Pid)
+			}
 			if err != nil {
 				return 0, fmt.Errorf("read %s RSS: %w", p.name, err)
 			}

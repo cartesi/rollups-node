@@ -26,8 +26,8 @@ import (
 )
 
 // nodeLogTimeFmt matches the tint logger's TimeFormat: RFC3339 with
-// milliseconds and no timezone.
-const nodeLogTimeFmt = "2006-01-02T15:04:05.000"
+// milliseconds and an explicit timezone offset.
+const nodeLogTimeFmt = "2006-01-02T15:04:05.000-07:00"
 
 // ansiPattern strips ANSI escape sequences from log lines so that
 // color-enabled output can be parsed reliably.
@@ -249,7 +249,7 @@ func scanNodeLogsBetween(
 
 // parseLogLevel extracts the tint level token from a log line. The tint
 // logger emits the level immediately after the timestamp, flanked by
-// spaces: "2006-01-02T15:04:05.000 ERR message...". Returns false when
+// spaces: "2006-01-02T15:04:05.000-07:00 ERR message...". Returns false when
 // the line is too short or no known level token is present at the
 // expected position.
 func parseLogLevel(line string) (LogLevel, bool) {
@@ -280,12 +280,11 @@ func stripANSI(s string) string {
 }
 
 func parseLogTimestamp(line string) (time.Time, bool) {
-	// The tint timestamp is always the first 23 characters:
-	// "2006-01-02T15:04:05.000"
+	// The tint timestamp includes a numeric timezone offset.
 	if len(line) < len(nodeLogTimeFmt) {
 		return time.Time{}, false
 	}
-	ts, err := time.ParseInLocation(nodeLogTimeFmt, line[:len(nodeLogTimeFmt)], time.Local)
+	ts, err := time.Parse(nodeLogTimeFmt, line[:len(nodeLogTimeFmt)])
 	if err != nil {
 		return time.Time{}, false
 	}
