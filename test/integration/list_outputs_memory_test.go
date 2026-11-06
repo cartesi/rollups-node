@@ -81,7 +81,7 @@ func TestListOutputsConcurrentResponseBudget(t *testing.T) {
 		output.Hash = &hash
 		output.OutputHashesSiblings = make([]common.Hash, merkle.TREE_DEPTH)
 	}
-	require.NoError(t, repo.StoreClaimAndProofs(ctx, epoch, stored))
+	require.NoError(t, repo.StoreClaimAndProofs(ctx, epoch, repotest.WriteProofs(stored...)))
 	stored = nil
 
 	client := &http.Client{Timeout: 45 * time.Second}
