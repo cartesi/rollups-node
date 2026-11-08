@@ -454,6 +454,47 @@ The earlier work still needs valid proofs, signer authorization, time for
 inclusion, and all foreclosure and protocol checks. This does not provide active
 dispute defense or discovery of every other party's claim.
 
+Unknown automatic yield reasons do not stop execution. With a later run target,
+the emulator interpreter clears the automatic yield flag and resumes execution.
+The Sling stop-point loop continues without receiving automatic payloads.
+The node reads the reason from HTIF, ignores the data field and does not read
+the payload.
+It counts each reason per machine request. For a completed machine advance
+attempt with ignored reasons, the manager emits one diagnostic WARN. It gives
+the epoch index, input index, reasons and counts. The WARN also occurs if a
+later proof or collection check rejects the result. Replay can produce another
+WARN for the same input. An inspect with ignored reasons also produces one
+diagnostic WARN, including when it returns partial diagnostics with an error.
+It gives `request=inspect`, the captured `processed_inputs`, reasons and counts.
+The inspect count is captured with the fork and can be zero. These diagnostics
+do not change the stored result or application status.
+If the declared outputs root includes an output missing from the stored outputs,
+the validator detects the mismatch when it validates the epoch.
+
+During advance, an accepted manual yield with an outputs-root length other
+than 32 bytes stops execution at that input with `INVALID_OUTPUTS_ROOT`.
+While the advancer is active, a known automatic output or report with a declared
+length above the TX buffer capacity makes the application `FAILED`. The raw
+input remains stored. The node does not store its advance result, including
+new outputs, reports and proofs. `FAILED` prevents useful claim publication for
+all epochs, including earlier healthy epochs. A transaction already sent can
+still execute. Enabled PRT bond recovery is an exception, as described under
+[Disable and remove an application](#disable-and-remove-an-application).
+If you enable the application again, the same oversized request fails again.
+An error while reading HTIF or a known payload also makes the application
+`FAILED` during active advance. During inspect, these errors fail only that
+request.
+
+Machine reconstruction replays stored inputs at startup or after you enable an
+application. During replay, an ordinary I/O error in automatic HTIF or
+known-payload reception does not itself change the application status. This
+applies only if the returned error, including cleanup errors, has no failure
+classification that requires `FAILED`. The node logs `Failed to replay machine`
+at ERROR level and closes the candidate runtime. The next advancer step can
+reconstruct a new runtime if the application remains eligible. The application
+does not process new inputs until reconstruction succeeds. An invalid HTIF
+word size is an internal failure and makes the application `FAILED`.
+
 With `finalized` observation, a stored `CLAIM_STAGED` row that reads `UNSTAGED`
 once the latest head reaches its recorded staging block causes publication to
 wait. A warning identifies the application, epoch, recorded staging block and
