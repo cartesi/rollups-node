@@ -4,7 +4,8 @@
 package machine
 
 import (
-	"fmt"
+	"encoding/base64"
+	"encoding/json"
 
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -45,7 +46,25 @@ func collectTestEntries(state *HashCollectorState, delta uint64, fixed bool, per
 	for start := 0; start < len(leaves); start += width {
 		remaining := len(leaves) - start
 		if remaining < width && !fixed {
-			state.PartialBundle = []byte(fmt.Sprintf(`{"leaf_count":%d}`, remaining))
+			// Each set bit represents a completed subtree in the native carry.
+			context := make([]string, 0)
+			for bit := 0; 1<<bit <= remaining; bit++ {
+				if remaining&(1<<bit) == 0 {
+					continue
+				}
+				subtree := make([]Hash, 1<<bit)
+				for index := range subtree {
+					subtree[index] = periodic
+				}
+				root := denseTestEntry(subtree)
+				context = append(context, base64.StdEncoding.EncodeToString(root[:]))
+			}
+			state.PartialBundle, _ = json.Marshal(struct {
+				Height    int32    `json:"log2_max_leaves"`
+				Function  string   `json:"hash_function"`
+				LeafCount int      `json:"leaf_count"`
+				Context   []string `json:"context"`
+			}{state.Log2BundleMCycleCount, testKeccakHashFunction, remaining, context})
 			break
 		}
 		bundle := make([]Hash, width)

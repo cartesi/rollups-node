@@ -746,23 +746,43 @@ func (b *statefulAdvanceBackend) SendCmioResponse(reason uint16, data []byte, _ 
 	return nil
 }
 func (b *statefulAdvanceBackend) ReceiveCmioRequest(time.Duration) (uint8, uint16, []byte, error) {
+	if b.cycle == 9 {
+		return 0, uint16(ManualYieldReasonAccepted), b.outputsHash[:], nil
+	}
+	return 0, 0, nil, fmt.Errorf("no manual CMIO request at cycle %d", b.cycle)
+}
+
+func (b *statefulAdvanceBackend) automaticData() (automaticYieldReason, []byte, error) {
 	switch b.cycle {
 	case 3:
-		return 0, uint16(AutomaticYieldReasonOutput), []byte("stable-output"), nil
+		return AutomaticYieldReasonOutput, []byte("stable-output"), nil
 	case 6:
-		return 0, uint16(AutomaticYieldReasonReport), []byte("stable-report"), nil
-	case 9:
-		return 0, uint16(ManualYieldReasonAccepted), b.outputsHash[:], nil
+		return AutomaticYieldReasonReport, []byte("stable-report"), nil
 	default:
-		return 0, 0, nil, fmt.Errorf("no CMIO request at cycle %d", b.cycle)
+		return 0, nil, fmt.Errorf("no automatic CMIO request at cycle %d", b.cycle)
 	}
 }
+
 func (b *statefulAdvanceBackend) WriteMemory(uint64, []byte, time.Duration) error { return nil }
 func (b *statefulAdvanceBackend) ReadMemory(address, length uint64, _ time.Duration) ([]byte, error) {
-	if address != htifTohostAddress || length != 8 || (b.delivered && b.cycle != 9) {
-		return nil, errors.New("unexpected scripted memory read")
+	if address == htifTohostAddress && length == 8 {
+		if !b.delivered || b.cycle == 9 {
+			return binary.LittleEndian.AppendUint64(nil, acceptedTohostTestValue()|HashSize), nil
+		}
+		reason, data, err := b.automaticData()
+		if err != nil {
+			return nil, err
+		}
+		return binary.LittleEndian.AppendUint64(nil, htifDeviceYield<<htifDeviceShift|uint64(reason)<<htifReasonShift|
+			uint64(len(data))), nil
 	}
-	return binary.LittleEndian.AppendUint64(nil, acceptedTohostTestValue()|HashSize), nil
+	if address == TxBufferAddress {
+		_, data, err := b.automaticData()
+		if err == nil && length == uint64(len(data)) {
+			return data, nil
+		}
+	}
+	return nil, errors.New("unexpected scripted memory read")
 }
 func (b *statefulAdvanceBackend) GetRootHash(time.Duration) (Hash, error) { return Hash{}, nil }
 func (b *statefulAdvanceBackend) GetProof(uint64, int32, int32, time.Duration) (MemoryProof, error) {
@@ -1526,8 +1546,7 @@ func (s *ImplementationSuite) TestInspect() {
 	mockBackendHalted.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).
 		Return(YieldedAutomatically, nil).Once()
 	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(50), nil).Once()
-	mockBackendHalted.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).
-		Return(uint8(0), uint16(AutomaticYieldReasonReport), []byte("before halt"), nil).Once()
+	mockBackendHalted.SetupAutomaticYield(uint16(AutomaticYieldReasonReport), []byte("before halt"))
 	mockBackendHalted.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).
 		Return(Halted, nil).Once()
 	mockBackendHalted.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(75), nil).Once()
@@ -1558,8 +1577,7 @@ func (s *ImplementationSuite) TestInspect() {
 	mockBackendFailed.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).
 		Return(YieldedAutomatically, nil).Once()
 	mockBackendFailed.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(50), nil).Once()
-	mockBackendFailed.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).
-		Return(uint8(0), uint16(AutomaticYieldReasonReport), []byte("partial"), nil).Once()
+	mockBackendFailed.SetupAutomaticYield(uint16(AutomaticYieldReasonReport), []byte("partial"))
 	mockBackendFailed.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).
 		Return(Failed, nil).Once()
 	mockBackendFailed.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(75), nil).Once()
@@ -2261,12 +2279,12 @@ func (s *ImplementationSuite) TestRun() {
 	require.NoError(err)
 	mockBackend3.AssertExpectations(s.T())
 
-	// Test run with ReceiveCmioRequest error during automatic yield
+	// Test run with HTIF read error during automatic yield
 	mockBackend4 := NewMockBackend()
 	mockBackend4.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(0), nil)
 	mockBackend4.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil)
-	mockBackend4.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(0), []byte(nil), errors.New("cmio request failed"))
+	mockBackend4.On("ReadMemory", htifTohostAddress, uint64(8), mock.AnythingOfType("time.Duration")).
+		Return(nil, errors.New("cmio request failed"))
 
 	machine4 := &machineImpl{
 		backend: mockBackend4,
@@ -2283,7 +2301,7 @@ func (s *ImplementationSuite) TestRun() {
 		ctx, AdvanceStateRequest, false, testExecutionBounds(0, model.MaxExecutionCycleSpan),
 	)
 	require.Error(err)
-	require.Contains(err.Error(), "could not read output/report")
+	require.Contains(err.Error(), "could not read HTIF tohost")
 	require.Contains(err.Error(), "cmio request failed")
 	mockBackend4.AssertExpectations(s.T())
 
@@ -2294,8 +2312,7 @@ func (s *ImplementationSuite) TestRun() {
 		Return(YieldedAutomatically, nil).Once()
 	mockBackend5.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).
 		Return(YieldedManually, nil).Once()
-	mockBackend5.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(AutomaticYieldReasonOutput), []byte("output data"), nil).Once()
+	mockBackend5.SetupAutomaticYield(uint16(AutomaticYieldReasonOutput), []byte("output data"))
 
 	machine5 := &machineImpl{
 		backend: mockBackend5,
@@ -2324,8 +2341,7 @@ func (s *ImplementationSuite) TestRun() {
 		Return(YieldedAutomatically, nil).Once()
 	mockBackend6.On("Run", mock.AnythingOfType("uint64"), mock.AnythingOfType("time.Duration")).
 		Return(YieldedManually, nil).Once()
-	mockBackend6.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(AutomaticYieldReasonReport), []byte("report data"), nil).Once()
+	mockBackend6.SetupAutomaticYield(uint16(AutomaticYieldReasonReport), []byte("report data"))
 
 	machine6 := &machineImpl{
 		backend: mockBackend6,
@@ -2595,32 +2611,27 @@ func (s *ImplementationSuite) TestMultipleAutomaticYields() {
 	// First automatic yield with output
 	mockBackend.On("Run", uint64(100), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(10), nil).Once()
-	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(AutomaticYieldReasonOutput), []byte("output1"), nil).Once()
+	mockBackend.SetupAutomaticYield(uint16(AutomaticYieldReasonOutput), []byte("output1"))
 
 	// Second automatic yield with output
 	mockBackend.On("Run", uint64(110), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(20), nil).Once()
-	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(AutomaticYieldReasonOutput), []byte(""), nil).Once()
+	mockBackend.SetupAutomaticYield(uint16(AutomaticYieldReasonOutput), []byte(""))
 
 	// Third automatic yield with report
 	mockBackend.On("Run", uint64(120), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(30), nil).Once()
-	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(AutomaticYieldReasonReport), []byte("output2"), nil).Once()
+	mockBackend.SetupAutomaticYield(uint16(AutomaticYieldReasonReport), []byte("output2"))
 
 	// Fourth automatic yield with report
 	mockBackend.On("Run", uint64(130), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(40), nil).Once()
-	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(AutomaticYieldReasonReport), []byte(""), nil).Once()
+	mockBackend.SetupAutomaticYield(uint16(AutomaticYieldReasonReport), []byte(""))
 
 	// Fifth automatic yield with progress (ignored)
 	mockBackend.On("Run", uint64(140), mock.AnythingOfType("time.Duration")).Return(YieldedAutomatically, nil).Once()
 	mockBackend.On("ReadMCycle", mock.AnythingOfType("time.Duration")).Return(uint64(50), nil).Once()
-	mockBackend.On("ReceiveCmioRequest", mock.AnythingOfType("time.Duration")).Return(
-		uint8(0), uint16(AutomaticYieldReasonProgress), []byte("progress"), nil).Once()
+	mockBackend.SetupAutomaticYield(uint16(AutomaticYieldReasonProgress), []byte("progress"))
 
 	// Final manual yield
 	mockBackend.On("Run", uint64(150), mock.AnythingOfType("time.Duration")).Return(YieldedManually, nil).Once()

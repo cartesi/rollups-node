@@ -30,11 +30,12 @@ const (
 )
 
 type runResult struct {
-	outputs             []Output
-	reports             []Report
-	periodicStateHashes []Hash
-	paddingRepetitions  uint64
-	finalStateEntry     Hash
+	ignoredAutomaticYields []IgnoredAutomaticYield
+	outputs                []Output
+	reports                []Report
+	periodicStateHashes    []Hash
+	paddingRepetitions     uint64
+	finalStateEntry        Hash
 }
 
 type processResult struct {
@@ -101,6 +102,7 @@ const (
 	iflagsYAddress          uint64 = 0x308
 	htifTohostAddress       uint64 = 0x330
 	TxBufferAddress         uint64 = 0x60800000
+	txBufferSize            uint64 = 1 << 21
 	HashLog2Size                   = 5 // 32-byte data block
 	machineMemoryLog2Size   int32  = 64
 	memoryProofSiblingCount        = int(machineMemoryLog2Size) - HashLog2Size
@@ -331,12 +333,13 @@ func (m *machineImpl) Advance(ctx context.Context, input []byte, checkpointHash 
 	}
 
 	resp := &AdvanceResponse{
-		Status:              result.completion.status,
-		Outputs:             result.outputs,
-		Reports:             result.reports,
-		PeriodicStateHashes: result.periodicStateHashes,
-		PaddingRepetitions:  result.paddingRepetitions,
-		FinalStateEntry:     result.finalStateEntry,
+		IgnoredAutomaticYields: result.ignoredAutomaticYields,
+		Status:                 result.completion.status,
+		Outputs:                result.outputs,
+		Reports:                result.reports,
+		PeriodicStateHashes:    result.periodicStateHashes,
+		PaddingRepetitions:     result.paddingRepetitions,
+		FinalStateEntry:        result.finalStateEntry,
 	}
 
 	if resp.Status == CompletionStatusException {
@@ -350,7 +353,10 @@ func (m *machineImpl) Advance(ctx context.Context, input []byte, checkpointHash 
 func (m *machineImpl) Inspect(ctx context.Context, query []byte) (*InspectResponse, error) {
 	// For inspect-state requests, revert_root_hash is not checked and can be NULL/empty
 	result, err := m.process(ctx, query, InspectStateRequest, nil, false)
-	response := &InspectResponse{Reports: result.reports}
+	response := &InspectResponse{
+		Reports:                result.reports,
+		IgnoredAutomaticYields: result.ignoredAutomaticYields,
+	}
 	if err != nil {
 		return response, err
 	}
@@ -470,15 +476,56 @@ func (m *machineImpl) checkRequestYield(ctx context.Context) error {
 }
 
 func (m *machineImpl) readTohost() (uint64, error) {
+	tohost, err := m.readTohostWord()
+	if err != nil && !errors.Is(err, ErrMachineInternal) {
+		err = errors.Join(ErrMachineInternal, err)
+	}
+	return tohost, err
+}
+
+// readTohostWord preserves backend I/O error classes. An invalid word size
+// violates the backend response contract and remains an internal error.
+func (m *machineImpl) readTohostWord() (uint64, error) {
 	const wordSize uint64 = 8
 	data, err := m.backend.ReadMemory(htifTohostAddress, wordSize, m.params.FastDeadline)
 	if err != nil {
-		return 0, errors.Join(ErrMachineInternal, fmt.Errorf("could not read HTIF tohost: %w", err))
+		return 0, fmt.Errorf("could not read HTIF tohost: %w", err)
 	}
 	if len(data) != int(wordSize) {
 		return 0, fmt.Errorf("HTIF tohost read returned %d bytes, expected %d: %w", len(data), wordSize, ErrMachineInternal)
 	}
 	return binary.LittleEndian.Uint64(data), nil
+}
+
+// readAutomaticYieldRequest receives only supported automatic data. The caller
+// must have observed YieldedAutomatically, so execution is stopped while the
+// header and any known payload are read. Known decoding follows the emulator's
+// machine::receive_cmio_request. Unknown data bits are not interpreted.
+func (m *machineImpl) readAutomaticYieldRequest() (uint16, []byte, error) {
+	tohost, err := m.readTohostWord()
+	if err != nil {
+		return 0, nil, err
+	}
+	reason := uint16((tohost >> htifReasonShift) & math.MaxUint16)
+	switch automaticYieldReason(reason) {
+	case AutomaticYieldReasonProgress:
+		return reason, binary.LittleEndian.AppendUint32(nil, uint32(tohost&math.MaxUint32)), nil
+	case AutomaticYieldReasonOutput, AutomaticYieldReasonReport:
+		length := tohost & math.MaxUint32
+		if length > txBufferSize {
+			return reason, nil, fmt.Errorf(
+				"automatic yield %d payload length %d exceeds CMIO transmit buffer capacity %d",
+				reason, length, txBufferSize,
+			)
+		}
+		if length == 0 {
+			return reason, []byte{}, nil
+		}
+		data, err := m.backend.ReadMemory(TxBufferAddress, length, m.params.FastDeadline)
+		return reason, data, err
+	default:
+		return reason, nil, nil
+	}
 }
 
 // readManualYieldResult returns the typed completion status and data reported by
@@ -648,6 +695,7 @@ func (m *machineImpl) run(
 		reports: make([]Report, 0, 16),
 	}
 
+	var ignoredYieldIndex map[uint16]int
 	var hashCollectorState *HashCollectorState
 	if computeHashes {
 		hashCollectorState = &HashCollectorState{
@@ -737,9 +785,9 @@ func (m *machineImpl) run(
 			return fail(err)
 		}
 
-		_, yieldReason, data, err := m.backend.ReceiveCmioRequest(m.params.FastDeadline)
+		yieldReason, data, err := m.readAutomaticYieldRequest()
 		if err != nil {
-			werr := fmt.Errorf("could not read output/report: %w", err)
+			werr := fmt.Errorf("could not read automatic yield: %w", err)
 			return fail(werr)
 		}
 
@@ -761,8 +809,16 @@ func (m *machineImpl) run(
 			}
 			result.reports = append(result.reports, data)
 		default:
-			err := fmt.Errorf("invalid automatic yield reason: %d: %w", yieldReason, ErrMachineInternal)
-			return fail(err)
+			if ignoredYieldIndex == nil {
+				ignoredYieldIndex = make(map[uint16]int)
+			}
+			if index, exists := ignoredYieldIndex[yieldReason]; exists {
+				result.ignoredAutomaticYields[index].Count++
+			} else {
+				ignoredYieldIndex[yieldReason] = len(result.ignoredAutomaticYields)
+				result.ignoredAutomaticYields = append(result.ignoredAutomaticYields,
+					IgnoredAutomaticYield{Reason: yieldReason, Count: 1})
+			}
 		}
 	}
 }

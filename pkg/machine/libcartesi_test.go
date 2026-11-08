@@ -32,11 +32,15 @@ func TestValidateEmulatorComputationHashLimits(t *testing.T) {
 
 func TestStateProofConstantsMatchEmulator(t *testing.T) {
 	require.EqualValues(t, emulator.CmioTxBufferStart, TxBufferAddress)
+	require.EqualValues(t, uint64(1)<<emulator.CmioTxBufferLog2Size, txBufferSize)
 	require.EqualValues(t, emulator.HashTreeLog2WordSize, HashLog2Size)
 	require.EqualValues(t, emulator.HashTreeLog2RootSize, machineMemoryLog2Size)
 	require.EqualValues(t, emulator.HtifDeviceYield, htifDeviceYield)
 	require.EqualValues(t, emulator.YieldManual, htifCommandManual)
 	require.EqualValues(t, emulator.ManualYieldReasonAccepted, htifReasonInputAccepted)
+	require.EqualValues(t, emulator.AutomaticYieldReasonProgress, AutomaticYieldReasonProgress)
+	require.EqualValues(t, emulator.AutomaticYieldReasonOutput, AutomaticYieldReasonOutput)
+	require.EqualValues(t, emulator.AutomaticYieldReasonReport, AutomaticYieldReasonReport)
 	require.EqualValues(t, emulator.HtifDeviceShift, htifDeviceShift)
 	require.EqualValues(t, emulator.HtifCommandShift, htifCommandShift)
 	require.EqualValues(t, emulator.HtifReasonShift, htifReasonShift)
