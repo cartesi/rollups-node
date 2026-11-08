@@ -1459,6 +1459,7 @@ type MockRollupsMachine struct {
 	AdvanceReportsReturn         []machine.Report
 	AdvanceLeafsReturn           []machine.Hash
 	AdvanceRemainingReturn       uint64
+	AdvanceIgnoredYieldsReturn   []machine.IgnoredAutomaticYield
 	AdvanceFinalStateEntryReturn *machine.Hash
 	StateProofReturn             *machine.StateProof
 	StateProofError              error
@@ -1468,6 +1469,7 @@ type MockRollupsMachine struct {
 
 	InspectResponseReturn *machine.InspectResponse
 	InspectError          error
+	InspectFunc           func(context.Context, []byte) (*machine.InspectResponse, error)
 
 	StoreError error
 
@@ -1513,17 +1515,21 @@ func (m *MockRollupsMachine) Advance(
 		}
 	}
 	return &machine.AdvanceResponse{
-		FinalStateEntry:     finalEntry,
-		Status:              m.CompletionStatusReturn,
-		ExceptionData:       m.ExceptionDataReturn,
-		Outputs:             m.AdvanceOutputsReturn,
-		Reports:             m.AdvanceReportsReturn,
-		PeriodicStateHashes: m.AdvanceLeafsReturn,
-		PaddingRepetitions:  m.AdvanceRemainingReturn,
+		FinalStateEntry:        finalEntry,
+		Status:                 m.CompletionStatusReturn,
+		ExceptionData:          m.ExceptionDataReturn,
+		Outputs:                m.AdvanceOutputsReturn,
+		Reports:                m.AdvanceReportsReturn,
+		PeriodicStateHashes:    m.AdvanceLeafsReturn,
+		PaddingRepetitions:     m.AdvanceRemainingReturn,
+		IgnoredAutomaticYields: m.AdvanceIgnoredYieldsReturn,
 	}, nil
 }
 
-func (m *MockRollupsMachine) Inspect(_ context.Context, _ []byte) (*machine.InspectResponse, error) {
+func (m *MockRollupsMachine) Inspect(ctx context.Context, query []byte) (*machine.InspectResponse, error) {
+	if m.InspectFunc != nil {
+		return m.InspectFunc(ctx, query)
+	}
 	return m.InspectResponseReturn, m.InspectError
 }
 

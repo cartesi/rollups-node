@@ -276,6 +276,12 @@ func (m *MachineInstanceImpl) Advance(
 		return nil, errors.Join(err, fork.Close())
 	}
 
+	if len(advanceResp.IgnoredAutomaticYields) > 0 {
+		m.logger.Warn("Ignored unknown automatic yields",
+			"request", "advance", "epoch_index", epochIndex, "input_index", index,
+			ignoredAutomaticYieldAttr(advanceResp.IgnoredAutomaticYields))
+	}
+
 	// Create the result
 	result := &model.AdvanceResult{
 		EpochIndex:          epochIndex,
@@ -408,6 +414,15 @@ func validateCanonicalInputHashCollection(
 	return nil
 }
 
+func ignoredAutomaticYieldAttr(yields []machine.IgnoredAutomaticYield) slog.Attr {
+	reasons := make([]uint16, len(yields))
+	counts := make([]uint64, len(yields))
+	for i, ignored := range yields {
+		reasons[i], counts[i] = ignored.Reason, ignored.Count
+	}
+	return slog.Group("ignored_automatic_yields", slog.Any("reasons", reasons), slog.Any("counts", counts))
+}
+
 // forkForInspect creates a copy of the machine for inspect operations
 // It returns the forked machine and the current processed inputs count
 func (m *MachineInstanceImpl) forkForInspect(ctx context.Context) (machine.Machine, uint64, error) {
@@ -449,6 +464,11 @@ func (m *MachineInstanceImpl) Inspect(ctx context.Context, query []byte) (*Inspe
 
 	// Process the query
 	inspectResponse, inspectErr := fork.Inspect(inspectCtx, query)
+	if inspectResponse != nil && len(inspectResponse.IgnoredAutomaticYields) > 0 {
+		m.logger.Warn("Ignored unknown automatic yields",
+			"request", "inspect", "processed_inputs", processedInputs,
+			ignoredAutomaticYieldAttr(inspectResponse.IgnoredAutomaticYields))
+	}
 
 	// Create the result
 	result := &InspectResult{
