@@ -16,7 +16,7 @@ import (
 
 const passiveRefundEvent = "PartialBondRefund"
 
-func (f *passiveDisputeFixture) assertAllEvents() {
+func (f *passiveDisputeFixture) assertAllEvents(rootAsOf uint64) {
 	contractABI, err := itournament.ITournamentMetaData.GetAbi()
 	f.r.NoError(err)
 	seen := make(map[string]int)
@@ -54,6 +54,12 @@ func (f *passiveDisputeFixture) assertAllEvents() {
 				definition, err := contractABI.EventByID(raw.Topics[0])
 				f.r.NoError(err)
 				seen[definition.Name]++
+				if layer.descriptor.Level == 0 && raw.BlockNumber > rootAsOf {
+					f.r.Equal("BondRecovered", definition.Name, "only recovery can follow root retirement")
+					f.r.NotContains(bondByLog, passiveEventIdentity(raw.TxHash, uint64(raw.Index)),
+						"the reader does not store a later recovery of the retired root")
+					continue
+				}
 				switch definition.Name {
 				case "CommitmentJoined":
 					f.assertJoinedEvent(layer, raw)

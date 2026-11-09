@@ -198,7 +198,7 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 		if loadErr != nil {
 			return errors.Join(observeErr, loadErr)
 		}
-		if rootObservationCovers(root, facts.Number) {
+		if s.rootObservationCovers(root, facts.Number) {
 			hasCurrentRoot = true
 			break
 		}
@@ -222,7 +222,7 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 		if readErr != nil {
 			return errors.Join(observeErr, readErr)
 		}
-		if rootObservationCovers(root, facts.Number) {
+		if s.rootObservationCovers(root, facts.Number) {
 			err = s.recordTournamentResult(ctx, app, epoch, *view)
 		}
 	}
@@ -241,7 +241,7 @@ func (s *Service) observeTournamentState(
 	for _, tournament := range stored {
 		known[tournament.Address] = true
 		if tournament.Snapshot.AsOfBlock < facts.Number &&
-			!tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, facts.Number) {
+			!s.tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, facts.Number) {
 			targets = append(targets, tournament)
 		}
 	}
@@ -302,6 +302,7 @@ func (s *Service) observeTournamentState(
 				readErr = s.repository.StoreTournamentInterval(ctx, app.ID, expected, batches)
 				if readErr == nil {
 					app.LastTournamentCheckBlock = max(app.LastTournamentCheckBlock, facts.Number)
+					s.logCompletedRootObservation(app, batches, facts.Number)
 				}
 			}
 		}
@@ -381,4 +382,24 @@ func (s *Service) observerCompletionEpoch(ctx context.Context, app *model.Applic
 		return nil, nil
 	}
 	return state.Epoch, nil
+}
+
+// logCompletedRootObservation runs only for newly committed observation units.
+func (s *Service) logCompletedRootObservation(app *model.Application, batches []*repository.TournamentEventBatch, head uint64) {
+	for _, batch := range batches {
+		t := batch.Tournament
+		if t.Snapshot.BondRecovery.Disposition != model.BondDispositionRecoverable ||
+			!s.tournamentObservationComplete(t, t.Snapshot.AsOfBlock, head) {
+			continue
+		}
+		reason, mode := "reader_only", "reader_only"
+		fields := []any{"application", app.Name, "epoch", t.EpochIndex, "tournament", t.Address,
+			"recipient", *t.Snapshot.BondRecovery.Claimer, "last_observed_block", t.Snapshot.AsOfBlock}
+		if s.submissionEnabled {
+			reason, mode = "foreign_beneficiary", "submitting"
+			fields = append(fields, "signer", s.txOptsFactory.From())
+		}
+		fields = append(fields, "reason", reason, "mode", mode)
+		s.Logger.Info("Stopped observing completed tournament root", fields...)
+	}
 }

@@ -31,7 +31,7 @@ func TestInconsistentConsensusViewsRetryWithoutWritesAndReportPersistentFailure(
 			ready := f.d.Ready()
 			for _, head := range []uint64{101, 101, 102, 103, 104, 105} {
 				tickHead(client, head)
-				expectProtectionReads(t, f.factory, f.consensus, observerFacts(head), f.epoch)
+				expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(head), f.epoch)
 				reschedule, err := f.d.Tick(t.Context())
 				require.NoError(t, err, "inconsistent views retry without an ERROR from the tick loop")
 				require.False(t, reschedule)

@@ -72,7 +72,7 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 					f.consensus.On("CanAcceptStagedTournamentResult", opts).Return(snapshot.accept, nil).Once()
 					f.repo.On("GetEpoch", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).Return(epoch, nil).Once()
 				}
-				expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+				expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), epoch)
 				err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 				require.NoError(t, err)
 				require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
@@ -120,7 +120,7 @@ func TestForeclosedInvalidOutputsRootObservesWhileInputDrainPending(t *testing.T
 	f.repo.On("HasUndrainedEpochsBeforeBlock", mock.Anything, f.app.ID, f.app.ForecloseBlock).Return(true, nil).Once()
 	f.repo.On("GetEpochCompletionState", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).
 		Return(&repository.EpochCompletionState{Application: f.app, Epoch: epoch, Problem: prtTestProblem(f.app.Status, 0)}, nil).Once()
-	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), epoch)
 	err = f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
 	f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, epoch.Index, uint64(95)).
 		Run(func(mock.Arguments) { require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock) }).Return(nil).Once()
 
-	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), epoch)
 	err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 	require.NoError(t, err)
 	require.Equal(t, model.ApplicationStatus_OK, f.app.Status)

@@ -112,7 +112,7 @@ func TestDeploymentObservationNeverBecomesWholeApplicationTierGate(t *testing.T)
 			f.checkpoint.epochs(f.epoch)
 			f.block = f.facts
 			f.snapshot(resultTestSnapshot(f.epoch, false))
-			expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+			expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, f.facts, f.epoch)
 			reads := 0
 			f.consensus.deploymentRead = func(_ context.Context, h txsender.BlockRef) (DeploymentEvidence, error) {
 				reads++
@@ -298,7 +298,7 @@ func TestCompatibleDeploymentReadFailureDoesNotReportProtectionStop(t *testing.T
 	f.checkpoint.epochs(f.epoch)
 	f.block = f.facts
 	f.snapshot(resultTestSnapshot(f.epoch, false))
-	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, f.facts, f.epoch)
 	cause := errors.New("deployment read unavailable")
 	f.consensus.deploymentRead = func(_ context.Context, h txsender.BlockRef) (DeploymentEvidence, error) {
 		return DeploymentEvidence{Head: h, Consensus: f.app.IConsensusAddress}, cause
@@ -315,7 +315,7 @@ func TestDeploymentReadShutdownDoesNotReportProtectionStop(t *testing.T) {
 	var logs bytes.Buffer
 	f.d.Logger = slog.New(slog.NewTextHandler(&logs, nil))
 	f.checkpoint.epochs(f.epoch)
-	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, f.facts, f.epoch)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	f.consensus.deploymentRead = func(_ context.Context, h txsender.BlockRef) (DeploymentEvidence, error) {
@@ -333,7 +333,7 @@ func TestDeploymentResetAcknowledgementFailureReportsEffectiveAdmission(t *testi
 	f.checkpoint.epochs(f.epoch)
 	f.block = f.facts
 	f.snapshot(resultTestSnapshot(f.epoch, false))
-	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, f.facts, f.epoch)
 	row := f.repo.deploymentRows[f.app.ID]
 	row.ResetGeneration++
 	f.repo.deploymentRows[f.app.ID] = row
@@ -359,7 +359,7 @@ func TestUnknownDeploymentShutdownReportsOnlyIndependentFailure(t *testing.T) {
 			var logs bytes.Buffer
 			f.d.Logger = slog.New(slog.NewTextHandler(&logs, nil))
 			f.checkpoint.epochs(f.epoch)
-			expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+			expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, f.facts, f.epoch)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			dependency := errors.New("independent deployment failure")

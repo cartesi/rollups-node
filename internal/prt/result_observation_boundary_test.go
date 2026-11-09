@@ -54,7 +54,7 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 			f.expectResultBoundaryWindow(epoch, tournament, 99)
 			f.expectResultBoundarySnapshot(epoch, observed, 99)
 
-			expectProtectionReads(t, f.factory, f.consensus, observerFacts(99), epoch)
+			expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(99), epoch)
 			require.NoError(t, f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(99)))
 			require.Equal(t, uint64(99), f.app.LastTournamentCheckBlock, "the older window must still publish successfully")
 			require.Equal(t, uint64(99), tournament.Snapshot.AsOfBlock)
@@ -70,7 +70,7 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 			f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), tournament.Address.Hex()).
 				Return(tournament, nil).Once()
 			f.expectResultBoundarySnapshot(epoch, observed, 99)
-			expectProtectionReads(t, f.factory, f.consensus, observerFacts(99), epoch)
+			expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(99), epoch)
 			require.NoError(t, f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(99)))
 			require.Empty(t, writeCoverage)
 
@@ -84,7 +84,7 @@ func TestResultWritesWaitForTournamentObservation(t *testing.T) {
 				f.consensus.On("CanStageTournamentResult", opts).Return(snapshot.stage, nil).Once()
 				f.consensus.On("CanAcceptStagedTournamentResult", opts).Return(snapshot.accept, nil).Once()
 			}
-			expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+			expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), epoch)
 			if !staged {
 				expectStoredProtection(t, f.repo, f.app, epoch)
 			}
@@ -243,7 +243,7 @@ func TestResultWindowPublicationFailureCannotWriteProtocolResult(t *testing.T) {
 	f.checkpoint.epochs(f.epoch)
 	f.levels(1)
 	f.checkpoint.tournament(f.epoch, *f.epoch.TournamentAddress, 0, 1, 90, 100, &TournamentEvents{}, nil)
-	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, f.facts, f.epoch)
 	require.ErrorIs(t, f.d.observeApplication(t.Context(), f.app, f.facts), failure)
 	require.Equal(t, uint64(50), f.app.LastTournamentCheckBlock)
 	require.Equal(t, model.EpochStatus_ClaimComputed, f.epoch.Status)

@@ -103,7 +103,7 @@ func TestWideAlternateTableObservationUsesShapeAcrossVerdicts(t *testing.T) {
 						require.Equal(t, uint64(71), batch.Matches[0].LeafSeal.DeadlineOne)
 					}).Return(nil).Once()
 				}
-				expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+				expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), epoch)
 				err := f.s.observeApplication(t.Context(), f.app, observerFacts(100))
 				if valid {
 					require.NoError(t, err)

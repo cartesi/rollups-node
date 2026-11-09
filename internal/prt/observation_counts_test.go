@@ -12,6 +12,8 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -125,6 +127,11 @@ func TestTournamentObservationRejectsIncompleteFinancialEvents(t *testing.T) {
 
 func TestTournamentObservationPublishesLateRecovery(t *testing.T) {
 	f := newObserverCheckpointFixture(t)
+	claimer := common.HexToAddress("0x777")
+	f.s.submissionEnabled = true
+	f.s.txOptsFactory = ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{From: claimer})
+	payment := model.Uint256{}
+
 	epoch := checkpointEpoch(0, "0x100")
 	epoch.Status = model.EpochStatus_ClaimAccepted
 	f.epochs(epoch)
@@ -133,7 +140,8 @@ func TestTournamentObservationPublishesLateRecovery(t *testing.T) {
 	address := *epoch.TournamentAddress
 	projection := &model.Tournament{Address: address, MaxLevel: 1, Kind: model.TournamentKindLeaf, StartInstant: 10,
 		Snapshot: model.TournamentSnapshot{AsOfBlock: 50, FinishedAtBlock: 40, Standing: model.TournamentStandingRootWinner,
-			BondRecovery: model.TournamentBondRecovery{Disposition: model.BondDispositionRecoverable}}}
+			BondRecovery: model.TournamentBondRecovery{Disposition: model.BondDispositionRecoverable,
+				Claimer: &claimer, Payment: &payment}}}
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), address.Hex()).Return(projection, nil).Once()
 	adapter := &tournamentAdapterMock{}
 	f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()

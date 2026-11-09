@@ -78,11 +78,11 @@ func runPassiveDisputeObserver(t *testing.T, localWins bool) {
 	logs.SetExpectedLogs(t, prtBlockOutOfRangeAllowlist)
 	t.Cleanup(func() { logs.CheckLogs(t) })
 	fixture := newPassiveDisputeFixture(ctx, t, client, localWins)
-	var protectionLogs []ExpectedLog
+	var protectionCause string
 	if !localWins {
-		cause := fmt.Sprintf("Epoch 0 has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
+		protectionCause = fmt.Sprintf("Epoch 0 has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
 			*fixture.epoch.MachineHash, fixture.layers[0].trees[0].final[0])
-		reason := regexp.QuoteMeta(cause)
+		reason := regexp.QuoteMeta(protectionCause)
 		logs.SetExpectedLogs(t,
 			prtBlockOutOfRangeAllowlist,
 			ExpectedLog{
@@ -98,16 +98,18 @@ func runPassiveDisputeObserver(t *testing.T, localWins bool) {
 				Reason: "the PRT service reports this application's expected divergence transition to the service loop",
 			},
 		)
+	}
+	retiredRoot := fixture.run()
+	if !localWins {
 		root := fixture.layers[0]
 		closeBlock := root.descriptor.StartInstant + root.descriptor.Allowance
 		require.GreaterOrEqual(t, closeBlock, root.descriptor.StartInstant)
-		for _, source := range []string{prtStoredClockSource, prtPinnedClockSource} {
+		sources := []string{prtStoredClockSource, fmt.Sprintf("committed root descriptor at block %d", retiredRoot.Snapshot.AsOfBlock)}
+		protectionLogs := make([]ExpectedLog, 0, len(sources))
+		for _, source := range sources {
 			protectionLogs = append(protectionLogs, prtProtectionStopLog(fixture.appName, fixture.appAddress,
-				0, root.address, closeBlock, cause, source))
+				0, root.address, closeBlock, protectionCause, source))
 		}
-	}
-	fixture.run()
-	if !localWins {
 		requirePrtProtectionLogs(ctx, t, &logs, protectionLogs...)
 	}
 }
@@ -193,7 +195,7 @@ func newPassiveDisputeFixture(ctx context.Context, t *testing.T, client *ethclie
 	return f
 }
 
-func (f *passiveDisputeFixture) run() {
+func (f *passiveDisputeFixture) run() *Tournament {
 	for level := uint64(0); level < f.levelCount; level++ {
 		layer := f.layers[level]
 		f.joinPair(layer)
@@ -216,24 +218,36 @@ func (f *passiveDisputeFixture) run() {
 		f.record(tx, err)
 		f.assertCurrent(parent, MatchPhaseUninitialized)
 	}
-	f.assertWinner(f.layers[0], TournamentStandingRootWinner)
+	root := f.layers[0]
+	retiredRoot := f.assertWinner(root, TournamentStandingRootWinner)
+	f.r.Equal(BondDispositionRecoverable, retiredRoot.Snapshot.BondRecovery.Disposition)
+	f.r.NotNil(retiredRoot.Snapshot.BondRecovery.Claimer)
+	f.r.Equal(f.actors[0].From, *retiredRoot.Snapshot.BondRecovery.Claimer)
+	f.r.NotNil(retiredRoot.Snapshot.BondRecovery.Payment)
 	if f.localWins {
 		f.stageAndAccept()
 	} else {
 		f.assertLocalDivergence()
 	}
-	// The completed root remains observable after acceptance or divergence.
-	tx, err := f.layers[0].contract.TryRecoveringBond(f.actors[0])
-	f.record(tx, err)
-	f.assertRecoveredRoot()
-	// The root can now retire. Its children must still receive no-event
-	// snapshot updates when their winner carryover windows expire.
+	// Recovery changes the chain, while the reader keeps its retired root snapshot.
+	tx, err := root.contract.TryRecoveringBond(f.actors[0])
+	receipt := f.record(tx, err)
+	f.r.Greater(receipt.BlockNumber.Uint64(), retiredRoot.Snapshot.AsOfBlock)
+	recovery, err := root.contract.BondRecovery(&bind.CallOpts{Context: f.ctx, BlockNumber: receipt.BlockNumber})
+	f.r.NoError(err)
+	f.r.Equal(uint8(bondDispositionRecovered), recovery.Disposition)
+	f.r.Equal(common.Address{}, recovery.Claimer)
+	f.r.Zero(recovery.Payment.Sign())
+	f.assertRetiredRoot(retiredRoot)
+	// Mutable children still receive no-event updates after the root retires.
 	f.assertInnerWinnersExpire()
-	f.assertAllEvents()
+	f.assertRetiredRoot(retiredRoot)
+	f.assertAllEvents(retiredRoot.Snapshot.AsOfBlock)
 	f.assertOnlyExternalTransactions()
 	if !f.localWins {
 		f.assertLocalDivergence()
 	}
+	return retiredRoot
 }
 
 func (f *passiveDisputeFixture) newLayer(address common.Address) {

@@ -14,6 +14,7 @@ import (
 )
 
 func TestTournamentRetirementRequiresImmutableCommittedSnapshot(t *testing.T) {
+	observer := &Service{}
 	base := Tournament{Snapshot: TournamentSnapshot{AsOfBlock: 50,
 		FinishedAtBlock: 40,
 		Standing:        TournamentStandingRootWinner, BondRecovery: TournamentBondRecovery{Disposition: BondDispositionRecovered}}}
@@ -47,42 +48,50 @@ func TestTournamentRetirementRequiresImmutableCommittedSnapshot(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			value := base
 			test.change(&value)
-			require.Equal(t, test.retired, tournamentObservationComplete(&value, 50, 100))
+			require.Equal(t, test.retired, observer.tournamentObservationComplete(&value, 50, 100))
 		})
 	}
-	require.False(t, tournamentObservationComplete(&base, 50, 49), "a later snapshot cannot decide retirement at an older head")
+	require.False(t, observer.tournamentObservationComplete(&base, 50, 49),
+		"a later snapshot cannot decide retirement at an older head")
 }
 
 func TestRetiredParentStillObservesMutableChildren(t *testing.T) {
-	f := newObserverCheckpointFixture(t)
-	epoch := checkpointEpoch(0, "0x100")
-	epoch.Status = EpochStatus_ClaimAccepted
-	f.epochs(epoch)
-	f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(2), nil).Once()
-	parent := &Tournament{Address: *epoch.TournamentAddress, MaxLevel: 2,
-		Snapshot: TournamentSnapshot{
-			AsOfBlock: 50, FinishedAtBlock: 40, Standing: TournamentStandingRootWinner,
-			BondRecovery: TournamentBondRecovery{Disposition: BondDispositionRecovered},
-		}}
-	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), parent.Address.Hex()).Return(parent, nil).Maybe()
-	child := f.tournament(epoch, common.HexToAddress("0x101"), 1, 2, 45, 100, &TournamentEvents{}, nil)
-	retiredChild := &Tournament{Address: common.HexToAddress("0x102"), Level: 1, MaxLevel: 2,
-		CreationEvent: &TournamentCreationEvent{BlockNumber: 10}, Snapshot: TournamentSnapshot{
-			AsOfBlock: 50, FinishedAtBlock: 45, Standing: TournamentStandingInnerEliminableNoWinner,
-			BondRecovery: TournamentBondRecovery{Disposition: BondDispositionNoWinner},
-		}}
-	f.children(epoch, parent, child, retiredChild)
-	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), retiredChild.Address.Hex()).Return(retiredChild, nil).Maybe()
-	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,
-		mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool {
-			return len(batches) == 1 && batches[0].Tournament.Address == child.Address &&
-				batches[0].Tournament.Snapshot.AsOfBlock == 100
-		}), uint64(100)).Return(nil).Once()
-	_, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
-	require.NoError(t, err)
-	require.Equal(t, uint64(50), parent.Snapshot.AsOfBlock)
-	require.Equal(t, uint64(50), retiredChild.Snapshot.AsOfBlock)
-	require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
-	f.factory.AssertNotCalled(t, "CreateTournamentAdapter", parent.Address)
-	f.factory.AssertNotCalled(t, "CreateTournamentAdapter", retiredChild.Address)
+	for _, mode := range []string{testRecoveredRootMode, testReaderRootMode, testForeignRootMode} {
+		t.Run(mode, func(t *testing.T) {
+			f := newObserverCheckpointFixture(t)
+			epoch := checkpointEpoch(0, "0x100")
+			epoch.Status = EpochStatus_ClaimAccepted
+			f.epochs(epoch)
+			f.consensus.On("TournamentLevelCount", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(uint64(2), nil).Once()
+			parent := &Tournament{Address: *epoch.TournamentAddress, MaxLevel: 2,
+				Snapshot: TournamentSnapshot{
+					AsOfBlock: 50, FinishedAtBlock: 40, Standing: TournamentStandingRootWinner,
+					BondRecovery: TournamentBondRecovery{Disposition: BondDispositionRecovered},
+				}}
+			setCompletedRootTestMode(f.s, parent, mode)
+			f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), parent.Address.Hex()).Return(parent, nil).Maybe()
+			child := f.tournament(epoch, common.HexToAddress("0x101"), 1, 2, 45, 100, &TournamentEvents{}, nil)
+			retiredChild := &Tournament{Address: common.HexToAddress("0x102"), Level: 1, MaxLevel: 2,
+				CreationEvent: &TournamentCreationEvent{BlockNumber: 10}, Snapshot: TournamentSnapshot{
+					AsOfBlock: 50, FinishedAtBlock: 45, Standing: TournamentStandingInnerEliminableNoWinner,
+					BondRecovery: TournamentBondRecovery{Disposition: BondDispositionNoWinner},
+				}}
+			f.children(epoch, parent, child, retiredChild)
+			f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), retiredChild.Address.Hex()).
+				Return(retiredChild, nil).Maybe()
+			f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,
+				mock.MatchedBy(func(batches []*repository.TournamentEventBatch) bool {
+					return len(batches) == 1 && batches[0].Tournament.Address == child.Address &&
+						batches[0].Tournament.Snapshot.AsOfBlock == 100
+				}), uint64(100)).Return(nil).Once()
+			_, err := observeEpochsForTest(t.Context(), f.s, f.app, 100)
+			require.NoError(t, err)
+			require.Equal(t, uint64(50), parent.Snapshot.AsOfBlock)
+			require.Equal(t, uint64(50), retiredChild.Snapshot.AsOfBlock)
+			require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
+			f.factory.AssertNotCalled(t, "CreateTournamentAdapter", parent.Address)
+			f.factory.AssertNotCalled(t, "CreateTournamentAdapter", retiredChild.Address)
+
+		})
+	}
 }

@@ -137,7 +137,7 @@ func TestRootObservationNeedsNoFactoryLogAcrossVerdicts(t *testing.T) {
 			adapter.On("StructuralEventCounts", mock.Anything).Return(zeroStructuralEventCounts(), nil).Once()
 			f.emptyParticipants(epoch, address)
 			f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, uint64(100)).Return(nil).Once()
-			expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+			expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), epoch)
 			require.NoError(t, f.s.observeApplication(t.Context(), f.app, observerFacts(100)))
 			require.Nil(t, f.repo.committedTournaments[address].CreationEvent)
 			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)

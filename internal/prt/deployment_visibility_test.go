@@ -66,6 +66,8 @@ func TestObservationWaitsForInitialDeploymentAtSelectedHead(t *testing.T) {
 			f.consensus.On("GetCurrentSealedEpoch", protectionOpts(facts)).
 				Return(CurrentSealedEpoch{Tournament: root}, nil).Twice()
 			adapter := &tournamentAdapterMock{}
+			f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), root.Hex()).
+				Return((*model.Tournament)(nil), nil).Once()
 			f.factory.On("CreateTournamentAdapter", root).Return(adapter, nil).Once()
 			adapter.On("Descriptor", protectionOpts(facts)).Return(TournamentDescriptor{StartInstant: 109, Allowance: 300}, nil).Once()
 			f.consensus.deploymentRead = func(_ context.Context, head txsender.BlockRef) (DeploymentEvidence, error) {
@@ -129,6 +131,8 @@ func TestObservationMissingCodeKeepsKnownRootDiagnostics(t *testing.T) {
 	f.epochs(epoch)
 	f.consensus.On("GetCurrentSealedEpoch", protectionOpts(facts)).Return(CurrentSealedEpoch{}, bind.ErrNoCode).Twice()
 	adapter := &tournamentAdapterMock{}
+	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
+		Return((*model.Tournament)(nil), nil).Once()
 	f.factory.On("CreateTournamentAdapter", *epoch.TournamentAddress).Return(adapter, nil).Once()
 	adapter.On("Descriptor", protectionOpts(facts)).Return(TournamentDescriptor{}, bind.ErrNoCode).Once()
 	require.NoError(t, f.s.observeApplication(t.Context(), f.app, facts))

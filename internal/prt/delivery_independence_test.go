@@ -8,6 +8,9 @@ import (
 	"errors"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"log/slog"
@@ -18,6 +21,9 @@ import (
 // A successful sibling cannot clear an incomplete application observation pass.
 func deliveryRegressionObserveHeads(t *testing.T, withHealthySibling bool, heads int) string {
 	f := newObserverCheckpointFixture(t)
+	// Keep observing the submitter's own pending bond while this test advances heads.
+	f.s.submissionEnabled = true
+	f.s.txOptsFactory = ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{From: common.HexToAddress("0x777")})
 	var output bytes.Buffer
 	f.s.Logger = slog.New(slog.NewTextHandler(&output, nil))
 	stuck, healthy := checkpointEpoch(0, "0x100"), checkpointEpoch(1, "0x200")

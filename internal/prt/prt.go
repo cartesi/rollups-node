@@ -432,7 +432,7 @@ func (s *Service) reconcileAcceptedEpochs(
 		if err != nil {
 			return true, fmt.Errorf("loading epoch %d observed tournament: %w", epoch.Index, err)
 		}
-		if app.IsForeclosed() && epoch.LastBlock < app.ForecloseBlock && !rootObservationCovers(tournament, mostRecentBlock) {
+		if app.IsForeclosed() && epoch.LastBlock < app.ForecloseBlock && !s.rootObservationCovers(tournament, mostRecentBlock) {
 			return true, nil
 		}
 		if tournament == nil || tournament.Snapshot.FinishedAtBlock == 0 ||
@@ -450,7 +450,7 @@ func (s *Service) reconcileAcceptedEpochs(
 		}
 
 		observedBlock := min(mostRecentBlock, tournament.Snapshot.AsOfBlock)
-		if tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, mostRecentBlock) {
+		if s.tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, mostRecentBlock) {
 			observedBlock = mostRecentBlock
 		}
 		event, err := s.readEpochAcceptance(ctx, app, epoch, consensus, observedBlock)
@@ -518,7 +518,7 @@ func (s *Service) gatherTournamentData(
 		if t.MaxLevel != levelCount || t.Level != uint64(level) {
 			return nil, fmt.Errorf("tournament %s database geometry does not match observed hierarchy", tournamentAddress)
 		}
-		if t.Snapshot.AsOfBlock >= mostRecentBlock || tournamentObservationComplete(t, t.Snapshot.AsOfBlock, mostRecentBlock) {
+		if t.Snapshot.AsOfBlock >= mostRecentBlock || s.tournamentObservationComplete(t, t.Snapshot.AsOfBlock, mostRecentBlock) {
 			return nil, nil
 		}
 	}
@@ -641,19 +641,24 @@ func (s *Service) gatherTournamentData(
 	return append([]*repository.TournamentEventBatch{batch}, children...), nil
 }
 
-// rootObservationCovers separates immutable tournament facts from later
+// rootObservationCovers separates completed tournament observation from later
 // DaveConsensus stage/accept transitions. Retirement never advances a cursor.
-func rootObservationCovers(root *Tournament, head uint64) bool {
+func (s *Service) rootObservationCovers(root *Tournament, head uint64) bool {
 	if root == nil || root.Snapshot.AsOfBlock > head {
 		return false
 	}
-	return root.Snapshot.AsOfBlock == head || tournamentObservationComplete(root, root.Snapshot.AsOfBlock, head)
+	return root.Snapshot.AsOfBlock == head || s.tournamentObservationComplete(root, root.Snapshot.AsOfBlock, head)
 }
 
-// Finished clones reject joins and all match mutations. Once their winner can
-// no longer expire and their bond cannot be recovered, their current views and
-// events are immutable. Require a committed complete observation first.
-func tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
+func isRootTournament(t *Tournament) bool {
+	return t.Level == uint64(RootLevel) && t.ParentTournamentAddress == nil &&
+		t.ParentMatchIDHash == nil && t.CreationEvent == nil
+}
+
+// tournamentObservationComplete requires a complete committed terminal snapshot.
+// Reader-only roots and foreign root bonds stop at that snapshot. Submitting
+// nodes retain their own pending bonds. An inner winner can still expire.
+func (s *Service) tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
 	snapshot := t.Snapshot
 	if snapshot.FinishedAtBlock == 0 || snapshot.FinishedAtBlock > snapshot.AsOfBlock ||
 		snapshot.AsOfBlock > cursor || snapshot.AsOfBlock > head ||
@@ -663,8 +668,21 @@ func tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
 	switch snapshot.Standing {
 	case TournamentStandingRootWinner, TournamentStandingRootFailed,
 		TournamentStandingInnerEliminableNoWinner, TournamentStandingInnerEliminableWinnerExpired:
-		return snapshot.BondRecovery.Disposition == BondDispositionNoWinner ||
-			snapshot.BondRecovery.Disposition == BondDispositionRecovered
+		if snapshot.BondRecovery.Disposition == BondDispositionNoWinner ||
+			snapshot.BondRecovery.Disposition == BondDispositionRecovered {
+			return true
+		}
+		if snapshot.Standing != TournamentStandingRootWinner || !isRootTournament(t) ||
+			snapshot.AsOfBlock < t.StartInstant || snapshot.BondRecovery.Disposition != BondDispositionRecoverable ||
+			snapshot.BondRecovery.Claimer == nil || *snapshot.BondRecovery.Claimer == (common.Address{}) ||
+			snapshot.BondRecovery.Payment == nil {
+			return false
+		}
+		if !s.submissionEnabled {
+			return true
+		}
+		return s.txOptsFactory != nil && s.txOptsFactory.From() != (common.Address{}) &&
+			*snapshot.BondRecovery.Claimer != s.txOptsFactory.From()
 	case TournamentStandingMatchesActive, TournamentStandingAwaitingClosure, TournamentStandingInnerWinner:
 		return false
 	default:
