@@ -483,8 +483,8 @@ type tournamentAdapterMock struct {
 
 var _ TournamentAdapter = (*tournamentAdapterMock)(nil)
 
-func (m *tournamentAdapterMock) RetrieveAllEvents(opts *bind.FilterOpts) (*TournamentEvents, error) {
-	args := m.Called(opts)
+func (m *tournamentAdapterMock) RetrieveAllEvents(ctx context.Context, query TournamentEventQuery) (*TournamentEvents, error) {
+	args := m.Called(ctx, query)
 	events, _ := args.Get(0).(*TournamentEvents)
 	return events, args.Error(1)
 }

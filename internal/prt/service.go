@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/big"
 	"sync/atomic"
 	"time"
 
@@ -47,7 +46,6 @@ type Service struct {
 	submissionEnabled   bool
 	publicationReady    atomic.Bool
 	defaultBlock        DefaultBlock
-	filter              ethutil.Filter
 	txOptsFactory       ethutil.TransactOptsFactory // Set by Create whenever submission is enabled.
 	disputeWarnings     map[common.Address]struct{}
 	zeroStagingWarnings map[int64]struct{}
@@ -157,10 +155,6 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	s.defaultBlock = nodeConfig.DefaultBlock
 	if s.defaultBlock != DefaultBlock_Finalized {
 		s.Logger.Warn("PRT stores provisional observations; reorg rollback is unsupported", "block_policy", s.defaultBlock)
-	}
-	s.filter = ethutil.Filter{
-		MaxChunkSize: new(big.Int).SetUint64(c.Config.BlockchainMaxBlockRange),
-		Logger:       s.Logger,
 	}
 
 	s.disputeWarnings = map[common.Address]struct{}{}

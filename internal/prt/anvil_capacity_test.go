@@ -113,7 +113,7 @@ func TestAnvilPRTInitialSixteenApplicationCapacity(t *testing.T) {
 	startHeader, err := client.HeaderByNumber(ctx, nil)
 	require.NoError(t, err)
 	for _, root := range roots {
-		adapter, err := NewITournamentAdapter(root, client, ethutil.Filter{})
+		adapter, err := NewITournamentAdapter(root, client)
 		require.NoError(t, err)
 		descriptor, err := adapter.Descriptor(&bind.CallOpts{Context: ctx})
 		require.NoError(t, err)
@@ -148,7 +148,7 @@ func TestAnvilPRTInitialSixteenApplicationCapacity(t *testing.T) {
 		require.NoError(t, err)
 		receipt := prtCapacityMined(ctx, t, client, tx)
 		lastReceipt = max(lastReceipt, receipt.BlockNumber.Uint64())
-		adapter, err := NewITournamentAdapter(root, client, ethutil.Filter{})
+		adapter, err := NewITournamentAdapter(root, client)
 		require.NoError(t, err)
 		descriptor, err := adapter.Descriptor(&bind.CallOpts{Context: ctx})
 		require.NoError(t, err)

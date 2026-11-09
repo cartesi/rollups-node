@@ -9,7 +9,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -244,8 +243,8 @@ func TestPRTObserverStopsAtTrustedHead(t *testing.T) {
 			}, nil).Once()
 			adapter.On("Standing", opts).Return(TournamentStanding{State: model.TournamentStandingMatchesActive}, nil).Once()
 			expectTournamentAuxiliaryReads(adapter, opts, RootLevel, model.TournamentStandingMatchesActive)
-			adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-				return opts.Start == 90 && opts.End != nil && *opts.End == 100
+			adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
+				return opts.Start == 90 && opts.End == 100
 			})).Return(&TournamentEvents{}, nil).Once()
 			adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 			f.checkpoint.emptyParticipants(f.epoch, *f.epoch.TournamentAddress)

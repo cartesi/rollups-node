@@ -5,17 +5,14 @@ package prt
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"maps"
 	"math/big"
 	"slices"
 	"testing"
 
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -38,12 +35,11 @@ func TestAllTournamentEventsFilter(t *testing.T) {
 	contractABI, err := itournament.ITournamentMetaData.GetAbi()
 	require.NoError(t, err)
 	address := common.HexToAddress("0x1234")
-	end := uint64(20)
-	query, err := buildAllEventsFilterQuery(&bind.FilterOpts{Start: 10, End: &end}, address, contractABI)
+	query, err := buildAllEventsFilterQuery(10, address, contractABI)
 	require.NoError(t, err)
 	require.Equal(t, []common.Address{address}, query.Addresses)
 	require.Equal(t, uint64(10), query.FromBlock.Uint64())
-	require.Equal(t, end, query.ToBlock.Uint64())
+	require.Equal(t, uint64(10), query.ToBlock.Uint64())
 	require.Len(t, query.Topics, 1)
 	names := []string{testCommitmentJoinedEvent, testMatchAdvancedEvent, testMatchCreatedEvent, "MatchDeleted",
 		testNewInnerTournamentEvent, testLeafMatchSealedEvent, "PartialBondRefund", "BondRecovered", testStandingChangedEvent}
@@ -54,7 +50,7 @@ func TestAllTournamentEventsFilter(t *testing.T) {
 			incompleteABI := *contractABI
 			incompleteABI.Events = maps.Clone(contractABI.Events)
 			delete(incompleteABI.Events, name)
-			_, err := buildAllEventsFilterQuery(&bind.FilterOpts{}, address, &incompleteABI)
+			_, err := buildAllEventsFilterQuery(10, address, &incompleteABI)
 			require.ErrorContains(t, err, "missing monitored event "+name)
 		})
 	}
@@ -62,13 +58,32 @@ func TestAllTournamentEventsFilter(t *testing.T) {
 }
 
 type tournamentLogsSource struct {
-	logs []types.Log
+	logs       []types.Log
+	unfiltered bool
 }
 
-func (s *tournamentLogsSource) GetLogs(context.Context, map[string]any) ([]types.Log, error) {
-	return s.logs, nil
+func (s *tournamentLogsSource) GetLogs(_ context.Context, query map[string]any) ([]types.Log, error) {
+	if s.unfiltered {
+		return s.logs, nil
+	}
+	from, err := hexutil.DecodeUint64(query["fromBlock"].(string))
+	if err != nil {
+		return nil, err
+	}
+	to, err := hexutil.DecodeUint64(query["toBlock"].(string))
+	if err != nil {
+		return nil, err
+	}
+	var logs []types.Log
+	for _, entry := range s.logs {
+		if from <= entry.BlockNumber && entry.BlockNumber <= to {
+			logs = append(logs, entry)
+		}
+	}
+	return logs, nil
 }
 
+// currentTournamentLogs is a synthetic decoder corpus, not one legal clone history.
 func currentTournamentLogs(t *testing.T) []types.Log {
 	t.Helper()
 	contractABI, err := itournament.ITournamentMetaData.GetAbi()
@@ -121,12 +136,9 @@ func TestRetrieveAllTournamentEventsParsesCurrentABI(t *testing.T) {
 	t.Cleanup(server.Stop)
 	client := ethclient.NewClient(rpc.DialInProc(server))
 	t.Cleanup(client.Close)
-	adapter, err := NewITournamentAdapter(address, client, ethutil.Filter{
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
+	adapter, err := NewITournamentAdapter(address, client)
 	require.NoError(t, err)
-	end := uint64(10)
-	events, err := adapter.RetrieveAllEvents(&bind.FilterOpts{Context: t.Context(), Start: 10, End: &end})
+	events, err := adapter.(*ITournamentAdapterImpl).retrieveEventsAtBlocks(t.Context(), []uint64{10})
 	require.NoError(t, err)
 	require.Len(t, events.CommitmentJoined, 1)
 	require.Len(t, events.MatchCreated, 1)
@@ -227,7 +239,7 @@ func TestRetrieveTournamentEventsRejectsInvalidLogs(t *testing.T) {
 			if test.mutate != nil {
 				test.mutate(&entry)
 			}
-			source := &tournamentLogsSource{logs: []types.Log{entry}}
+			source := &tournamentLogsSource{logs: []types.Log{entry}, unfiltered: true}
 			if test.duplicate {
 				source.logs = append(source.logs, entry)
 			}
@@ -236,12 +248,9 @@ func TestRetrieveTournamentEventsRejectsInvalidLogs(t *testing.T) {
 			t.Cleanup(server.Stop)
 			client := ethclient.NewClient(rpc.DialInProc(server))
 			t.Cleanup(client.Close)
-			adapter, err := NewITournamentAdapter(address, client, ethutil.Filter{
-				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-			})
+			adapter, err := NewITournamentAdapter(address, client)
 			require.NoError(t, err)
-			end := uint64(10)
-			events, err := adapter.RetrieveAllEvents(&bind.FilterOpts{Context: t.Context(), Start: 10, End: &end})
+			events, err := adapter.(*ITournamentAdapterImpl).retrieveEventsAtBlocks(t.Context(), []uint64{10})
 			require.Error(t, err)
 			require.Nil(t, events, "a rejected range must not return partial events")
 		})
@@ -283,12 +292,9 @@ func TestRetrieveTournamentEventsOrdersLogsAndChecksCrossLogIdentity(t *testing.
 			t.Cleanup(server.Stop)
 			client := ethclient.NewClient(rpc.DialInProc(server))
 			t.Cleanup(client.Close)
-			adapter, err := NewITournamentAdapter(address, client, ethutil.Filter{
-				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-			})
+			adapter, err := NewITournamentAdapter(address, client)
 			require.NoError(t, err)
-			end := uint64(11)
-			events, err := adapter.RetrieveAllEvents(&bind.FilterOpts{Context: t.Context(), Start: 10, End: &end})
+			events, err := adapter.(*ITournamentAdapterImpl).retrieveEventsAtBlocks(t.Context(), []uint64{10, 11})
 			if test.wantError != "" {
 				require.ErrorContains(t, err, test.wantError)
 				require.Nil(t, events)

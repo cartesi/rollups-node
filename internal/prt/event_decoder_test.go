@@ -7,10 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"io"
-	"log/slog"
 	"math/big"
-	"net/http/httptest"
 	"reflect"
 	"slices"
 	"sync"
@@ -18,12 +15,11 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/require"
 )
@@ -189,70 +185,48 @@ func (s *segmentedTournamentLogs) GetLogs(_ context.Context, query tournamentRan
 	return logs, nil
 }
 
-func TestRetrieveTournamentEventsRetainsEverySliceAcrossChunks(t *testing.T) {
-	var reference *TournamentEvents
-	for _, maximum := range []*big.Int{nil, big.NewInt(1)} {
-		source := &segmentedTournamentLogs{}
-		for _, block := range []uint64{12, 10} {
-			for _, entry := range currentTournamentLogs(t) {
-				entry.BlockNumber = block
-				entry.BlockHash = common.BigToHash(new(big.Int).SetUint64(block))
-				entry.TxHash = common.BigToHash(new(big.Int).SetUint64(block + 100))
-				source.logs = append(source.logs, entry)
-			}
-		}
-		server := rpc.NewServer()
-		require.NoError(t, server.RegisterName("eth", source))
-		t.Cleanup(server.Stop)
-		httpServer := httptest.NewServer(server)
-		t.Cleanup(httpServer.Close)
-		client, err := ethutil.DialEthClient(t.Context(), httpServer.URL)
-		require.NoError(t, err)
-		t.Cleanup(client.Close)
-		adapter, err := NewITournamentAdapter(common.HexToAddress("0x1234"), client,
-			ethutil.Filter{MaxChunkSize: maximum, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-		require.NoError(t, err)
-		end := uint64(12)
-		events, err := adapter.RetrieveAllEvents(&bind.FilterOpts{Context: t.Context(), Start: 10, End: &end})
-		require.NoError(t, err)
-		fields := reflect.ValueOf(events).Elem()
-		for index := range fields.NumField() {
-			field := fields.Field(index)
-			require.Equal(t, reflect.Slice, field.Kind())
-			require.Equal(t, 2, field.Len(), fields.Type().Field(index).Name)
-			for position, block := range []uint64{10, 12} {
-				raw := field.Index(position).Elem().FieldByName("Raw").Interface().(types.Log)
-				require.Equal(t, block, raw.BlockNumber)
-			}
-		}
-		source.mu.Lock()
-		queries := slices.Clone(source.queries)
-		source.mu.Unlock()
-		if maximum == nil {
-			reference = events
-			require.Equal(t, [][2]uint64{{10, 12}}, queries)
-		} else {
-			require.Equal(t, reference, events)
-			require.Equal(t, [][2]uint64{{10, 10}, {11, 11}, {12, 12}}, queries)
+func TestRetrieveTournamentEventsRetainsEverySliceAcrossBlocks(t *testing.T) {
+	source := &segmentedTournamentLogs{}
+	for _, block := range []uint64{12, 10} {
+		for _, entry := range currentTournamentLogs(t) {
+			entry.BlockNumber = block
+			entry.BlockHash = common.BigToHash(new(big.Int).SetUint64(block))
+			entry.TxHash = common.BigToHash(new(big.Int).SetUint64(block + 100))
+			source.logs = append(source.logs, entry)
 		}
 	}
+	server := rpc.NewServer()
+	require.NoError(t, server.RegisterName("eth", source))
+	t.Cleanup(server.Stop)
+	client := ethclient.NewClient(rpc.DialInProc(server))
+	t.Cleanup(client.Close)
+	adapter, err := NewITournamentAdapter(common.HexToAddress("0x1234"), client)
+	require.NoError(t, err)
+	events, err := adapter.(*ITournamentAdapterImpl).retrieveEventsAtBlocks(t.Context(), []uint64{10, 12})
+	require.NoError(t, err)
+	fields := reflect.ValueOf(events).Elem()
+	for index := range fields.NumField() {
+		field := fields.Field(index)
+		require.Equal(t, reflect.Slice, field.Kind())
+		require.Equal(t, 2, field.Len(), fields.Type().Field(index).Name)
+		for position, block := range []uint64{10, 12} {
+			raw := field.Index(position).Elem().FieldByName("Raw").Interface().(types.Log)
+			require.Equal(t, block, raw.BlockNumber)
+		}
+	}
+	require.Equal(t, [][2]uint64{{10, 10}, {12, 12}}, source.queries)
 }
 
-func TestRetrieveTournamentEventsRejectsTerminalIteratorError(t *testing.T) {
+func TestRetrieveTournamentEventsRejectsLaterBlockError(t *testing.T) {
 	source := &segmentedTournamentLogs{logs: currentTournamentLogs(t), failAt: new(uint64(11))}
 	server := rpc.NewServer()
 	require.NoError(t, server.RegisterName("eth", source))
 	t.Cleanup(server.Stop)
-	httpServer := httptest.NewServer(server)
-	t.Cleanup(httpServer.Close)
-	client, err := ethutil.DialEthClient(t.Context(), httpServer.URL)
-	require.NoError(t, err)
+	client := ethclient.NewClient(rpc.DialInProc(server))
 	t.Cleanup(client.Close)
-	adapter, err := NewITournamentAdapter(common.HexToAddress("0x1234"), client,
-		ethutil.Filter{MaxChunkSize: big.NewInt(1), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	adapter, err := NewITournamentAdapter(common.HexToAddress("0x1234"), client)
 	require.NoError(t, err)
-	end := uint64(12)
-	events, err := adapter.RetrieveAllEvents(&bind.FilterOpts{Context: t.Context(), Start: 10, End: &end})
+	events, err := adapter.(*ITournamentAdapterImpl).retrieveEventsAtBlocks(t.Context(), []uint64{10, 11})
 	require.ErrorContains(t, err, "interval unavailable")
 	require.Nil(t, events)
 }

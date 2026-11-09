@@ -16,7 +16,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
@@ -157,13 +156,13 @@ func (f *observerCheckpointFixture) tournament(
 	end := scanEnd
 	start := max(epoch.LastBlock, tournament.Snapshot.AsOfBlock+1)
 	if start <= end {
-		adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-			return opts != nil && opts.Context != nil && opts.Start == start && opts.End != nil && *opts.End == end
+		adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
+			return opts.Start == start && opts.End == end
 		})).Return(events, scanError).Once()
 	}
+	adapter.On("StructuralEventCounts", mock.MatchedBy(resultCallOptsAtBlock(end))).
+		Return(structuralCountsForEvents(events), nil).Once()
 	if scanError == nil {
-		adapter.On("StructuralEventCounts", mock.MatchedBy(resultCallOptsAtBlock(end))).
-			Return(structuralCountsForEvents(events), nil).Once()
 		f.emptyParticipants(epoch, address)
 	}
 	f.t.Cleanup(func() { adapter.AssertExpectations(f.t) })
@@ -334,8 +333,8 @@ func TestGatherTournamentDataKeepsNewFinishedProjectionBelowCursor(t *testing.T)
 		FinalState: *epoch.MachineHash, FinishedAt: 49,
 	}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, TournamentStandingRootWinner)
-	adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-		return opts.Start == epoch.LastBlock && opts.End != nil && *opts.End == 100
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
+		return opts.Start == epoch.LastBlock && opts.End == 100
 	})).Return(&TournamentEvents{}, nil).Once()
 	adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 	f := &observerCheckpointFixture{t: t, s: s, repo: repo, app: app}

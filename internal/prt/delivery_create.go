@@ -23,7 +23,7 @@ func newDelivery(
 		if !ok {
 			return nil, fmt.Errorf("EthClient must be *ethclient.Client when AdapterFactory is not provided")
 		}
-		s.adapterFactory = NewDefaultAdapterFactory(client, s.filter)
+		s.adapterFactory = NewDefaultAdapterFactory(client)
 	}
 	policy := txsender.RuntimePolicy()
 	var err error

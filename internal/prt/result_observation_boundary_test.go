@@ -8,7 +8,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
@@ -154,8 +153,8 @@ func (f *observerCheckpointFixture) expectResultBoundaryWindowForState(
 	adapter.On("Standing", opts).Return(standing, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, standing.State)
 	previous := f.app.LastTournamentCheckBlock
-	adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-		return opts.Start == previous+1 && opts.End != nil && *opts.End == head
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
+		return opts.Start == previous+1 && opts.End == head
 	})).Return(&TournamentEvents{}, nil).Once()
 	counts := zeroStructuralEventCounts()
 	counts.CommitmentJoined.SetUint64(1)

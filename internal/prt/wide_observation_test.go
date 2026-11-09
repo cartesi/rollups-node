@@ -76,7 +76,7 @@ func TestWideAlternateTableObservationUsesShapeAcrossVerdicts(t *testing.T) {
 						DivergencePosition: position, FinalStateTwo: two, DeadlineOne: 71, DeadlineTwo: 83, EliminableAt: 83,
 						Raw: types.Log{Address: child.Address, BlockNumber: 60, TxHash: common.HexToHash("0x44"), Index: 1}}},
 					PartialBondRefund: []*itournament.ITournamentPartialBondRefund{{Value: big.NewInt(0)}}}
-				adapter.On("RetrieveAllEvents", mock.Anything).Return(events, nil).Once()
+				adapter.On("RetrieveAllEvents", mock.Anything, mock.Anything).Return(events, nil).Once()
 				counts := zeroStructuralEventCounts()
 				counts.CommitmentJoined.SetUint64(2)
 				counts.MatchCreated.SetUint64(1)

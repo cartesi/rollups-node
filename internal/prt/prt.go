@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -22,7 +21,6 @@ import (
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/prtprotection"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 type prtRepository interface {
@@ -72,16 +70,15 @@ type EthClientInterface interface {
 // DefaultAdapterFactory creates adapters using a concrete *ethclient.Client.
 type DefaultAdapterFactory struct {
 	client *ethclient.Client
-	filter ethutil.Filter
 }
 
 // NewDefaultAdapterFactory creates a DefaultAdapterFactory.
-func NewDefaultAdapterFactory(client *ethclient.Client, filter ethutil.Filter) *DefaultAdapterFactory {
-	return &DefaultAdapterFactory{client: client, filter: filter}
+func NewDefaultAdapterFactory(client *ethclient.Client) *DefaultAdapterFactory {
+	return &DefaultAdapterFactory{client: client}
 }
 
 func (f *DefaultAdapterFactory) CreateTournamentAdapter(addr common.Address) (TournamentAdapter, error) {
-	return NewITournamentAdapter(addr, f.client, f.filter)
+	return NewITournamentAdapter(addr, f.client)
 }
 
 func (f *DefaultAdapterFactory) CreateDaveConsensusAdapter(addr common.Address) (DaveConsensusAdapter, error) {
@@ -583,12 +580,34 @@ func (s *Service) gatherTournamentData(
 		nextSearchBlock = t.StartInstant
 	}
 	endBlock := mostRecentBlock
+	previousCounts := zeroStructuralEventCounts()
+	if !created && nextSearchBlock > t.StartInstant {
+		// Committed events supply the seed without a historical cursor read.
+		// Changed counters still need state within the unread interval.
+		counts, countErr := s.repository.GetTournamentEventCounts(ctx, app.ID, epoch.Index, tournamentAddress, previousAsOf)
+		if countErr != nil {
+			return nil, fmt.Errorf("reading committed tournament event counts: %w", countErr)
+		}
+		if err := validateStoredStandingCount(counts); err != nil {
+			return nil, err
+		}
+		previousCounts = structuralEventCounts(counts)
+	}
+	currentCounts, err := adapter.StructuralEventCounts(pinnedCallOpts(ctx, endBlock))
+	if err != nil {
+		return nil, fmt.Errorf("reading current tournament event counts: %w", err)
+	}
+
 	events := &TournamentEvents{}
 	if nextSearchBlock <= endBlock {
 		s.Logger.Debug("Searching for tournament events", "level", level, "application", app.Name,
 			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(),
 			"next_search_block", nextSearchBlock, "end_block", endBlock)
-		events, err = adapter.RetrieveAllEvents(&bind.FilterOpts{Context: ctx, Start: nextSearchBlock, End: &endBlock})
+		events, err = adapter.RetrieveAllEvents(ctx, TournamentEventQuery{
+			Start: nextSearchBlock, End: endBlock, Previous: previousCounts, Current: currentCounts,
+			FindRecovery: previousBondDisposition != BondDispositionRecovered &&
+				t.Snapshot.BondRecovery.Disposition == BondDispositionRecovered,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("retrieving tournament %s events: %w", tournamentAddress, err)
 		}
@@ -605,23 +624,6 @@ func (s *Service) gatherTournamentData(
 		"matchDeleted", len(events.MatchDeleted),
 		"newInnerTournament", len(events.NewInnerTournament))
 
-	previousCounts := zeroStructuralEventCounts()
-	if !created && nextSearchBlock > t.StartInstant {
-		// Committed event identities preserve the cumulative baseline even when
-		// the provider has pruned state at the previous observation block.
-		counts, countErr := s.repository.GetTournamentEventCounts(ctx, app.ID, epoch.Index, tournamentAddress, previousAsOf)
-		if countErr != nil {
-			return nil, fmt.Errorf("reading committed tournament event counts: %w", countErr)
-		}
-		if err := validateStoredStandingCount(counts); err != nil {
-			return nil, err
-		}
-		previousCounts = structuralEventCounts(counts)
-	}
-	currentCounts, err := adapter.StructuralEventCounts(pinnedCallOpts(ctx, endBlock))
-	if err != nil {
-		return nil, fmt.Errorf("reading current tournament event counts: %w", err)
-	}
 	if err := validateTournamentEventCounts(previousCounts, currentCounts, events); err != nil {
 		return nil, fmt.Errorf("tournament %s: %w", tournamentAddress, err)
 	}

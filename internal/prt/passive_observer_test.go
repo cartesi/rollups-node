@@ -7,7 +7,6 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -197,9 +196,9 @@ func TestFalseFinalStatePublishesBeforeLocalDivergence(t *testing.T) {
 		State: model.TournamentStandingRootWinner, HasCandidate: true, Candidate: foreign, FinalState: falseState, FinishedAt: 90,
 	}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, model.TournamentStandingRootWinner)
-	adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
 		// A newly found clone includes its full history, even below the app cursor.
-		return opts.Start == 10 && opts.End != nil && *opts.End == 100
+		return opts.Start == 10 && opts.End == 100
 	})).Return(&TournamentEvents{}, nil).Once()
 	adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 	f.emptyParticipants(epoch, address)

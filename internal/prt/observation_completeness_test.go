@@ -14,7 +14,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -70,7 +69,7 @@ func TestIncompleteTournamentEventsRetryTheSameIntervalAndKeepPersistentAlarm(t 
 			counts.CommitmentJoined.SetUint64(1)
 			adapter.On("StructuralEventCounts", mock.Anything).Return(counts, nil).Times(6)
 			var starts []uint64
-			recordInterval := func(args mock.Arguments) { starts = append(starts, args.Get(0).(*bind.FilterOpts).Start) }
+			recordInterval := func(args mock.Arguments) { starts = append(starts, args.Get(1).(TournamentEventQuery).Start) }
 			events := &TournamentEvents{CommitmentJoined: []*itournament.ITournamentCommitmentJoined{{
 				Commitment: *f.epoch.Commitment, FinalStateHash: *f.epoch.MachineHash,
 				Raw: types.Log{BlockNumber: 101, TxHash: common.HexToHash("0x123")},
@@ -82,8 +81,8 @@ func TestIncompleteTournamentEventsRetryTheSameIntervalAndKeepPersistentAlarm(t 
 			if selected.missingStanding {
 				partial.CommitmentJoined = events.CommitmentJoined
 			}
-			adapter.On("RetrieveAllEvents", mock.Anything).Run(recordInterval).Return(partial, nil).Times(5)
-			adapter.On("RetrieveAllEvents", mock.Anything).Run(recordInterval).Return(events, nil).Once()
+			adapter.On("RetrieveAllEvents", mock.Anything, mock.Anything).Run(recordInterval).Return(partial, nil).Times(5)
+			adapter.On("RetrieveAllEvents", mock.Anything, mock.Anything).Run(recordInterval).Return(events, nil).Once()
 			adapter.On("CommitmentStanding", mock.Anything, [32]byte(*f.epoch.Commitment)).
 				Return(CommitmentStanding{Joined: true, FinalState: *f.epoch.MachineHash}, nil).Once()
 			checkpoint := &observerCheckpointFixture{t: t, repo: f.repo.prtRepositoryMock, app: f.app}

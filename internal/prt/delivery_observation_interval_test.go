@@ -7,7 +7,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/txsender"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
@@ -96,8 +95,8 @@ func TestDeliveryIntervalIncludesNewRootHistoryBeforeCursor(t *testing.T) {
 		FinalState: *f.epoch.MachineHash, FinishedAt: 49,
 	}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, model.TournamentStandingRootWinner)
-	adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-		return opts.Start == 10 && opts.End != nil && *opts.End == 100
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
+		return opts.Start == 10 && opts.End == 100
 	})).Return(&TournamentEvents{}, nil).Once()
 	adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 	f.checkpoint.emptyParticipants(f.epoch, address)

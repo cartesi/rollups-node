@@ -129,9 +129,16 @@ type BondRecovery struct {
 	Payment     *big.Int
 }
 
+// TournamentEventQuery contains the inclusive interval and its authenticated counts.
+type TournamentEventQuery struct {
+	Start, End        uint64
+	Previous, Current StructuralEventCounts
+	FindRecovery      bool
+}
+
 // TournamentAdapter provides contract views and event decoding.
 type TournamentAdapter interface {
-	RetrieveAllEvents(opts *bind.FilterOpts) (*TournamentEvents, error)
+	RetrieveAllEvents(ctx context.Context, query TournamentEventQuery) (*TournamentEvents, error)
 	Descriptor(opts *bind.CallOpts) (TournamentDescriptor, error)
 	Standing(opts *bind.CallOpts) (TournamentStanding, error)
 	CommitmentStanding(opts *bind.CallOpts, commitmentRoot [32]byte) (CommitmentStanding, error)
