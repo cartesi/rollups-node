@@ -61,8 +61,14 @@ or signer are not supported.
   must cover the oldest unreconciled epoch or cursor, including downtime and
   computation backlog. Verify the provider's actual query support; there is no
   universal block-count cutoff. PRT counter baselines
-  come from committed database events; they do not require state at an old cursor.
-  Input scans and Claimer observation can still require older contract state.
+  come from committed database events; they do not require state at the saved cursor.
+  PRT searches still need historical counter views within the next unread interval,
+  starting at tournament creation for a first observation. An isolated bond recovery
+  also needs historical recovery views. Retention must cover the oldest unread
+  interval of any observed tournament, including a newly discovered child.
+  Its cursor can lag behind the EVM Reader. Missing state stops that tournament's
+  observation without cursor progress. Input scans and Claimer observation can
+  require older contract state.
   In particular, Claimer reads accepted-claim counts at an open claim's epoch end;
   a provider that prunes that state can stop observation until archival state is available.
 
@@ -335,9 +341,11 @@ fresh protected validation before POST, including after a head change.
 
 ## Size observation and deadline capacity
 
-Use the existing role polling interval, HTTP request timeout and
-`CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE`. There are no delivery pass, candidate,
-observation or urgency timeout settings.
+Use the existing role polling interval and HTTP request timeout.
+`CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE` limits log-range queries in EVM Reader
+and Claimer. PRT reads individual blocks found by counter searches and does
+not use that setting. There are no delivery pass, candidate, observation or
+urgency timeout settings.
 
 Each role normally starts a new nonce only after it observes the previous one
 mined. Capacity is therefore limited by inclusion and polling. Rebroadcasts can
@@ -352,7 +360,40 @@ PRT advances each tournament from its own saved block. When it discovers a new
 child, it scans that child and any new descendants through the same endpoint.
 That complete unit commits atomically. An existing child advances independently.
 A failed tournament read does not roll back another tournament's completed unit.
-The application's aggregate tournament height is diagnostic, not complete coverage.
+The application's LastTournamentCheckBlock reports the greatest saved tournament
+height. It does not establish complete coverage for all tournaments or set their
+common restart point.
+
+PRT finds event blocks with six cumulative contract counters and FindTransitions.
+It fetches all monitored topics once for each tournament address and discovered
+block. Standing and refund events accompany counted actions. A separate search
+finds a successful bond recovery that has no structural event. The observer checks
+event identities and count deltas before it saves the interval. Missing or
+inconsistent results leave that tournament's saved block unchanged.
+Counter searches can use more RPC calls than one unrestricted range query.
+Discovery assumes coherent stable history and a valid saved baseline. An unchanged
+counter can skip log retrieval. If a reorg moves a saved event beyond the cursor
+without changing the head total, the old range count check could report an error;
+counter discovery can miss that inconsistency. This is an accepted limit of
+provisional safe/latest observation. It does not provide complete reorg detection
+or rollback.
+
+After a complete terminal root observation commits, reader-only mode stops all
+queries for that tournament, including bond queries. With submission enabled,
+observation stops when the pending bond belongs to a different beneficiary from
+the configured signer. A pending bond for the signer remains observed until recovery.
+These rules do not stop observation of a mutable child. An inner winner can still
+expire. Later staging and acceptance use separate consensus evidence and can
+proceed beyond the root's saved block. Deadline diagnostics use the completed
+root's saved immutable clock fields and do not query that tournament again.
+
+A stopped root keeps its last observed block and financial snapshot. Its
+RECOVERABLE disposition, payment and participant snapshots can remain historical
+after a later recovery or payment change. The node does not mark that bond as paid.
+For this stop with a RECOVERABLE bond, an INFO message records the successful
+commit that first permits it, with the mode, reason, beneficiary and saved block.
+A root already eligible when the service starts can be skipped without a new
+message. The message is diagnostic; a crash between commit and logging can omit it.
 
 One dense tournament or newly discovered subtree can require substantial RPC,
 memory and database work before its atomic observation commits. There is no internal
