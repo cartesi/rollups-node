@@ -175,9 +175,9 @@ func TestPRTIncludedJoinReplansFromObservedFacts(t *testing.T) {
 			}
 			receipt := f.mine(t, block, status)
 			peer := common.HexToAddress("0x900")
+			peerTxHash := common.HexToHash("0x901")
 			if outcome == "peer joined first" {
-				f.emitJoin(peer, common.HexToHash("0x901"), block)
-				receipt.TransactionIndex = 1
+				f.emitJoin(peer, peerTxHash, block)
 			}
 			f.views(outcome != joinClosedBeforeInclusion)
 			f.consensus.On("TournamentLevelCount", mock.Anything).Return(uint64(2), nil)
@@ -194,7 +194,8 @@ func TestPRTIncludedJoinReplansFromObservedFacts(t *testing.T) {
 			require.Len(t, f.repo.windows[0].Batches, 1)
 			batch := f.repo.windows[0].Batches[0]
 			if !f.joined.Joined {
-				require.Len(t, batch.Commitments, len(f.priorCommitments), "nonce consumption cannot manufacture a successful join")
+				require.Len(t, batch.Commitments, len(f.priorCommitments),
+					"without a join event, observation must preserve prior commitments")
 				for _, commitment := range batch.Commitments {
 					require.NotEqual(t, *f.epoch.Commitment, commitment.Commitment)
 					require.NotEqual(t, f.d.txOptsFactory.From(), commitment.SubmitterAddress)
@@ -203,7 +204,7 @@ func TestPRTIncludedJoinReplansFromObservedFacts(t *testing.T) {
 				require.Len(t, batch.Commitments, 1, "the same observer must store a real join event")
 				if status == types.ReceiptStatusFailed {
 					require.Equal(t, peer, batch.Commitments[0].SubmitterAddress)
-					require.NotEqual(t, receipt.TxHash, batch.Commitments[0].TxHash)
+					require.Equal(t, peerTxHash, batch.Commitments[0].TxHash)
 				} else {
 					require.Equal(t, f.d.txOptsFactory.From(), batch.Commitments[0].SubmitterAddress)
 					require.Equal(t, receipt.TxHash, batch.Commitments[0].TxHash)

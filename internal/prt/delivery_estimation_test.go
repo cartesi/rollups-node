@@ -35,6 +35,7 @@ func (b *balanceCappedEstimator) Estimate(ctx context.Context, msg ethereum.Call
 	available := new(big.Int).Sub(balance, msg.Value)
 	cost := new(big.Int).Mul(feeCap, new(big.Int).SetUint64(b.gas))
 	if cost.Cmp(available) > 0 {
+		// Model a known RPC refusal; clients can use different codes for this balance cap.
 		return 0, &rpcDataError{code: 3, msg: "execution reverted", data: "0x"}
 	}
 	return b.gas, nil
