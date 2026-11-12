@@ -110,8 +110,9 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 		delete(s.protectionNotices, app.ID)
 		return nil
 	}
+	stored, storedErr := s.loadObservedTournaments(ctx, app, facts.Number)
 	var deploymentErr error
-	defer func() { resultErr = errors.Join(resultErr, deploymentErr) }()
+	defer func() { resultErr = errors.Join(resultErr, deploymentErr, storedErr) }()
 	s.warnZeroStagingPeriod(app)
 	epochs, _, epochErr := getTournamentObservationEpochs(ctx, s.repository, app.Name)
 	consensus, err := s.adapterFactory.CreateDaveConsensusAdapter(app.IConsensusAddress)
@@ -171,8 +172,8 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 		}
 	}
 	observeErr := eligibilityErr
-	if deployment.Alpha6Shape {
-		observeErr = errors.Join(observeErr, s.observeTournamentState(ctx, app, epochs, consensus, facts))
+	if deployment.Alpha6Shape && storedErr == nil {
+		observeErr = errors.Join(observeErr, s.observeStoredTournaments(ctx, app, epochs, consensus, facts, stored))
 	}
 	if ctx.Err() != nil {
 		return errors.Join(observeErr, ctx.Err())
@@ -229,13 +230,23 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 	return errors.Join(observeErr, err)
 }
 
-func (s *Service) observeTournamentState(
-	ctx context.Context, app *model.Application, epochs []*model.Epoch, consensus DaveConsensusAdapter, facts txsender.BlockRef,
-) error {
+// loadObservedTournaments reports durable failures independently of live
+// consensus reads. The same inventory supplies the observation targets.
+func (s *Service) loadObservedTournaments(ctx context.Context, app *model.Application, head uint64) ([]*model.Tournament, error) {
 	stored, _, err := s.repository.ListTournaments(ctx, app.Name, repository.TournamentFilter{}, repository.Pagination{}, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	for _, tournament := range stored {
+		s.logFailedRootTournament(app, tournament, head)
+	}
+	return stored, nil
+}
+
+func (s *Service) observeStoredTournaments(
+	ctx context.Context, app *model.Application, epochs []*model.Epoch, consensus DaveConsensusAdapter, facts txsender.BlockRef,
+	stored []*model.Tournament,
+) error {
 	known := make(map[common.Address]bool, len(stored))
 	var targets []*model.Tournament
 	for _, tournament := range stored {
@@ -303,6 +314,9 @@ func (s *Service) observeTournamentState(
 				if readErr == nil {
 					app.LastTournamentCheckBlock = max(app.LastTournamentCheckBlock, facts.Number)
 					s.logCompletedRootObservation(app, batches, facts.Number)
+					for _, batch := range batches {
+						s.logFailedRootTournament(app, batch.Tournament, facts.Number)
+					}
 				}
 			}
 		}

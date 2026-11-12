@@ -418,6 +418,41 @@ commit that first permits it, with the mode, reason, beneficiary and saved block
 A root already eligible when the service starts can be skipped without a new
 message. The message is diagnostic; a crash between commit and logging can omit it.
 
+For an enabled application, a committed `ROOT_FAILED` root emits ERROR on each
+observation pass, including after restart, until foreclosure is recorded.
+This requires a validated observation head, access to the saved application and
+tournament inventories, and a successful commit of the complete tournament interval.
+An uncommitted `ROOT_FAILED` read does not produce this alert.
+Check observation errors if the root alert is absent.
+Failed live deployment or consensus-result reads do not suppress the saved-root alert.
+The alert identifies the application, epoch and tournament.
+The alert does not change application health, so `app status` and `app list` can
+still show `OK`; these commands do not show this consensus stop.
+
+If a guardian is configured, contact the guardian now to confirm the failure and
+call `IApplication.foreclose()`.
+Use `cartesi-rollups-cli foreclose <app-name-or-address>`, signed by the application
+guardian configured through `CARTESI_AUTH_*`.
+If the guardian address is zero, foreclosure is unavailable.
+No protocol clock limits this foreclosure: the root is already closed and has
+no active matches or winner.
+New inputs and portal deposits can still be accepted until foreclosure.
+These new inputs cannot be finalized by the failed consensus, although the node
+can still execute them locally.
+Foreclosure enables recovery calls; it does not return funds by itself or restart consensus.
+Refunds require an unfinalized deposit supported by the refund builder.
+Account withdrawals require the configured withdrawal builder and the required proofs.
+Previously accepted outputs can still be executed.
+
+The alert reports the saved root observation, not a new check of that root.
+With `safe` or `latest`, a reorg can invalidate the saved observation.
+On a chain that can reorganize, use a finalized block to confirm the same epoch
+and root tournament.
+At that block, also confirm `isTournamentFailed = true` from `canStageTournamentResult()`.
+Do these checks before foreclosure based on this alert.
+This is an operator check.
+The node does not add a finalized read in `latest` mode.
+
 One dense tournament or newly discovered subtree can require substantial RPC,
 memory and database work before its atomic observation commits. There is no internal
 node-count or subtree-size ceiling. SQL statements are chunked within that transaction;

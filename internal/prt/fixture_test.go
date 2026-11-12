@@ -540,6 +540,16 @@ func (m *tournamentAdapterMock) CommitmentStanding(
 	return result, args.Error(1)
 }
 
+func (s *Service) observeTournamentState(
+	ctx context.Context, app *model.Application, epochs []*model.Epoch, consensus DaveConsensusAdapter, facts txsender.BlockRef,
+) error {
+	stored, err := s.loadObservedTournaments(ctx, app, facts.Number)
+	if err != nil {
+		return err
+	}
+	return s.observeStoredTournaments(ctx, app, epochs, consensus, facts, stored)
+}
+
 func observeEpochsForTest(ctx context.Context, s *Service, app *model.Application, head uint64) (bool, error) {
 	epochs, _, err := getTournamentObservationEpochs(ctx, s.repository, app.Name)
 	if err != nil {
