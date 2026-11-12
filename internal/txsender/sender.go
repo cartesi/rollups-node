@@ -257,7 +257,11 @@ func (s *Sender[A]) prepare(ctx context.Context, snap account, action A, request
 	if request.GasLimit > ceiling {
 		return nil, 0, gasLimit("transaction gas", request.GasLimit, ceiling)
 	}
-	estimate, estimateErr := s.backend.Estimate(ctx, message(s.From(), request, 0, q), snap.block)
+	estimateQuote := q
+	if request.EstimateWithZeroFees {
+		estimateQuote.cap, estimateQuote.tip = new(big.Int), new(big.Int)
+	}
+	estimate, estimateErr := s.backend.Estimate(ctx, message(s.From(), request, 0, estimateQuote), snap.block)
 	var gas uint64
 	if estimateErr != nil {
 		var refusal rpc.Error
