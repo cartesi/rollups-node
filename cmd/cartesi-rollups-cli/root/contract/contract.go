@@ -15,7 +15,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -84,88 +83,16 @@ func runContract(cmd *cobra.Command, _ []string) {
 	cobra.CheckErr(err)
 }
 
-// consensusType represents the detected on-chain consensus mechanism.
-type consensusType int
+// consensusType aliases the shared detector's result type. The local names keep
+// the inspector's existing switches and output labels unchanged.
+type consensusType = ethutil.ConsensusType
 
 const (
-	consensusUnknown   consensusType = iota
-	consensusAuthority               // IAuthority (single validator, Ownable)
-	consensusQuorum                  // IQuorum (multi-validator, majority threshold)
-	consensusDave                    // IDaveConsensus (PRT)
+	consensusUnknown   = ethutil.ConsensusUnknown
+	consensusAuthority = ethutil.ConsensusAuthority
+	consensusQuorum    = ethutil.ConsensusQuorum
+	consensusDave      = ethutil.ConsensusPRT
 )
-
-func (t consensusType) String() string {
-	switch t {
-	case consensusAuthority:
-		return "Authority"
-	case consensusQuorum:
-		return "Quorum"
-	case consensusDave:
-		return "DaveConsensus (PRT)"
-	case consensusUnknown:
-		return "Unknown"
-	}
-	return "Unknown"
-}
-
-// ERC-165 interface IDs for consensus type detection.
-// Solidity's type(I).interfaceId XORs only functions DEFINED in I, excluding inherited ones.
-var (
-	// IDataProvider: provideMerkleRootOfInput(uint256,bytes)
-	iDataProviderInterfaceID = [4]byte{0x7a, 0x96, 0xf4, 0x80}
-	// IConsensus interface IDs by version (own functions only, excluding inherited
-	// isOutputsMerkleRootValid). Checked in order; first match wins.
-	// v3.0.0-alpha: computed at init from the binding's ABI to stay in lockstep
-	// with the contract — see computeIConsensusV3InterfaceID.
-	iConsensusInterfaceIDv30 = computeIConsensusV3InterfaceID()
-	// v2.2.0: submitClaim ^ getEpochLength ^ getNumberOfAcceptedClaims ^ getNumberOfSubmittedClaims
-	iConsensusInterfaceIDv220 = [4]byte{0x90, 0xb2, 0xf3, 0x46}
-	// v2.1.x: submitClaim ^ getEpochLength ^ getNumberOfAcceptedClaims (no getNumberOfSubmittedClaims)
-	iConsensusInterfaceIDv21x = [4]byte{0x7e, 0xec, 0xfc, 0xec}
-	// IQuorum: own 7 functions (excluding inherited IConsensus). Signatures (types)
-	// are identical across v2.1.x / v2.2.0 / v3 — only Solidity param NAMES changed,
-	// which do not affect the selector.
-	iQuorumInterfaceID = [4]byte{0x3c, 0x92, 0x5a, 0x62}
-)
-
-// computeIConsensusV3InterfaceID returns the ERC-165 interface ID of v3 IConsensus.
-// Per Solidity's `type(I).interfaceId`, the ID is the XOR of selectors of the
-// functions DECLARED in IConsensus (8 of them); inherited functions
-// (`isOutputsMerkleRootValid` from IOutputsMerkleRootValidator, `version` from
-// IVersionGetter, IApplicationChecker which has no functions) are excluded.
-// Computed at package init from the binding's embedded ABI so a contract-level
-// rename or signature change is automatically reflected.
-func computeIConsensusV3InterfaceID() [4]byte {
-	parsed, err := iconsensus.IConsensusMetaData.GetAbi()
-	if err != nil {
-		panic(fmt.Errorf("computeIConsensusV3InterfaceID: parse ABI: %w", err))
-	}
-	// Methods declared in IConsensus.sol (v3), excluding inherited functions.
-	methodNames := []string{
-		"submitClaim",
-		"acceptClaim",
-		"getEpochLength",
-		"getClaimStagingPeriod",
-		"getNumberOfAcceptedClaims",
-		"getNumberOfStagedClaims",
-		"getNumberOfSubmittedClaims",
-		"getClaim",
-	}
-	var id [4]byte
-	for _, name := range methodNames {
-		m, ok := parsed.Methods[name]
-		if !ok {
-			panic(fmt.Errorf("computeIConsensusV3InterfaceID: method %q not found in IConsensus ABI", name))
-		}
-		if len(m.ID) != 4 { //nolint:mnd // ABI method selectors are exactly four bytes.
-			panic(fmt.Errorf("computeIConsensusV3InterfaceID: method %q selector is %d bytes, expected 4", name, len(m.ID)))
-		}
-		for i := range 4 {
-			id[i] ^= m.ID[i]
-		}
-	}
-	return id
-}
 
 // chainClient holds the shared Ethereum client and call options for all subcommands.
 // All view functions are called through this client to ensure consistent block-number
@@ -285,18 +212,6 @@ func (c *chainClient) ensureContract(addr common.Address, label string) error {
 	return nil
 }
 
-// iConsensusVersion pairs an ERC-165 interface ID with a human-readable contract version label.
-type iConsensusVersion struct {
-	id      [4]byte
-	version string
-}
-
-var iConsensusVersions = []iConsensusVersion{
-	{iConsensusInterfaceIDv30, "v3.0.0-alpha"},
-	{iConsensusInterfaceIDv220, "v2.2.0"},
-	{iConsensusInterfaceIDv21x, "v2.1.x"},
-}
-
 // detectConsensus uses ERC-165 supportsInterface to determine the consensus type.
 // Checks IDataProvider → Dave, IQuorum → Quorum, IConsensus → Authority.
 // The returned contractVersion is non-empty only for Authority/Quorum, indicating which
@@ -304,51 +219,15 @@ var iConsensusVersions = []iConsensusVersion{
 func (c *chainClient) detectConsensus(
 	consensusAddr common.Address,
 ) (consensusType, string, error) {
-	caller, err := idaveconsensus.NewIDaveConsensusCaller(consensusAddr, c.eth)
+	caller, err := iconsensus.NewIConsensusCaller(consensusAddr, c.eth)
 	if err != nil {
 		return consensusUnknown, "", fmt.Errorf("bind consensus contract: %w", err)
 	}
-
-	isDave, err := caller.SupportsInterface(c.callOpts, iDataProviderInterfaceID)
+	detected, version, err := ethutil.DetectConsensusType(c.callOpts, caller)
 	if err != nil {
-		return consensusUnknown, "", fmt.Errorf("supportsInterface(IDataProvider): %w", err)
+		return detected, version, fmt.Errorf("consensus at %s: %w", consensusAddr, err)
 	}
-	if isDave {
-		return consensusDave, "", nil
-	}
-
-	isQuorum, err := caller.SupportsInterface(c.callOpts, iQuorumInterfaceID)
-	if err != nil {
-		return consensusUnknown, "", fmt.Errorf("supportsInterface(IQuorum): %w", err)
-	}
-	if isQuorum {
-		// Quorum is also an IConsensus; probe the current IConsensus interface
-		// to surface the contract version. Older Quorum versions (pre-v3) report
-		// empty and the caller renders the label without the version suffix.
-		isCurrent, err := caller.SupportsInterface(c.callOpts, iConsensusInterfaceIDv30)
-		if err != nil {
-			return consensusUnknown, "", fmt.Errorf(
-				"supportsInterface(IConsensus v3.0.0-alpha) for Quorum: %w", err)
-		}
-		if isCurrent {
-			return consensusQuorum, "v3.0.0-alpha", nil
-		}
-		return consensusQuorum, "", nil
-	}
-
-	for _, cv := range iConsensusVersions {
-		isConsensus, err := caller.SupportsInterface(c.callOpts, cv.id)
-		if err != nil {
-			return consensusUnknown, "", fmt.Errorf("supportsInterface(IConsensus): %w", err)
-		}
-		if isConsensus {
-			return consensusAuthority, cv.version, nil
-		}
-	}
-
-	return consensusUnknown, "", fmt.Errorf(
-		"consensus at %s does not implement IDataProvider, IQuorum, or IConsensus"+
-			" — wrong address or unsupported consensus type", consensusAddr)
+	return detected, version, nil
 }
 
 // safeUint64 converts a *big.Int to uint64, returning an error if the value is nil or overflows.
