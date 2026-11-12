@@ -79,6 +79,17 @@ func TestDeploymentCLIReportsPredictedAddress(t *testing.T) {
 	predictedAddress := common.HexToAddress("0x3000")
 	secondaryAddress := common.HexToAddress("0x4000")
 	applicationArgs := []string{"application", "--register=false", "--template-hash=" + (common.Hash{}).Hex()}
+
+	consensusABI, err := iconsensus.IConsensusMetaData.GetAbi()
+	require.NoError(t, err)
+	supportsInterfaceMethod := consensusABI.Methods["supportsInterface"]
+	var supportsInterfaceID [4]byte
+	copy(supportsInterfaceID[:], supportsInterfaceMethod.ID)
+	unsupportedConsensus, err := supportsInterfaceMethod.Outputs.Pack(false)
+	require.NoError(t, err)
+	supportedConsensus, err := supportsInterfaceMethod.Outputs.Pack(true)
+	require.NoError(t, err)
+
 	for _, test := range []struct {
 		name string
 		args []string
@@ -94,6 +105,9 @@ func TestDeploymentCLIReportsPredictedAddress(t *testing.T) {
 			backend := &deploymentCLIBackend{
 				responses: map[string]hexutil.Bytes{},
 				sent:      make(chan *types.Transaction, 2), predictedAddress: predictedAddress, secondaryAddress: secondaryAddress,
+				supportsInterfaceID:        supportsInterfaceID,
+				supportsInterfaceResponses: []hexutil.Bytes{unsupportedConsensus, unsupportedConsensus, supportedConsensus},
+				supportsInterfaceFallback:  unsupportedConsensus,
 			}
 			for _, response := range []struct {
 				metadata *bind.MetaData
@@ -164,6 +178,11 @@ type deploymentCLIBackend struct {
 	broadcast          atomic.Bool
 	receiptReads       atomic.Int32
 	postBroadcastReads atomic.Int32
+
+	supportsInterfaceID        [4]byte
+	supportsInterfaceResponses []hexutil.Bytes
+	supportsInterfaceFallback  hexutil.Bytes
+	supportsInterfaceCalls     atomic.Int32
 }
 
 func (*deploymentCLIBackend) ChainId(context.Context) *hexutil.Big { //nolint:revive // Ethereum RPC method eth_chainId.
@@ -203,6 +222,14 @@ func (b *deploymentCLIBackend) Call(_ context.Context, call struct {
 		b.postBroadcastReads.Add(1)
 	}
 	if len(call.Input) >= 4 {
+		if b.supportsInterfaceID != ([4]byte{}) &&
+			bytes.Equal(call.Input[:4], b.supportsInterfaceID[:]) {
+			index := int(b.supportsInterfaceCalls.Add(1)) - 1
+			if index < len(b.supportsInterfaceResponses) {
+				return b.supportsInterfaceResponses[index], nil
+			}
+			return b.supportsInterfaceFallback, nil
+		}
 		if response, found := b.responses[string(call.Input[:4])]; found {
 			return response, nil
 		}

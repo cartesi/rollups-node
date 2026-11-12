@@ -4,6 +4,7 @@
 package deploy
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/cli"
@@ -78,4 +79,34 @@ func TestApplicationDeploymentValidatesBeforeRunning(t *testing.T) {
 			}
 		})
 	}
+}
+
+type consensusProbeStub struct {
+	supported bool
+	err       error
+}
+
+func (s consensusProbeStub) SupportsInterface(_ *bind.CallOpts, _ [4]byte) (bool, error) {
+	return s.supported, s.err
+}
+
+func TestClassifyApplicationConsensus(t *testing.T) {
+	callOpts := &bind.CallOpts{Context: t.Context()}
+
+	t.Run("probe error aborts classification", func(t *testing.T) {
+		_, err := classifyApplicationConsensus(callOpts, consensusProbeStub{
+			err: errors.New("provider 429"),
+		})
+		require.ErrorContains(t, err, "failed to detect consensus type")
+	})
+
+	t.Run("prt consensus requires the prt deployment path", func(t *testing.T) {
+		_, err := classifyApplicationConsensus(callOpts, consensusProbeStub{supported: true})
+		require.ErrorContains(t, err, "use --prt")
+	})
+
+	t.Run("unsupported consensus is rejected", func(t *testing.T) {
+		_, err := classifyApplicationConsensus(callOpts, consensusProbeStub{})
+		require.ErrorContains(t, err, "does not implement")
+	})
 }

@@ -94,7 +94,8 @@ func init() {
 		"Enable or disable machine hash check (DO NOT DISABLE IN PRODUCTION)")
 	cobra.CheckErr(viper.BindPFlag(config.FEATURE_MACHINE_HASH_CHECK_ENABLED, Cmd.Flags().Lookup("machine-hash-check")))
 
-	Cmd.Flags().BoolVarP(&applicationTypePRT, "prt", "", false, "Register as PRT application.")
+	Cmd.Flags().BoolVarP(&applicationTypePRT, "prt", "", false,
+		"Assert that the application consensus is a PRT (Dave) consensus.")
 
 	origHelpFunc := Cmd.HelpFunc()
 	Cmd.SetHelpFunc(func(command *cobra.Command, strings []string) {
@@ -160,7 +161,18 @@ func run(cmd *cobra.Command, _ []string) {
 		}
 	}
 
-	if !cmd.Flags().Changed("epoch-length") && !applicationTypePRT {
+	consensusType, err := getConsensusType(ctx, consensus)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to detect consensus type: %v\n", err)
+		os.Exit(1)
+	}
+	if err := validateRegistrationConsensusType(consensusType, applicationTypePRT); err != nil {
+		fmt.Fprintf(os.Stderr, "Consensus type validation failed: %v\n", err)
+		os.Exit(1)
+	}
+	isPRT := consensusType == model.Consensus_PRT
+
+	if !cmd.Flags().Changed("epoch-length") && !isPRT {
 		epochLength, err = getEpochLength(ctx, consensus)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to get epoch length from consensus: %v\n",
@@ -212,12 +224,6 @@ func run(cmd *cobra.Command, _ []string) {
 	}
 	if !hasCode {
 		fmt.Fprintf(os.Stderr, "input box address has no code: %v\n", inputBoxAddress)
-		os.Exit(1)
-	}
-
-	consensusType, err := getConsensusType(ctx, consensus, applicationTypePRT)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to detect consensus type: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -368,19 +374,10 @@ func getClaimStagingPeriod(
 	return ethutil.GetClaimStagingPeriod(ctx, client, consensusAddr)
 }
 
-type quorumConsensusProbe interface {
-	NumOfValidators(opts *bind.CallOpts) (*big.Int, error)
-}
-
 func getConsensusType(
 	ctx context.Context,
 	consensusAddr common.Address,
-	applicationTypePRT bool,
 ) (model.Consensus, error) {
-	if applicationTypePRT {
-		return model.Consensus_PRT, nil
-	}
-
 	ethEndpoint, err := config.GetBlockchainHttpEndpoint()
 	if err != nil {
 		return "", fmt.Errorf("failed to get blockchain http endpoint address: %w", err)
@@ -389,28 +386,40 @@ func getConsensusType(
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
-	quorum, err := iquorum.NewIQuorum(consensusAddr, client)
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	caller, err := iconsensus.NewIConsensusCaller(consensusAddr, client)
+	if err != nil {
+		return "", fmt.Errorf("failed to bind consensus contract: %w", err)
+	}
+	detected, _, err := ethutil.DetectConsensusType(callOpts, caller)
 	if err != nil {
 		return "", err
 	}
-	return consensusTypeFromQuorumProbe(applicationTypePRT, quorum)
+
+	if detected == ethutil.ConsensusQuorum {
+		quorum, err := iquorum.NewIQuorum(consensusAddr, client)
+		if err != nil {
+			return "", err
+		}
+		if err := ethutil.ValidateQuorum(callOpts, quorum); err != nil {
+			return "", err
+		}
+	}
+
+	return detected.ToModel(), nil
 }
 
-func consensusTypeFromQuorumProbe(
+// validateRegistrationConsensusType keeps --prt as an assertion now that the
+// consensus type comes from the chain instead of the flag.
+func validateRegistrationConsensusType(
+	consensusType model.Consensus,
 	applicationTypePRT bool,
-	probe quorumConsensusProbe,
-) (model.Consensus, error) {
-	if applicationTypePRT {
-		return model.Consensus_PRT, nil
+) error {
+	if applicationTypePRT && consensusType != model.Consensus_PRT {
+		return fmt.Errorf("--prt was passed, but the consensus is %s", consensusType)
 	}
-	numOfValidators, err := probe.NumOfValidators(nil)
-	if err != nil {
-		return model.Consensus_Authority, nil
-	}
-	if numOfValidators == nil || numOfValidators.Sign() == 0 {
-		return "", fmt.Errorf("quorum consensus reports zero validators")
-	}
-	return model.Consensus_Quorum, nil
+	return nil
 }
 
 func readApplicationWithdrawalConfig(
