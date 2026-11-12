@@ -229,6 +229,10 @@ transaction's maximum gas cost plus value against the current balance. A join
 uses the contract's required bond; there is no configurable join-bond cap.
 The funding check before estimation uses only a minimum gas allowance. Its
 reported amount is a lower bound; the final padded allowance can require more funds.
+PRT estimates join gas with zero fees to avoid an RPC limit based on the signer's balance.
+This requires RPC support for zero-fee estimates; exact simulation and signing use real fees.
+PRT logs each refused join funding check at ERROR with amounts and deadline, and repeats
+join planning warnings without changing application health.
 
 Ordinary contract calls add the greater of fifty percent or 150,000 gas to the
 estimate. A value-bearing join adds the greater of the full estimate or 150,000

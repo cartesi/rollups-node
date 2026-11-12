@@ -5,7 +5,6 @@ package prt
 
 import (
 	"errors"
-	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/txsender"
@@ -24,28 +23,9 @@ type joinRefusal struct {
 func (e *joinRefusal) Error() string { return e.reason }
 func (e *joinRefusal) Unwrap() error { return txsender.ErrIneligible }
 
-type joinRefusalWarning struct {
-	epoch    uint64
-	warnedAt time.Time
-}
-
 func (s *delivery) warnJoinPlanningRefusal(app *model.Application, snapshot txsender.BlockRef, err error) {
 	var refusal *joinRefusal
 	if !errors.As(err, &refusal) {
-		return
-	}
-	if s.diagnostics.joinRefusals == nil {
-		s.diagnostics.joinRefusals = map[int64]joinRefusalWarning{}
-	}
-	// Keep one warning per application, and retire inactive entries. Removed
-	// applications must not leave a lifetime warning registry in the publisher.
-	for id, warning := range s.diagnostics.joinRefusals {
-		if time.Since(warning.warnedAt) >= 2*publicationWarningInterval {
-			delete(s.diagnostics.joinRefusals, id)
-		}
-	}
-	previous := s.diagnostics.joinRefusals[app.ID]
-	if previous.epoch == refusal.epoch && !warningDue(previous.warnedAt) {
 		return
 	}
 	var deadline any = "unknown"
@@ -55,5 +35,4 @@ func (s *delivery) warnJoinPlanningRefusal(app *model.Application, snapshot txse
 	s.Logger.Warn("PRT cannot join tournament; this node cannot defend this epoch",
 		"application", app.Name, "address", app.IApplicationAddress, "epoch", refusal.epoch,
 		"tournament", refusal.tournament, "block", snapshot.Number, "deadline", deadline, "reason", refusal.reason)
-	s.diagnostics.joinRefusals[app.ID] = joinRefusalWarning{epoch: refusal.epoch, warnedAt: time.Now()}
 }
