@@ -181,7 +181,7 @@ func (s *Service) finalizeEpoch(ctx context.Context, app *Application, epoch *Ep
 
 	proof, err := s.prepareEpochPublication(ctx, app, epoch)
 	if err != nil {
-		return err
+		return fmt.Errorf("preparing state proof for application %s epoch %d: %w", app.Name, epoch.Index, err)
 	}
 
 	appAddress := app.IApplicationAddress.String()
@@ -520,6 +520,13 @@ func (s *Service) prepareEpochPublication(
 	}
 	if lastProcessedInput != nil {
 		if err := s.handleSnapshot(ctx, app, machine, lastProcessedInput); err != nil {
+			switch {
+			case errors.Is(ctx.Err(), context.Canceled):
+				s.Logger.Debug("Epoch snapshot creation canceled during shutdown",
+					"application", app.Name, "epoch_index", epoch.Index, "error", err)
+			case errors.Is(err, manager.ErrMachineClosed):
+				s.markApplicationFailed(ctx, app, err.Error())
+			}
 			return nil, err
 		}
 	}
