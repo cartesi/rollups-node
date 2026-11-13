@@ -20,6 +20,9 @@ func (s *Service) reportProtectionStops(ctx context.Context, app *model.Applicat
 	if txsender.ShutdownOnly(ctx, deploymentErr) {
 		return
 	}
+	if !app.Enabled || !completionStatusAllowed(app.Status) {
+		s.clearForeclosureNotices(app.ID)
+	}
 	first, stopErr := s.protectionStopBoundary(ctx, app, clocks)
 	if len(clocks) > 0 && !txsender.ShutdownOnly(ctx, stopErr) {
 		s.reportProtectionDiscovery(app, protectionBoundaryDiscovery, stopErr)
@@ -64,7 +67,7 @@ func (s *Service) reportProtectionStops(ctx context.Context, app *model.Applicat
 		current[key] = struct{}{}
 	}
 	for key := range s.protectionNotices[app.ID] {
-		if key.kind == protectionClockDiscovery || key.kind == protectionBoundaryDiscovery {
+		if key.kind == protectionClockDiscovery || key.kind == protectionBoundaryDiscovery || isForeclosureNotice(key.kind) {
 			continue
 		}
 		if _, present := current[key]; !present {

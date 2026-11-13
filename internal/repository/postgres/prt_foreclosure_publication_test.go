@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// PRT's selected CLOSED object can precede the accepted-state proof publication.
-// A refused drain must preserve the durable IP prefix, including after a row wait.
-func TestPRTForeclosureDrainPreservesConcurrentPublication(t *testing.T) {
+// The shared Authority/Quorum writer must preserve the durable IP prefix,
+// including when publication commits while the foreclosure write waits.
+func TestClaimerForeclosureDrainPreservesConcurrentPublication(t *testing.T) {
 	for _, wait := range []bool{false, true} {
 		name := "publication before drain"
 		if wait {
@@ -28,7 +28,15 @@ func TestPRTForeclosureDrainPreservesConcurrentPublication(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			r := newEpochPublicationRepository(t).(*PostgresRepository)
-			app, selected := seedEpochPublication(t, r)
+			app := repotest.NewApplicationBuilder().WithConsensus(model.Consensus_Authority).Create(ctx, t, r)
+			selected := repotest.NewEpochBuilder(app.ID).WithStatus(model.EpochStatus_Closed).
+				WithBlocks(0, 9).WithInputBounds(0, 1).Build()
+			input := repotest.NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
+			require.NoError(t, r.CreateEpochsAndInputs(ctx, app.Name, map[*model.Epoch][]*model.Input{selected: {input}}, 10))
+			require.NoError(t, r.StoreAdvanceResult(ctx, app.ID, &model.AdvanceResult{
+				EpochIndex: selected.Index, InputIndex: input.Index, Status: model.InputCompletionStatus_Accepted,
+				StateProof: *repotest.DummyStateProof(), Outputs: [][]byte{[]byte("output")},
+			}))
 			require.Equal(t, model.EpochStatus_Closed, selected.Status)
 			require.NoError(t, r.UpdateApplicationForeclosure(ctx, app.ID, 20, repotest.UniqueHash(), 20))
 			proof := repotest.DummyStateProof()

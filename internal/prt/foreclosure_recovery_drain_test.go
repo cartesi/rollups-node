@@ -33,7 +33,7 @@ func TestForeclosedClaimsDrainWhenRecoveryDiscoveryFails(t *testing.T) {
 	f.repo.On("HasUnreconciledClaimsBeforeBlock", mock.Anything, f.app.ID, uint64(90)).Return(true, nil).Once()
 	f.repo.On("ListEpochs", mock.Anything, f.app.Name, repository.EpochFilter{Status: model.NonTerminalEpochStatuses()},
 		repository.Pagination{}, false).Return([]*model.Epoch{{Index: 3}}, uint64(1), nil).Once()
-	f.repo.On("UpdateEpochWithForeclosedClaim", mock.Anything, f.app.ID, uint64(3)).Return(nil).Once()
+	f.repo.On("ForeclosePRTEpoch", mock.Anything, f.app.ID, uint64(3), mock.Anything).Return(nil).Once()
 	f.repo.On("GetLastNonOpenEpochIndex", mock.Anything, f.app.IApplicationAddress.Hex()).Return(new(uint64(3)), nil)
 	failure := errors.New("recovery query unavailable")
 	f.d.repository = &recoveryRepositoryPort{deliveryRepoFake: f.repo, err: failure}
@@ -108,7 +108,7 @@ func TestForeclosedDrainRetainsRecoveryErrorOnEveryReturn(t *testing.T) {
 							if path == epochWriteError {
 								epochErr = drainErr
 							}
-							f.repo.On("UpdateEpochWithForeclosedClaim", mock.Anything, f.app.ID, uint64(3)).Return(epochErr).Once()
+							f.repo.On("ForeclosePRTEpoch", mock.Anything, f.app.ID, uint64(3), mock.Anything).Return(epochErr).Once()
 						}
 					}
 				}

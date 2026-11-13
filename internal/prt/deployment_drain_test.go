@@ -54,7 +54,8 @@ func TestDeploymentDrainWaitsForFreshConfirmationAndNormalProofProducer(t *testi
 	prefix := checkpointEpoch(0, "0x100")
 	prefix.Status, prefix.FirstBlock, prefix.LastBlock = model.EpochStatus_InputsProcessed, 0, 9
 	straddler := checkpointEpoch(1, "0x101")
-	straddler.Status, straddler.FirstBlock, straddler.LastBlock = model.EpochStatus_Closed, 90, 110
+	straddler.Status, straddler.FirstBlock, straddler.LastBlock = model.EpochStatus_Open, 90, 110
+	straddler.TournamentAddress = nil
 	future := checkpointEpoch(2, "0x102")
 	future.Status, future.FirstBlock, future.LastBlock = model.EpochStatus_InputsProcessed, 101, 120
 	repo.On("HasUndrainedEpochsBeforeBlock", mock.Anything, app.ID, uint64(100)).Return(false, nil).Twice()
@@ -100,7 +101,7 @@ func TestDeploymentDrainSkipsOnlyConditionalRefusal(t *testing.T) {
 				}
 				return nil
 			}
-			err := s.forecloseGenerationClaims(t.Context(), app, 1)
+			err := s.forecloseGenerationClaims(t.Context(), app, 1, app.ForecloseBlock)
 			if tc.name == "refusal" {
 				require.NoError(t, err)
 			} else {
@@ -113,7 +114,7 @@ func TestDeploymentDrainSkipsOnlyConditionalRefusal(t *testing.T) {
 	}
 }
 
-func TestDeploymentDrainProtectsOnlyEpochsStrictlyBeforeForeclosure(t *testing.T) {
+func TestDeploymentDrainProtectsPositiveSealsAtForeclosure(t *testing.T) {
 	for _, last := range []uint64{99, 100, 101} {
 		t.Run(fmt.Sprint(last), func(t *testing.T) {
 			s, repo := newPRTServiceMock()
@@ -126,12 +127,8 @@ func TestDeploymentDrainProtectsOnlyEpochsStrictlyBeforeForeclosure(t *testing.T
 				Return([]*model.Epoch{epoch}, uint64(1), nil).Once()
 			writes := 0
 			repo.deploymentDrain = func(context.Context, repository.DeploymentDrainRequest) error { writes++; return nil }
-			require.NoError(t, s.forecloseGenerationClaims(t.Context(), app, 1))
-			expected := 1
-			if last < 100 {
-				expected = 0
-			}
-			require.Equal(t, expected, writes)
+			require.NoError(t, s.forecloseGenerationClaims(t.Context(), app, 1, app.ForecloseBlock))
+			require.Zero(t, writes, "a positive PRT seal keeps its validator duty, including the same block")
 		})
 	}
 }

@@ -490,13 +490,18 @@ type ClaimerRepository interface {
 	) error
 	// UpdateEpochWithForeclosedClaim transitions a single epoch's non-terminal
 	// claim status to CLAIM_FORECLOSED after application foreclosure makes the
-	// claim path impossible. Keyed by (application, epoch index); applies to any
-	// consensus type.
+	// claim path impossible for the Authority/Quorum claimer. PRT uses
+	// ForeclosePRTEpoch with its separate evidence conditions.
 	UpdateEpochWithForeclosedClaim(
 		ctx context.Context,
 		applicationID int64,
 		index uint64,
 	) error
+	// ForeclosePRTEpoch closes only a positive PRT terminal branch at observedHead.
+	// Healthy sealed producer work remains pending. A computed target needs the
+	// exact covered terminal root, with a matching final state or ROOT_FAILED.
+	// Stored CLAIM_STAGED evidence also permits closure without a new root comparison.
+	ForeclosePRTEpoch(ctx context.Context, applicationID int64, index, observedHead uint64) error
 	// RejectEpochAndSetApplicationDiverged atomically attempts to mark an epoch
 	// as CLAIM_REJECTED and the application as DIVERGED. The returned result
 	// reports which conditional writes applied, so callers can mirror only the

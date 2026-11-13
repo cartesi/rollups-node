@@ -181,15 +181,11 @@ func (r *PostgresRepository) UpdateEpochWithAcceptedClaim(
 	return nil
 }
 
-// UpdateEpochWithForeclosedClaim transitions a single epoch's non-terminal claim
-// status to CLAIM_FORECLOSED after application foreclosure makes the claim path
-// impossible on chain. It is keyed by (application, epoch index) and applies to
-// any consensus type: the Authority/Quorum claimer terminalizes a claim it can
-// no longer submit, and the PRT drain terminalizes a pre-foreclosure epoch the
-// tournament never accepted. Earlier non-terminal states are allowed because an
-// epoch that overlaps the foreclosure block may never reach a computable claim.
-// Existing CLAIM_* observations remain reconcilable under every health status;
-// earlier states retain the drain guards and pending-validation protection.
+// UpdateEpochWithForeclosedClaim is the Authority/Quorum claimer's foreclosure
+// writer. It changes a non-terminal claim to CLAIM_FORECLOSED after application
+// foreclosure makes submission impossible. Earlier states retain the drain and
+// pending-validation guards; CLAIM_* observations remain reconcilable under
+// every health status. PRT uses ForeclosePRTEpoch or ForecloseDeploymentEpoch.
 func (r *PostgresRepository) UpdateEpochWithForeclosedClaim(
 	ctx context.Context,
 	applicationID int64,
