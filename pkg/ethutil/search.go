@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"slices"
 )
 
 // ErrMonotonicViolation is returned by FindTransitions when the seed prevValue
@@ -18,77 +17,87 @@ import (
 // Callers can match it with errors.Is to distinguish this corruption signal
 // from transient query failures.
 var ErrMonotonicViolation = errors.New("monotonic assumption violated")
+var ErrIncompleteProcessing = errors.New("incomplete processing of transitions")
 
 // TransitionQueryFn for binary search
 type TransitionQueryFn func(ctx context.Context, block uint64) (*big.Int, error)
 
-type OnHitFn func(block uint64) error
+type OnHitFn func(block uint64, prevValue, currValue *big.Int) error
 
-// sortAndCallOnHit sorts the transition blocks and calls onHit for each in chronological order
-func sortAndCallOnHit(transitionBlocks []uint64, onHit OnHitFn) (uint64, error) {
-	slices.Sort(transitionBlocks)
-	for _, block := range transitionBlocks {
-		if err := onHit(block); err != nil {
-			return 0, err
-		}
-	}
-	return uint64(len(transitionBlocks)), nil
-}
-
-// FindTransitions performs divide-and-conquer search for transitions using oracle
-// and calls onHit for each transition block in chronological order.
-// The prevValue is optional and used to detect a transition exactly at startBlock.
+// FindTransitions searches for transitions using transitionQuery and calls onHit
+// during traversal in chronological order. The optional lowerBound seeds the
+// previous counter value to detect a transition exactly at startBlock.
+// The optional upperBound stops the search after the transition reaching or
+// crossing that counter value; onHit still receives the full counter change.
 // It assumes the queried value is monotonic (e.g., increasing counter); if it can revert,
 // intermediate transitions may be missed when net change is zero.
-func FindTransitions(ctx context.Context, startBlock, endBlock uint64, prevValue *big.Int,
-	transitionQuery TransitionQueryFn, onHit OnHitFn) (uint64, error) {
+//
+// The results are a transition count and a completed-block cursor. Callback
+// errors, including ErrIncompleteProcessing, are propagated with the cursor set
+// to the block before that transition, allowing callers to resume within it.
+func FindTransitions(ctx context.Context, startBlock, endBlock uint64, lowerBound, upperBound *big.Int,
+	transitionQuery TransitionQueryFn, onHit OnHitFn) (uint64, uint64, error) {
+
 	if startBlock > endBlock {
-		return 0, nil
+		return 0, endBlock, nil
 	}
 
 	type interval struct {
-		StartBlock, EndBlock uint64
-		StartValue, EndValue *big.Int
+		StartBlock, EndBlock, LastBlock uint64
+		StartValue, EndValue            *big.Int
 	}
 
 	startValue, err := transitionQuery(ctx, startBlock)
 	if err != nil {
-		return 0, fmt.Errorf("transitionQuery(startBlock=%d): %w", startBlock, err)
+		return 0, startBlock - 1, fmt.Errorf("transitionQuery(startBlock=%d): %w", startBlock, err)
 	}
 
-	var transitionBlocks []uint64
-	if prevValue != nil {
-		comparisonResult := prevValue.Cmp(startValue)
+	var count uint64
+	if lowerBound != nil {
+		comparisonResult := lowerBound.Cmp(startValue)
 		if comparisonResult > 0 {
-			return 0, fmt.Errorf("%w: prevValue %s > startValue %s at block %d",
-				ErrMonotonicViolation, prevValue.String(), startValue.String(), startBlock)
+			return 0, startBlock - 1, fmt.Errorf("%w: lowerBound %s > startValue %s at block %d",
+				ErrMonotonicViolation, lowerBound.String(), startValue.String(), startBlock)
 		}
 		if comparisonResult < 0 {
-			transitionBlocks = append(transitionBlocks, startBlock)
+			if err := onHit(startBlock, lowerBound, startValue); err != nil {
+				// Resume at this block with the partially consumed counter,
+				// rather than querying an older block with a smaller counter.
+				return count, startBlock - 1, err
+			}
+			count++
 		}
 	}
 
-	if startBlock == endBlock {
-		return sortAndCallOnHit(transitionBlocks, onHit)
+	if startBlock == endBlock || (upperBound != nil && startValue.Cmp(upperBound) >= 0) {
+		return count, startBlock, nil
 	}
 
 	endValue, err := transitionQuery(ctx, endBlock)
 	if err != nil {
-		return 0, fmt.Errorf("transitionQuery(endBlock=%d): %w", endBlock, err)
+		return count, startBlock - 1, fmt.Errorf("transitionQuery(endBlock=%d): %w", endBlock, err)
 	}
 
 	if startValue.Cmp(endValue) == 0 {
 		// No further transitions, but may have added startBlock
-		return sortAndCallOnHit(transitionBlocks, onHit)
+		return count, endBlock, nil
 	}
 
-	// First phase: collect all transition blocks
-	stack := []interval{{StartBlock: startBlock, EndBlock: endBlock, StartValue: startValue, EndValue: endValue}}
+	lastProcessedBlock := startBlock
+
+	// Visit intervals from left to right, invoking onHit as transitions are found.
+	stack := []interval{{
+		StartBlock: startBlock,
+		EndBlock:   endBlock,
+		LastBlock:  endBlock,
+		StartValue: startValue,
+		EndValue:   endValue,
+	}}
 	for len(stack) > 0 {
 		// Check for context cancellation
 		select {
 		case <-ctx.Done():
-			return 0, ctx.Err()
+			return 0, lastProcessedBlock, ctx.Err()
 		default:
 		}
 
@@ -98,25 +107,46 @@ func FindTransitions(ctx context.Context, startBlock, endBlock uint64, prevValue
 
 		if iv.StartBlock == iv.EndBlock {
 			// Found a transition block
-			transitionBlocks = append(transitionBlocks, iv.StartBlock)
+			if err := onHit(iv.StartBlock, iv.StartValue, iv.EndValue); err != nil {
+				// Resume at this block with the partially consumed counter,
+				// rather than querying an older block with a smaller counter.
+				return count, iv.StartBlock - 1, err
+			}
+			count++
+			lastProcessedBlock = iv.LastBlock
 			continue
 		}
 
 		midBlock := iv.StartBlock + (iv.EndBlock-iv.StartBlock)/2 //nolint:mnd
 		midValue, err := transitionQuery(ctx, midBlock)
 		if err != nil {
-			return 0, fmt.Errorf("transitionQuery(midBlock=%d): %w", midBlock, err)
+			return 0, lastProcessedBlock, fmt.Errorf("transitionQuery(midBlock=%d): %w", midBlock, err)
 		}
 
 		// Add new intervals to stack if there are transitions
+		lastBlock := iv.LastBlock
 		if midValue.Cmp(iv.EndValue) != 0 {
-			stack = append(stack, interval{StartBlock: midBlock + 1, EndBlock: iv.EndBlock, StartValue: midValue, EndValue: iv.EndValue})
+			if upperBound == nil || midValue.Cmp(upperBound) < 0 {
+				stack = append(stack, interval{
+					StartBlock: midBlock + 1,
+					EndBlock:   iv.EndBlock,
+					LastBlock:  lastBlock,
+					StartValue: midValue,
+					EndValue:   iv.EndValue,
+				})
+			}
+			lastBlock = midBlock
 		}
 		if iv.StartValue.Cmp(midValue) != 0 {
-			stack = append(stack, interval{StartBlock: iv.StartBlock, EndBlock: midBlock, StartValue: iv.StartValue, EndValue: midValue})
+			stack = append(stack, interval{
+				StartBlock: iv.StartBlock,
+				EndBlock:   midBlock,
+				LastBlock:  lastBlock,
+				StartValue: iv.StartValue,
+				EndValue:   midValue,
+			})
 		}
 	}
 
-	// Second phase: sort transition blocks and call onHit in chronological order
-	return sortAndCallOnHit(transitionBlocks, onHit)
+	return count, lastProcessedBlock, nil
 }

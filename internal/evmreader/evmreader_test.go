@@ -65,6 +65,7 @@ func (s *EvmReaderSuite) SetupTest() {
 			BlockchainDefaultBlock:     DefaultBlock_Latest,
 			BlockchainId:               1,
 			EvmReaderPollingInterval:   100 * time.Millisecond,
+			EvmReaderMaxInputsPerStep:  500,
 		},
 		Repository:     s.repository,
 		EthClient:      s.client,

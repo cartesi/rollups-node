@@ -43,7 +43,7 @@ func TestDaveInputStoreErrorClassification(t *testing.T) {
 				repo := newMockRepository()
 				inputBox := newMockInputBox()
 				dave := newMockDaveConsensus()
-				r := &Service{repository: repo}
+				r := &Service{repository: repo, maxInputsPerStep: 500}
 				r.Logger = testLogger(t)
 				app := appContracts{
 					application: &model.Application{

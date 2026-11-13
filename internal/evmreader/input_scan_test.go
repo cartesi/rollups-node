@@ -108,7 +108,7 @@ func inputScanFixture(t *testing.T, operation string, failure error, during func
 	input := newMockInputBox()
 	app.inputSource = input
 	output := new(bytes.Buffer)
-	reader := &Service{repository: repo, defaultBlock: model.DefaultBlock_Latest}
+	reader := &Service{repository: repo, maxInputsPerStep: 500, defaultBlock: model.DefaultBlock_Latest}
 	reader.Logger = slog.New(slog.NewJSONHandler(output, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	t.Cleanup(func() {
 		repo.AssertExpectations(t)

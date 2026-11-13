@@ -93,10 +93,16 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 			inputBlock := mock.MatchedBy(func(opts *bind.FilterOpts) bool {
 				return opts.Start == forecloseBlock && opts.End != nil && *opts.End == forecloseBlock
 			})
-			inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).
-				Return(inputEvents, nil)
+			for _, event := range events {
+				lower, upper := event.InputIndexLowerBound.Uint64(), event.InputIndexUpperBound.Uint64()
+				if lower == upper {
+					continue
+				}
+				inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).
+					Return(inputEvents[lower:upper], nil).Once()
+			}
 			contracts := appContracts{application: app, inputSource: inputBox, daveConsensus: dave}
-			reader := &Service{repository: repo}
+			reader := &Service{repository: repo, maxInputsPerStep: 500}
 			reader.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 			require.NoError(t, reader.processApplicationSealedEpochs(ctx, contracts, forecloseBlock))
 
@@ -107,7 +113,7 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 			t.Cleanup(cancel)
 			failedRead := inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).Once()
 			if test.cancelWrite {
-				failedRead.Run(func(mock.Arguments) { cancel() }).Return(inputEvents, nil)
+				failedRead.Run(func(mock.Arguments) { cancel() }).Return(inputEvents[sealedInputs:], nil)
 			} else {
 				failedRead.Return([]iinputbox.IInputBoxInputAdded{}, context.Canceled)
 			}
@@ -135,9 +141,9 @@ func TestDaveInputCheckpointAfterFailedOpenScan(t *testing.T) {
 
 			inputBox.Unset("RetrieveInputs")
 			inputBox.On("RetrieveInputs", inputBlock, []common.Address{app.IApplicationAddress}, mock.Anything).
-				Return(inputEvents, nil).Once()
+				Return(inputEvents[sealedInputs:], nil).Once()
 			contracts.application = app
-			reader = &Service{repository: repo}
+			reader = &Service{repository: repo, maxInputsPerStep: 500}
 			reader.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 			reader.scanDaveConsensusEpochsAndInputs(ctx, []appContracts{contracts}, forecloseBlock+10)
 
