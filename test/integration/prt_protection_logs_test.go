@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	prtStoredClockSource = "stored root descriptor"
-	prtPinnedClockSource = "pinned root descriptor"
+	prtStoredClockSource    = "stored root descriptor"
+	prtPinnedClockSource    = "pinned root descriptor"
+	prtCommittedClockSource = "committed root descriptor"
 )
 
 // Stored metadata can race the direct stop. The observer must recover the
@@ -28,6 +29,8 @@ func prtProtectionStopLog(application string, address common.Address, epoch uint
 	switch source {
 	case prtStoredClockSource:
 		clock = `(?:` + clock + `|clock_available=false clock_error="root descriptor is not stored")`
+	case prtCommittedClockSource:
+		sourcePattern += ` at block [0-9]+`
 	case prtPinnedClockSource:
 		sourcePattern += ` at block [0-9]+ \(0x[[:xdigit:]]{64}\)`
 	}

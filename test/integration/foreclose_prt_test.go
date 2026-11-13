@@ -248,9 +248,9 @@ func (s *ForeclosePrtSuite) TestForeclosePrtBeforeTournamentSettlementStopsParti
 	r.NoError(err, "mine past unresolved tournament timeout")
 	s.T().Logf("    mined %d blocks after foreclosure; PRT service must not settle", blocksMined)
 
-	// The mid-tournament claim was never accepted on chain and can never be now
-	// that the app is foreclosed, so the drain terminalizes it to CLAIM_FORECLOSED
-	// — not CLAIM_ACCEPTED, and not left stuck at CLAIM_COMPUTED.
+	// With no active match, the mined clock boundary makes this root terminal.
+	// The node can now compare its final state and close locally without accepting
+	// on chain. This does not test an indefinite wait on an unresolved active match.
 	claimCtx, claimCancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
 	_, err = waitForEpochStatus(claimCtx, s.T(), s.appName, input.EpochIndex, model.EpochStatus_ClaimForeclosed)
 	claimCancel()
