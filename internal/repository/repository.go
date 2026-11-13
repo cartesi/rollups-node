@@ -240,8 +240,8 @@ type EpochRepository interface {
 	HasUndrainedEpochsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
 
 	// HasUnpublishedEpochBeforeBlock keeps the machine available while a healthy,
-	// enabled, foreclosed Authority/Quorum application still has a CLOSED epoch
-	// before both blockBound and foreclosure, within its publication cutoff.
+	// enabled, foreclosed application still has eligible CLOSED work. A/Q use
+	// strict block bounds; PRT uses a positive seal in the bounded history.
 	// CLOSED -> INPUTS_PROCESSED needs the resident machine's accepted-state proof
 	// even when no NONE inputs remain. INPUTS_PROCESSED validation uses stored
 	// data and does not keep the machine. The caller separately gates on the
