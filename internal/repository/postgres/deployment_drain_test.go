@@ -47,6 +47,7 @@ func completeDeploymentDrainProofs(t *testing.T, r *PostgresRepository, app *mod
 	t.Helper()
 	current, err := r.GetEpoch(t.Context(), app.Name, epoch.Index)
 	require.NoError(t, err)
+	current.CalculatedOutputsRoot = current.TxBufferDataBlock
 	current.Commitment = new(repotest.UniqueHash())
 	current.CommitmentProof = make([]common.Hash, model.Log2EpochComputationHashLeafCount)
 	output, err := r.GetOutput(t.Context(), app.Name, 0)

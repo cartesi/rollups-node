@@ -737,28 +737,42 @@ func ParseHexDuration(s string) (time.Duration, error) {
 }
 
 type Epoch struct {
-	ApplicationID        int64           `sql:"primary_key" json:"-"`
-	Index                uint64          `sql:"primary_key" json:"index"`
-	FirstBlock           uint64          `json:"first_block"`
-	LastBlock            uint64          `json:"last_block"`
-	InputIndexLowerBound uint64          `json:"input_index_lower_bound"`
-	InputIndexUpperBound uint64          `json:"input_index_upper_bound"`
-	MachineHash          *common.Hash    `json:"machine_hash"`
-	TxBufferDataBlock    *common.Hash    `json:"tx_buffer_data_block"`
-	TxBufferProof        []common.Hash   `json:"tx_buffer_proof,omitempty"`
-	IflagsYDataBlock     *common.Hash    `json:"iflags_y_data_block"`
-	IflagsYProof         []common.Hash   `json:"iflags_y_proof,omitempty"`
-	HtifTohostDataBlock  *common.Hash    `json:"htif_tohost_data_block"`
-	HtifTohostProof      []common.Hash   `json:"htif_tohost_proof,omitempty"`
-	ClaimTransactionHash *common.Hash    `json:"claim_transaction_hash"`
-	Commitment           *common.Hash    `json:"commitment"`
-	CommitmentProof      []common.Hash   `json:"commitment_proof,omitempty"`
-	TournamentAddress    *common.Address `json:"tournament_address"`
-	Status               EpochStatus     `json:"status"`
-	StagedAtBlock        *uint64         `json:"staged_at_block"`
-	VirtualIndex         uint64          `json:"virtual_index"`
-	CreatedAt            time.Time       `json:"created_at"`
-	UpdatedAt            time.Time       `json:"updated_at"`
+	ApplicationID         int64           `sql:"primary_key" json:"-"`
+	Index                 uint64          `sql:"primary_key" json:"index"`
+	FirstBlock            uint64          `json:"first_block"`
+	LastBlock             uint64          `json:"last_block"`
+	InputIndexLowerBound  uint64          `json:"input_index_lower_bound"`
+	InputIndexUpperBound  uint64          `json:"input_index_upper_bound"`
+	MachineHash           *common.Hash    `json:"machine_hash"`
+	TxBufferDataBlock     *common.Hash    `json:"tx_buffer_data_block"`
+	CalculatedOutputsRoot *common.Hash    `json:"calculated_outputs_root"`
+	TxBufferProof         []common.Hash   `json:"tx_buffer_proof,omitempty"`
+	IflagsYDataBlock      *common.Hash    `json:"iflags_y_data_block"`
+	IflagsYProof          []common.Hash   `json:"iflags_y_proof,omitempty"`
+	HtifTohostDataBlock   *common.Hash    `json:"htif_tohost_data_block"`
+	HtifTohostProof       []common.Hash   `json:"htif_tohost_proof,omitempty"`
+	ClaimTransactionHash  *common.Hash    `json:"claim_transaction_hash"`
+	Commitment            *common.Hash    `json:"commitment"`
+	CommitmentProof       []common.Hash   `json:"commitment_proof,omitempty"`
+	TournamentAddress     *common.Address `json:"tournament_address"`
+	Status                EpochStatus     `json:"status"`
+	StagedAtBlock         *uint64         `json:"staged_at_block"`
+	VirtualIndex          uint64          `json:"virtual_index"`
+	CreatedAt             time.Time       `json:"created_at"`
+	UpdatedAt             time.Time       `json:"updated_at"`
+}
+
+// HasMatchingOutputsRoot requires a calculated root and the same declared root.
+func (e *Epoch) HasMatchingOutputsRoot() bool {
+	return e.CalculatedOutputsRoot != nil && e.TxBufferDataBlock != nil &&
+		*e.CalculatedOutputsRoot == *e.TxBufferDataBlock
+}
+
+// HasInvalidOutputsRoot identifies a declared root that differs from local outputs.
+// Missing local computation is not evidence of an invalid declaration.
+func (e *Epoch) HasInvalidOutputsRoot() bool {
+	return e.CalculatedOutputsRoot != nil && e.TxBufferDataBlock != nil &&
+		*e.CalculatedOutputsRoot != *e.TxBufferDataBlock
 }
 
 func (e *Epoch) MarshalJSON() ([]byte, error) {

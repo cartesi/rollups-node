@@ -565,7 +565,7 @@ func claimWindowRows(
 			WHERE(table.Application.ID.EQ(table.Epoch.ApplicationID).AND(claimPublicationCondition()))))
 	}
 	stmt := table.Epoch.SELECT(table.Epoch.ApplicationID, table.Epoch.Index, table.Epoch.FirstBlock, table.Epoch.LastBlock,
-		table.Epoch.MachineHash, table.Epoch.TxBufferDataBlock, table.Epoch.TxBufferProof,
+		table.Epoch.MachineHash, table.Epoch.TxBufferDataBlock, table.Epoch.CalculatedOutputsRoot, table.Epoch.TxBufferProof,
 		table.Epoch.IflagsYDataBlock, table.Epoch.IflagsYProof, table.Epoch.HtifTohostDataBlock,
 		table.Epoch.HtifTohostProof, table.Epoch.ClaimTransactionHash, table.Epoch.Status,
 		table.Epoch.StagedAtBlock, table.Epoch.VirtualIndex, table.Epoch.CreatedAt, table.Epoch.UpdatedAt).
@@ -580,7 +580,7 @@ func claimWindowRows(
 	for rows.Next() {
 		epoch := new(model.Epoch)
 		if err := rows.Scan(&epoch.ApplicationID, &epoch.Index, &epoch.FirstBlock, &epoch.LastBlock,
-			&epoch.MachineHash, &epoch.TxBufferDataBlock, &epoch.TxBufferProof,
+			&epoch.MachineHash, &epoch.TxBufferDataBlock, &epoch.CalculatedOutputsRoot, &epoch.TxBufferProof,
 			&epoch.IflagsYDataBlock, &epoch.IflagsYProof, &epoch.HtifTohostDataBlock, &epoch.HtifTohostProof,
 			&epoch.ClaimTransactionHash, &epoch.Status, &epoch.StagedAtBlock, &epoch.VirtualIndex,
 			&epoch.CreatedAt, &epoch.UpdatedAt); err != nil {

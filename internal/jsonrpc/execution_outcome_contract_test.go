@@ -75,6 +75,7 @@ func TestDiscoverySchemaExecutionOutcomeContract(t *testing.T) {
 	require.NoError(t, json.Unmarshal(spec.Components.Schemas["Epoch"], &epoch))
 	for _, field := range []string{
 		"tx_buffer_data_block",
+		"calculated_outputs_root",
 		"tx_buffer_proof",
 		"iflags_y_data_block",
 		"iflags_y_proof",

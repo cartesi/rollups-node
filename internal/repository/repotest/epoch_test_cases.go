@@ -1146,9 +1146,8 @@ func (s *EpochSuite) TestEpochStatusTransitionTrigger() {
 			seed.App.IApplicationAddress.String(), seed.Epoch,
 			EpochStatus_InputsProcessed)
 
-		seed.Epoch.Status = EpochStatus_ClaimComputed
-		err := s.Repo.UpdateEpochStatus(
-			s.Ctx, seed.App.IApplicationAddress.String(), seed.Epoch)
+		seed.Epoch.CalculatedOutputsRoot = seed.Epoch.TxBufferDataBlock
+		err := s.Repo.StoreClaimAndProofs(s.Ctx, seed.Epoch, nil)
 		s.Require().NoError(err)
 
 		got, err := s.Repo.GetEpoch(
@@ -1174,17 +1173,16 @@ func (s *EpochSuite) TestEpochStatusTransitionTrigger() {
 		s.Require().NoError(err)
 
 		// Publish the machine proof but not the PRT commitment.
+		proof := DummyStateProof()
 		err = s.Repo.UpdateEpochInputsProcessed(
-			s.Ctx, app.IApplicationAddress.String(), epoch.Index,
-			DummyStateProof(),
+			s.Ctx, app.IApplicationAddress.String(), epoch.Index, proof,
 		)
 		s.Require().NoError(err)
 		epoch.Status = EpochStatus_InputsProcessed
 
 		// INPUTS_PROCESSED -> CLAIM_COMPUTED without commitment — must fail.
-		epoch.Status = EpochStatus_ClaimComputed
-		err = s.Repo.UpdateEpochStatus(
-			s.Ctx, app.IApplicationAddress.String(), epoch)
+		epoch.CalculatedOutputsRoot = &proof.TxBufferDataBlock
+		err = s.Repo.StoreClaimAndProofs(s.Ctx, epoch, nil)
 		s.Require().Error(err)
 		s.Contains(err.Error(), "PRT")
 	})

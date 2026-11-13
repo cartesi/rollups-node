@@ -39,6 +39,7 @@ func seedProblemEpochs(t *testing.T, r repository.Repository) (*model.Applicatio
 		require.NoError(t, r.UpdateEpochInputsProcessed(t.Context(), app.Name, i, proof))
 		stored, err := r.GetEpoch(t.Context(), app.Name, i)
 		require.NoError(t, err)
+		stored.CalculatedOutputsRoot = stored.TxBufferDataBlock
 		epochs[i] = stored
 	}
 	return app, epochs

@@ -72,6 +72,7 @@ func TestEpochPublicationLosesToForeclosureWithoutWrites(t *testing.T) {
 			require.Len(t, outputsBefore, 1)
 
 			if claimPublication {
+				stale.CalculatedOutputsRoot = stale.TxBufferDataBlock
 				stale.Commitment = new(repotest.UniqueHash())
 				stale.CommitmentProof = make([]common.Hash, Log2EpochComputationHashLeafCount)
 				output := *outputsBefore[0]
@@ -139,6 +140,7 @@ func TestEpochPublicationDoesNotMisclassifyOtherFailures(t *testing.T) {
 	require.ErrorIs(t, err, repository.ErrNoUpdate, "an already published proof is not foreclosure")
 	computed, err := repo.GetEpoch(t.Context(), app.Name, epoch.Index)
 	require.NoError(t, err)
+	computed.CalculatedOutputsRoot = computed.TxBufferDataBlock
 	computed.Commitment, computed.CommitmentProof = new(repotest.UniqueHash()), make([]common.Hash, Log2EpochComputationHashLeafCount)
 	require.NoError(t, repo.StoreClaimAndProofs(t.Context(), computed, nil))
 	stored, err := repo.GetEpoch(t.Context(), app.Name, epoch.Index)

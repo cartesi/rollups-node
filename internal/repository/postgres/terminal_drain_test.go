@@ -97,6 +97,7 @@ func TestTerminalForeclosureDrainsSuffixPreservingValidationAndAcceptance(t *tes
 			require.Equal(t, int64(1), count, "the newly invalid earlier epoch can drain")
 			epoch, err := r.GetEpoch(t.Context(), app.Name, 0)
 			require.NoError(t, err)
+			epoch.CalculatedOutputsRoot = epoch.TxBufferDataBlock
 			require.NoError(t, r.StoreClaimAndProofs(t.Context(), epoch, nil))
 			accepted := repotest.UniqueHash()
 			require.NoError(t, r.UpdateEpochWithAcceptedClaim(t.Context(), app.ID, 0, &accepted))

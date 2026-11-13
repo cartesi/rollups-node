@@ -351,6 +351,7 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) (er
 			return &claimStatusRecorded{errors.New(reason)}
 		}
 
+		epoch.CalculatedOutputsRoot = merkleRoot
 		if app.IsDaveConsensus() {
 			commitment, proof, err := s.buildCommitment(ctx, app, epoch)
 			if err != nil {

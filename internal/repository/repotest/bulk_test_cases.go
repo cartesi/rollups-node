@@ -766,6 +766,8 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofs() {
 		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
 			seed.App.IApplicationAddress.String(), seed.Epoch, EpochStatus_InputsProcessed)
 
+		seed.Epoch.CalculatedOutputsRoot = seed.Epoch.TxBufferDataBlock
+
 		// Now store claim and proofs using Commitment/CommitmentProof fields
 		commitmentHash := crypto.Keccak256Hash([]byte("commitment"))
 		seed.Epoch.Commitment = &commitmentHash
@@ -1176,6 +1178,8 @@ func (s *BulkOperationsSuite) TestStoreClaimAndProofsRollback() {
 		AdvanceEpochStatus(s.Ctx, s.T(), s.Repo,
 			seed.App.IApplicationAddress.String(), seed.Epoch,
 			EpochStatus_InputsProcessed)
+
+		seed.Epoch.CalculatedOutputsRoot = seed.Epoch.TxBufferDataBlock
 
 		// Prepare a valid epoch claim (this part would succeed)
 		commitmentHash := crypto.Keccak256Hash([]byte("commitment"))

@@ -301,6 +301,7 @@ CREATE TABLE "epoch"
     "input_index_upper_bound" uint64 NOT NULL,
     "machine_hash" hash,
     "tx_buffer_data_block" hash,
+    "calculated_outputs_root" hash,
     "tx_buffer_proof" BYTEA[],
     "iflags_y_data_block" hash,
     "iflags_y_proof" BYTEA[],
@@ -322,6 +323,14 @@ CREATE TABLE "epoch"
     CONSTRAINT "epoch_application_id_fkey" FOREIGN KEY ("application_id") REFERENCES "application"("id") ON DELETE CASCADE,
     CONSTRAINT "epoch_block_bounds_check" CHECK ("first_block" <= "last_block"),
     CONSTRAINT "epoch_input_bounds_check" CHECK ("input_index_lower_bound" <= "input_index_upper_bound"),
+    -- Local computation keeps its root through settlement and foreclosure.
+    CONSTRAINT "epoch_calculated_outputs_root_check" CHECK (
+        ("calculated_outputs_root" IS NOT NULL
+         OR (NOT "claim_validated" AND "status" NOT IN
+             ('CLAIM_COMPUTED', 'CLAIM_SUBMITTED', 'CLAIM_STAGED', 'CLAIM_ACCEPTED', 'CLAIM_REJECTED')))
+        AND ("calculated_outputs_root" IS NULL OR "claim_validated")
+        AND (NOT "claim_validated" OR "status" NOT IN ('OPEN', 'CLOSED', 'INPUTS_PROCESSED'))
+    ),
     CONSTRAINT "epoch_tx_buffer_proof_elements_check" CHECK (check_hash_siblings("tx_buffer_proof")),
     CONSTRAINT "epoch_iflags_y_proof_elements_check" CHECK (check_hash_siblings("iflags_y_proof")),
     CONSTRAINT "epoch_htif_tohost_proof_elements_check" CHECK (check_hash_siblings("htif_tohost_proof")),
@@ -458,6 +467,10 @@ DECLARE
     app_consensus text;
 BEGIN
     NEW.claim_validated := OLD.claim_validated;
+    IF OLD.calculated_outputs_root IS NOT NULL
+       AND NEW.calculated_outputs_root IS DISTINCT FROM OLD.calculated_outputs_root THEN
+        RAISE EXCEPTION 'calculated outputs root cannot change after local computation';
+    END IF;
     IF OLD.status = NEW.status THEN
         RETURN NEW;
     END IF;
@@ -508,7 +521,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER "epoch_status_transition_check"
-    BEFORE UPDATE OF "status" ON "epoch"
+    BEFORE UPDATE OF "status", "calculated_outputs_root" ON "epoch"
     FOR EACH ROW
     EXECUTE FUNCTION enforce_epoch_status_transition();
 

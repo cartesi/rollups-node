@@ -41,25 +41,27 @@ func TestApplicationJSONRoundtrip(t *testing.T) {
 
 func TestEpochJSONRoundtrip(t *testing.T) {
 	root := common.HexToHash("0xabcd")
+	calculated := common.HexToHash("0x9876")
 	iflagsY := common.HexToHash("0x1234")
 	htifTohost := common.HexToHash("0x5678")
 	original := Epoch{
-		ApplicationID:        1,
-		Index:                42,
-		FirstBlock:           100,
-		LastBlock:            200,
-		InputIndexLowerBound: 0,
-		InputIndexUpperBound: 10,
-		VirtualIndex:         5,
-		Status:               EpochStatus_ClaimAccepted,
-		TxBufferDataBlock:    &root,
-		TxBufferProof:        []common.Hash{common.HexToHash("0xaaaa")},
-		IflagsYDataBlock:     &iflagsY,
-		IflagsYProof:         []common.Hash{common.HexToHash("0x1111")},
-		HtifTohostDataBlock:  &htifTohost,
-		HtifTohostProof:      []common.Hash{common.HexToHash("0x2222")},
-		CreatedAt:            time.Now().Truncate(time.Microsecond).UTC(),
-		UpdatedAt:            time.Now().Truncate(time.Microsecond).UTC(),
+		ApplicationID:         1,
+		Index:                 42,
+		FirstBlock:            100,
+		LastBlock:             200,
+		InputIndexLowerBound:  0,
+		InputIndexUpperBound:  10,
+		VirtualIndex:          5,
+		Status:                EpochStatus_ClaimAccepted,
+		TxBufferDataBlock:     &root,
+		CalculatedOutputsRoot: &calculated,
+		TxBufferProof:         []common.Hash{common.HexToHash("0xaaaa")},
+		IflagsYDataBlock:      &iflagsY,
+		IflagsYProof:          []common.Hash{common.HexToHash("0x1111")},
+		HtifTohostDataBlock:   &htifTohost,
+		HtifTohostProof:       []common.Hash{common.HexToHash("0x2222")},
+		CreatedAt:             time.Now().Truncate(time.Microsecond).UTC(),
+		UpdatedAt:             time.Now().Truncate(time.Microsecond).UTC(),
 	}
 
 	data, err := json.Marshal(&original)
@@ -83,6 +85,7 @@ func TestEpochJSONRoundtrip(t *testing.T) {
 	require.Equal(t, original.VirtualIndex, decoded.VirtualIndex)
 	require.Equal(t, original.Status, decoded.Status)
 	require.Equal(t, original.TxBufferDataBlock, decoded.TxBufferDataBlock)
+	require.Equal(t, original.CalculatedOutputsRoot, decoded.CalculatedOutputsRoot)
 	require.Equal(t, original.TxBufferProof, decoded.TxBufferProof)
 	require.Equal(t, original.IflagsYDataBlock, decoded.IflagsYDataBlock)
 	require.Equal(t, original.IflagsYProof, decoded.IflagsYProof)

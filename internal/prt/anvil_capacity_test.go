@@ -280,6 +280,7 @@ func seedPRTCapacityApplications(
 		tree := merkle.Proof{Node: *epoch.MachineHash, Pos: big.NewInt(1<<model.Log2EpochComputationHashLeafCount - 1),
 			Siblings: epoch.CommitmentProof}
 		epoch.Commitment = new(tree.BuildRoot())
+		epoch.CalculatedOutputsRoot = epoch.TxBufferDataBlock
 		require.NoError(t, repo.StoreClaimAndProofs(ctx, epoch, nil))
 		apps, roots = append(apps, app), append(roots, sealed.Tournament)
 	}

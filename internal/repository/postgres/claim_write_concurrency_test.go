@@ -29,6 +29,7 @@ func TestStoreClaimAndProofsDoesNotLockApplicationAcrossProofBatch(t *testing.T)
 			require.NoError(t, repo.UpdateEpochInputsProcessed(ctx, app.Name, epoch.Index, repotest.DummyStateProof()))
 			epoch, err := repo.GetEpoch(ctx, app.Name, epoch.Index)
 			require.NoError(t, err)
+			epoch.CalculatedOutputsRoot = epoch.TxBufferDataBlock
 			epoch.Commitment = new(repotest.UniqueHash())
 			epoch.CommitmentProof = make([]common.Hash, model.Log2EpochComputationHashLeafCount)
 			output, err := repo.GetOutput(ctx, app.Name, 0)

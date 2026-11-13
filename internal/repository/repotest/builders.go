@@ -641,14 +641,8 @@ func AdvanceEpochStatus(
 		// preceding INPUTS_PROCESSED transition.
 		if s == EpochStatus_ClaimComputed {
 			setDummyClaimFields(ctx, t, repo, nameOrAddress, epoch)
-			// For PRT apps StoreClaimAndProofs already set the status
-			// to CLAIM_COMPUTED, so skip the redundant UpdateEpochStatus.
-			app, err := repo.GetApplication(ctx, nameOrAddress)
-			require.NoError(t, err)
-			if app.IsDaveConsensus() {
-				epoch.Status = s
-				continue
-			}
+			epoch.Status = s
+			continue
 		}
 		epoch.Status = s
 		err := repo.UpdateEpochStatus(ctx, nameOrAddress, epoch)
@@ -692,7 +686,7 @@ func DummyStateProof() *StateProof {
 	return proof
 }
 
-// setDummyClaimFields supplies the PRT-only fields required for the
+// setDummyClaimFields supplies local result fields for the
 // INPUTS_PROCESSED → CLAIM_COMPUTED transition.
 func setDummyClaimFields(
 	ctx context.Context, t *testing.T,
@@ -708,10 +702,13 @@ func setDummyClaimFields(
 		commitHash := UniqueHash()
 		epoch.Commitment = &commitHash
 		epoch.CommitmentProof = []common.Hash{UniqueHash()}
-		epoch.Status = EpochStatus_ClaimComputed
-		err = repo.StoreClaimAndProofs(ctx, epoch, nil)
-		require.NoError(t, err)
 	}
+	if epoch.CalculatedOutputsRoot == nil {
+		epoch.CalculatedOutputsRoot = epoch.TxBufferDataBlock
+	}
+	epoch.Status = EpochStatus_ClaimComputed
+	err = repo.StoreClaimAndProofs(ctx, epoch, nil)
+	require.NoError(t, err)
 }
 
 // Seed creates and persists a minimal Application with one Epoch and one Input.

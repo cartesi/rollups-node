@@ -22,6 +22,7 @@ func machinePublicationEpoch(t *testing.T, r *PostgresRepository,
 	input := repotest.NewInputBuilder().WithIndex(0).WithBlockNumber(45).Build()
 	require.NoError(t, r.CreateEpochsAndInputs(t.Context(), app.Name, map[*model.Epoch][]*model.Input{epoch: {input}}, 80))
 	proof := repotest.DummyStateProof()
+	epoch.CalculatedOutputsRoot = &proof.TxBufferDataBlock
 	require.NoError(t, r.StoreAdvanceResult(t.Context(), app.ID, &model.AdvanceResult{
 		EpochIndex: epoch.Index, InputIndex: 0, Status: model.InputCompletionStatus_Accepted, StateProof: *proof,
 	}))
