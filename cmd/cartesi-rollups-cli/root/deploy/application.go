@@ -6,6 +6,7 @@ package deploy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -600,34 +601,54 @@ func customConsensus(
 		return common.Address{}, 0, 0, "", err
 	}
 
-	consensus, err := iconsensus.NewIConsensus(consensusAddress, client)
+	callOpts := &bind.CallOpts{Context: ctx}
+	consensusCaller, err := iconsensus.NewIConsensusCaller(consensusAddress, client)
 	if err != nil {
 		return common.Address{}, 0, 0, "", err
 	}
 
-	callOpts := &bind.CallOpts{Context: ctx}
-	epochLengthBig, err := consensus.GetEpochLength(callOpts)
+	detected, err := classifyApplicationConsensus(callOpts, consensusCaller)
+	if err != nil {
+		return common.Address{}, 0, 0, "", fmt.Errorf("consensus %s: %w", consensusAddress, err)
+	}
+
+	if detected == ethutil.ConsensusQuorum {
+		quorum, err := iquorum.NewIQuorum(consensusAddress, client)
+		if err != nil {
+			return common.Address{}, 0, 0, "", err
+		}
+		if err := ethutil.ValidateQuorum(callOpts, quorum); err != nil {
+			return common.Address{}, 0, 0, "", err
+		}
+	}
+
+	epochLengthBig, err := consensusCaller.GetEpochLength(callOpts)
 	if err != nil {
 		return common.Address{}, 0, 0, "", fmt.Errorf("failed to retrieve consensus epoch length: %w", err)
 	}
 
-	claimStagingPeriodBig, err := consensus.GetClaimStagingPeriod(callOpts)
+	claimStagingPeriodBig, err := consensusCaller.GetClaimStagingPeriod(callOpts)
 	if err != nil {
 		return common.Address{}, 0, 0, "", fmt.Errorf("failed to retrieve consensus claim staging period: %w", err)
 	}
 
-	consensusType := model.Consensus_Authority
-	quorum, err := iquorum.NewIQuorum(consensusAddress, client)
-	if err != nil {
-		return common.Address{}, 0, 0, "", err
-	}
-	numOfValidators, err := quorum.NumOfValidators(callOpts)
-	if err == nil {
-		if numOfValidators.Sign() == 0 {
-			return common.Address{}, 0, 0, "", fmt.Errorf("quorum consensus reports zero validators")
-		}
-		consensusType = model.Consensus_Quorum
-	}
+	return consensusAddress, epochLengthBig.Uint64(), claimStagingPeriodBig.Uint64(), detected.ToModel(), nil
+}
 
-	return consensusAddress, epochLengthBig.Uint64(), claimStagingPeriodBig.Uint64(), consensusType, nil
+// classifyApplicationConsensus detects the consensus behind an existing
+// --consensus address. It aborts on probe errors and rejects a Dave/PRT
+// consensus, which must be deployed through --prt.
+func classifyApplicationConsensus(
+	callOpts *bind.CallOpts,
+	caller ethutil.SupportsInterfaceCaller,
+) (ethutil.ConsensusType, error) {
+	detected, _, err := ethutil.DetectConsensusType(callOpts, caller)
+	if err != nil {
+		return ethutil.ConsensusUnknown, fmt.Errorf("failed to detect consensus type: %w", err)
+	}
+	if detected == ethutil.ConsensusPRT {
+		return ethutil.ConsensusUnknown, errors.New(
+			"PRT (Dave) consensus; use --prt to deploy a PRT application")
+	}
+	return detected, nil
 }

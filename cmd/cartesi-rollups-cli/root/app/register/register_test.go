@@ -4,71 +4,56 @@
 package register
 
 import (
-	"errors"
-	"math/big"
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/stretchr/testify/require"
 )
 
-type quorumConsensusProbeStub struct {
-	numOfValidators *big.Int
-	err             error
-	called          bool
-}
-
-func (p *quorumConsensusProbeStub) NumOfValidators(_ *bind.CallOpts) (*big.Int, error) {
-	p.called = true
-	return p.numOfValidators, p.err
-}
-
-func TestConsensusTypeFromQuorumProbe_PRTSkipsProbe(t *testing.T) {
-	probe := &quorumConsensusProbeStub{
-		numOfValidators: big.NewInt(3),
+func TestValidateRegistrationConsensusType(t *testing.T) {
+	tests := []struct {
+		name               string
+		consensusType      model.Consensus
+		applicationTypePRT bool
+		wantErr            string
+	}{
+		{
+			name:               "prt flag with prt consensus",
+			consensusType:      model.Consensus_PRT,
+			applicationTypePRT: true,
+		},
+		{
+			name:               "prt flag with authority consensus",
+			consensusType:      model.Consensus_Authority,
+			applicationTypePRT: true,
+			wantErr:            "--prt was passed",
+		},
+		{
+			name:               "prt flag with quorum consensus",
+			consensusType:      model.Consensus_Quorum,
+			applicationTypePRT: true,
+			wantErr:            "--prt was passed",
+		},
+		{
+			name:          "no prt flag with prt consensus",
+			consensusType: model.Consensus_PRT,
+		},
+		{
+			name:          "no prt flag with authority consensus",
+			consensusType: model.Consensus_Authority,
+		},
 	}
 
-	consensusType, err := consensusTypeFromQuorumProbe(true, probe)
-
-	require.NoError(t, err)
-	require.Equal(t, model.Consensus_PRT, consensusType)
-	require.False(t, probe.called)
-}
-
-func TestConsensusTypeFromQuorumProbe_AuthorityWhenProbeFails(t *testing.T) {
-	probe := &quorumConsensusProbeStub{
-		err: errors.New("execution reverted"),
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRegistrationConsensusType(tt.consensusType, tt.applicationTypePRT)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
 	}
-
-	consensusType, err := consensusTypeFromQuorumProbe(false, probe)
-
-	require.NoError(t, err)
-	require.Equal(t, model.Consensus_Authority, consensusType)
-	require.True(t, probe.called)
-}
-
-func TestConsensusTypeFromQuorumProbe_QuorumWhenValidatorsExist(t *testing.T) {
-	probe := &quorumConsensusProbeStub{
-		numOfValidators: big.NewInt(3),
-	}
-
-	consensusType, err := consensusTypeFromQuorumProbe(false, probe)
-
-	require.NoError(t, err)
-	require.Equal(t, model.Consensus_Quorum, consensusType)
-	require.True(t, probe.called)
-}
-
-func TestConsensusTypeFromQuorumProbe_RejectsZeroValidatorQuorum(t *testing.T) {
-	probe := &quorumConsensusProbeStub{
-		numOfValidators: big.NewInt(0),
-	}
-
-	_, err := consensusTypeFromQuorumProbe(false, probe)
-
-	require.ErrorContains(t, err, "zero validators")
-	require.True(t, probe.called)
 }
 
 func TestRegisterCommandDoesNotExposeLegacyInputBoxFlags(t *testing.T) {
