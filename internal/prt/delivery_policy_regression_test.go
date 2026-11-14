@@ -24,7 +24,7 @@ func TestProvisionalStagingClockRefreshKeepsMatchingPRTResult(t *testing.T) {
 				view.sealed.StagingBlockNumber = replacement
 				f.repo.On("UpdateEpochStagingBlock", mock.Anything, f.app.ID, f.epoch.Index, uint64(10), replacement).
 					Return(nil).Once()
-				require.NoError(t, f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view))
+				require.NoError(t, f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view, resultTestObservation(f.epoch, view)))
 				require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
 				require.Equal(t, replacement, *f.epoch.StagedAtBlock)
 				f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)

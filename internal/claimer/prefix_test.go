@@ -31,7 +31,7 @@ func setClaimTestStop(lookup *deliveryLookup, app *model.Application, cutoff uin
 		lookup.problems = map[int64]*model.ApplicationProblem{}
 	}
 	problem := &model.ApplicationProblem{EpochIndex: cutoff, Kind: kind}
-	if kind.IsExecutionTerminal() {
+	if kind.IsExecutionTerminal() || kind == model.ApplicationStatus_InvalidOutputsRoot {
 		problem.InputIndex = new(uint64(99))
 	}
 	lookup.problems[app.ID] = problem

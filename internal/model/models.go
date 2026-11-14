@@ -315,10 +315,10 @@ func (a *Application) IsDaveConsensus() bool {
 //
 //	OK ⇄ FAILED                                 (FAILED is recoverable)
 //	OK, FAILED → DIVERGED, CORRUPTED              (integrity terminal)
-//	OK         → INVALID_OUTPUTS_ROOT            (validation terminal)
+//	OK         → INVALID_OUTPUTS_ROOT            (legacy input terminal)
 //	OK         → GUEST_EXCEPTION, MACHINE_HALTED  (execution terminal)
 //	             MCYCLE_OVERFLOW, UNEXPECTED_YIELD
-//	execution/validation terminal → DIVERGED, CORRUPTED (integrity escalation)
+//	execution/legacy input terminal → DIVERGED, CORRUPTED (integrity escalation)
 //
 // FAILED is recoverable and suspends execution, but enabled applications in
 // every status continue L1 observation. Consequently, later evidence may
@@ -332,10 +332,10 @@ func (a *Application) IsDaveConsensus() bool {
 // establishes an integrity failure. The input retains its original
 // completion status and terminal state proof. Foreclosure is orthogonal and
 // may coexist with any application status.
-// INVALID_OUTPUTS_ROOT records a failed outputs-root rule. It can be detected
-// during an advance or later by the validator, including for an empty epoch.
-// It does not establish the fault's cause. It may escalate to DIVERGED or
-// CORRUPTED; the typed stop boundary retains the original finding.
+// INVALID_OUTPUTS_ROOT records the legacy accepted-root length failure at an input.
+// It may escalate to DIVERGED or CORRUPTED; the typed stop boundary retains the
+// original finding. Final epoch root mismatches are stored on the epoch and do
+// not set application health.
 type ApplicationStatus string
 
 //nolint:revive // Public enum names preserve the generated/API naming convention.
@@ -379,11 +379,10 @@ func (e ApplicationStatus) IsTerminal() bool {
 	return false
 }
 
-// IsExecutionTerminal identifies outcomes that must be stored atomically with
-// an input result. These four states may escalate to DIVERGED/CORRUPTED. The validation
-// terminal INVALID_OUTPUTS_ROOT is separate: a validator can also set it after
-// input storage. A genuine integrity finding can replace its status and reason
-// while retaining the typed epoch stop boundary.
+// IsExecutionTerminal identifies the four execution outcomes stored atomically
+// with an input result. Legacy input INVALID_OUTPUTS_ROOT has a separate stop
+// rule. A genuine integrity finding can replace either status and reason while
+// retaining the typed epoch stop boundary.
 func (e ApplicationStatus) IsExecutionTerminal() bool {
 	switch e {
 	case ApplicationStatus_GuestException,

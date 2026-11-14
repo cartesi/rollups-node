@@ -101,6 +101,7 @@ func makeEpoch(id int64, status model.EpochStatus, i uint64) *model.Epoch {
 		WithTxBufferDataBlock(outputsMerkleRoot).
 		WithMachineHash(proof.MachineHash).
 		Build()
+	e.CalculatedOutputsRoot = e.TxBufferDataBlock
 	e.TxBufferProof = stateProofHashes(proof.TxBufferProof)
 	e.IflagsYDataBlock = model.Pointer(proof.IflagsYDataBlock)
 	e.IflagsYProof = stateProofHashes(proof.IflagsYProof)

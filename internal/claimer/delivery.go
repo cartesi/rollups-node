@@ -135,6 +135,12 @@ func (s *claimPublisher) decide(
 	if epoch.Index != work.Epoch.Index || epoch.ApplicationID != app.ID {
 		return claimCandidate{}, txsender.Obsolete, nil
 	}
+	if epoch.CalculatedOutputsRoot == nil || epoch.TxBufferDataBlock == nil {
+		return claimCandidate{}, 0, txsender.ErrInconclusive
+	}
+	if !epoch.HasMatchingOutputsRoot() {
+		return claimCandidate{}, txsender.Obsolete, nil
+	}
 	if !held && epoch.Status != model.EpochStatus_ClaimComputed && epoch.Status != model.EpochStatus_ClaimSubmitted &&
 		epoch.Status != model.EpochStatus_ClaimStaged {
 		return claimCandidate{}, txsender.Obsolete, nil
@@ -145,9 +151,9 @@ func (s *claimPublisher) decide(
 	if err := requireObservedStaging(epoch, block.Number); err != nil {
 		return claimCandidate{}, 0, err
 	}
-	if epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
+	if epoch.MachineHash == nil {
 		return claimCandidate{}, 0, fmt.Errorf("application %s (%s), epoch %d: "+
-			"persisted claim is missing its machine or outputs root; repair stored data",
+			"persisted claim is missing its machine hash; repair stored data",
 			app.Name, app.IApplicationAddress, epoch.Index)
 	}
 	appABI, err := iapplication.IApplicationMetaData.GetAbi()

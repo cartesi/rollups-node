@@ -29,6 +29,7 @@ func (s *Service) selectClaimPage(ctx context.Context, kind int) (repository.Cla
 	if err != nil {
 		return page, err
 	}
+	s.visitIORScanApplication(kind, s.pageCursors[kind].AfterApplicationID, page.ApplicationID)
 	s.pageCursors[kind].AfterApplicationID = page.ApplicationID
 	return page, nil
 }

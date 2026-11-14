@@ -34,6 +34,7 @@ type Service struct {
 	pristinePostContext []common.Hash
 
 	// Tick owns this volatile state. A new service starts without retries.
+	recoveredIOR   map[int64]bool
 	claimRetries   map[claimRetryKey]claimRetry
 	claimRetryBase time.Duration
 	now            func() time.Time
@@ -92,9 +93,9 @@ func (s *Service) Tick(ctx context.Context) (reschedule bool, err error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	apps, _, err := getAllRunningApplications(ctx, s.repository)
+	apps, _, err := getEnabledApplications(ctx, s.repository)
 	if err != nil {
-		return false, fmt.Errorf("failed to get running applications. %w", err)
+		return false, fmt.Errorf("failed to get enabled applications. %w", err)
 	}
 
 	// validate each application
@@ -102,6 +103,14 @@ func (s *Service) Tick(ctx context.Context) (reschedule bool, err error) {
 	for idx := range apps {
 		if err := ctx.Err(); err != nil {
 			return false, errors.Join(append(errs, err)...)
+		}
+		s.recoverWithheldSettlements(ctx, apps[idx])
+		if err := ctx.Err(); err != nil {
+			return false, errors.Join(append(errs, err)...)
+		}
+		status := apps[idx].Status
+		if status != ApplicationStatus_OK && !status.IsExecutionTerminal() && status != ApplicationStatus_InvalidOutputsRoot {
+			continue
 		}
 		if err := s.validateApplication(ctx, apps[idx]); err != nil {
 			errs = append(errs, err)
@@ -126,27 +135,16 @@ type ValidatorRepository interface {
 	GetEpochByVirtualIndex(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	GetEpochCompletionState(ctx context.Context, nameOrAddress string, index uint64) (*repository.EpochCompletionState, error)
 	StoreClaimAndProofs(ctx context.Context, epoch *Epoch, write repository.ClaimProofWriteFunc) error
-	StoreInvalidOutputsRoot(ctx context.Context, appID int64, epochIndex uint64, reason string) error
 	CountEpochStateHashes(ctx context.Context, appID int64, epochIndex uint64) (uint64, error)
 	ListEpochStateHashes(ctx context.Context, appID int64, epochIndex uint64, afterIndex *uint64, limit uint64) ([]EpochStateHash, error)
 }
 
-func getAllRunningApplications(ctx context.Context, er ValidatorRepository) ([]*Application, uint64, error) {
-	return er.ListApplications(ctx, validationApplicationsFilter(), repository.Pagination{}, false)
+func getEnabledApplications(ctx context.Context, er ValidatorRepository) ([]*Application, uint64, error) {
+	return er.ListApplications(ctx, enabledApplicationsFilter(), repository.Pagination{}, false)
 }
 
-func validationApplicationsFilter() repository.ApplicationFilter {
-	return repository.ApplicationFilter{
-		Enabled: new(true),
-		Statuses: []ApplicationStatus{
-			ApplicationStatus_OK,
-			ApplicationStatus_MachineHalted,
-			ApplicationStatus_GuestException,
-			ApplicationStatus_McycleOverflow,
-			ApplicationStatus_UnexpectedYield,
-			ApplicationStatus_InvalidOutputsRoot,
-		},
-	}
+func enabledApplicationsFilter() repository.ApplicationFilter {
+	return repository.ApplicationFilter{Enabled: new(true)}
 }
 
 func getProcessedEpochs(ctx context.Context, er ValidatorRepository, address string) ([]*Epoch, uint64, error) {
@@ -334,23 +332,8 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) (er
 			}
 		}
 
-		// The guest supplies the cumulative outputs root. Compare its proved
-		// word with the root calculated from stored outputs only after checking
-		// the stored state identities. This also checks the pristine root of an
-		// empty first epoch; a mismatch alone does not establish its cause.
-		if *epoch.TxBufferDataBlock != *merkleRoot {
-			reason := appstatus.NormalizeReason(fmt.Sprintf(
-				"epoch %v: declared outputs root does not match the root calculated from stored outputs; declared=%s; calculated=%s",
-				epoch.Index, epoch.TxBufferDataBlock.Hex(), merkleRoot.Hex()))
-			if err := s.repository.StoreInvalidOutputsRoot(ctx, app.ID, epoch.Index, reason); err != nil {
-				return fmt.Errorf("recording invalid outputs root for application %s epoch %d: %w", appAddress, epoch.Index, err)
-			}
-			prtprotection.ReportStop(ctx, s.Logger, s.repository, app, epoch.Index, errors.New(reason))
-			s.Logger.Error("Invalid outputs root recorded", "application", app.Name, "address", appAddress,
-				"epoch_index", epoch.Index, "reason", reason)
-			return &claimStatusRecorded{errors.New(reason)}
-		}
-
+		// The machine state remains the execution result even when its declared
+		// root differs from the root calculated from local output bytes.
 		epoch.CalculatedOutputsRoot = merkleRoot
 		if app.IsDaveConsensus() {
 			commitment, proof, err := s.buildCommitment(ctx, app, epoch)
@@ -381,6 +364,9 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) (er
 		}
 		delete(s.claimRetries, key)
 		retryKey = nil
+		if epoch.HasInvalidOutputsRoot() {
+			s.reportWithheldSettlement(app, epoch, "join_state", "not_checked", "tournament_standing", "not_checked")
+		}
 		s.Logger.Info("Claim and output proofs stored", "application", appAddress, "epoch_index", epoch.Index,
 			"transaction_elapsed", time.Since(transactionStart))
 

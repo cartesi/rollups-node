@@ -34,10 +34,14 @@ func TestEpochCompletionStateBoundary(t *testing.T) {
 			problem: &model.ApplicationProblem{EpochIndex: 2, Kind: model.ApplicationStatus_OK}, inconclusive: true},
 		{name: "ET without input", status: model.ApplicationStatus_MachineHalted,
 			problem: &model.ApplicationProblem{EpochIndex: 2, Kind: model.ApplicationStatus_MachineHalted}, inconclusive: true},
-		{name: "validator IOR has no input", status: model.ApplicationStatus_InvalidOutputsRoot,
-			problem: &model.ApplicationProblem{EpochIndex: 2, Kind: model.ApplicationStatus_InvalidOutputsRoot}, allowed: true},
+		{name: "IOR without input", status: model.ApplicationStatus_InvalidOutputsRoot,
+			problem: &model.ApplicationProblem{EpochIndex: 2, Kind: model.ApplicationStatus_InvalidOutputsRoot}, inconclusive: true},
+		{name: "legacy IOR with input", status: model.ApplicationStatus_InvalidOutputsRoot, epoch: 1,
+			problem: &model.ApplicationProblem{EpochIndex: 2, Kind: model.ApplicationStatus_InvalidOutputsRoot,
+				InputIndex: new(uint64(7))}, allowed: true},
 		{name: "cutoff can be zero", status: model.ApplicationStatus_InvalidOutputsRoot,
-			problem: &model.ApplicationProblem{EpochIndex: 0, Kind: model.ApplicationStatus_InvalidOutputsRoot}},
+			problem: &model.ApplicationProblem{EpochIndex: 0, Kind: model.ApplicationStatus_InvalidOutputsRoot,
+				InputIndex: new(uint64(0))}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			state := &EpochCompletionState{Application: &model.Application{ID: 1, Status: tc.status},

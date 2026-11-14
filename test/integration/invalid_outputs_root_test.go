@@ -7,15 +7,21 @@ package integration
 
 import (
 	"context"
-	"fmt"
+	"math/big"
 	"regexp"
+	"strconv"
 
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/merkle"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
+	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	jsonrpcclient "github.com/cartesi/rollups-node/pkg/jsonrpc/client"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // The public API does not expose the execution hash collection. Check its
@@ -83,8 +89,10 @@ func (s *TerminalMachineStatesSuite) runInvalidOutputsRootLength(prt bool) {
 
 func (s *TerminalMachineStatesSuite) TestInvalidOutputsRootValue() {
 	s.appName = uniqueAppName("invalid-root-value")
-	dappPath := envOrDefault("CARTESI_TEST_INVALID_OUTPUTS_ROOT_DAPP_PATH", "applications/invalid-outputs-root-dapp")
-	_, err := deployApplication(s.ctx, s.appName, dappPath, terminalFixtureSaltFlag, uniqueSalt())
+	dappPath := envOrDefault("CARTESI_TEST_INVALID_OUTPUTS_ROOT_RECOVERY_DAPP_PATH",
+		"applications/invalid-outputs-root-recovery-dapp")
+	appAddress, consensusAddress, err := deployApplicationWithConsensus(s.ctx, s.appName, dappPath,
+		terminalFixtureSaltFlag, uniqueSalt())
 	s.Require().NoError(err)
 	index, _, err := sendInput(s.ctx, s.appName, "invalid-root-value")
 	s.Require().NoError(err)
@@ -95,79 +103,195 @@ func (s *TerminalMachineStatesSuite) TestInvalidOutputsRootValue() {
 	s.Require().NoError(err)
 	s.Require().Equal(model.InputCompletionStatus_Accepted, input.Status,
 		"a later validator finding must not rewrite the completed input")
-	// Root values are checked per epoch, not when the input completes. Drive
-	// the Authority epoch past its last block before waiting for validation.
 	minePastEpochBoundary(ctx, s.T(), s.Require(), s.appName, input.EpochIndex)
-	s.requireInvalidOutputsRoot(ctx, input.EpochIndex, 1)
-	stored, err := readInput(s.ctx, s.appName, index)
+	invalid := s.requireComputedInvalidOutputsRoot(ctx, input.EpochIndex, 1)
+	client := newIntegrationEthClient(ctx, s.T())
+	defer client.Close()
+	consensus, err := iconsensus.NewIConsensus(common.HexToAddress(consensusAddress), client)
 	s.Require().NoError(err)
-	s.Require().Equal(model.InputCompletionStatus_Accepted, stored.Status)
+	assertUnstaged := func(ctx context.Context) {
+		claim, readErr := consensus.GetClaim(&bind.CallOpts{Context: ctx}, common.HexToAddress(appAddress),
+			new(big.Int).SetUint64(invalid.LastBlock), *invalid.MachineHash)
+		s.Require().NoError(readErr)
+		s.Require().Zero(claim.Status, "the IOR claim must remain UNSTAGED on chain")
+	}
+	observeIORPublicationWindow(ctx, s.T(), assertUnstaged)
+
+	// The same runtime corrects the declaration on its next input. Actual
+	// healthy publication also proves that the publisher and signer are active.
+	nextIndex, _, err := sendInput(ctx, s.appName, "corrected-root-value")
+	s.Require().NoError(err)
+	s.Require().Equal(index+1, nextIndex)
+	next, err := waitForInputProcessed(ctx, s.T(), s.appName, nextIndex)
+	s.Require().NoError(err)
+	s.Require().Equal(model.InputCompletionStatus_Accepted, next.Status)
+	s.Require().Greater(next.EpochIndex, invalid.Index)
+	minePastEpochBoundary(ctx, s.T(), s.Require(), s.appName, next.EpochIndex)
+	healthy, err := waitForEpochStatus(ctx, s.T(), s.appName, next.EpochIndex, model.EpochStatus_ClaimAccepted)
+	s.Require().NoError(err)
+	s.Require().True(healthy.HasMatchingOutputsRoot())
+	claim, err := consensus.GetClaim(&bind.CallOpts{Context: ctx}, common.HexToAddress(appAddress),
+		new(big.Int).SetUint64(healthy.LastBlock), *healthy.MachineHash)
+	s.Require().NoError(err)
+	s.Require().Equal(uint8(2), claim.Status, "the later healthy claim must be ACCEPTED on chain")
+	s.Require().Equal(*healthy.TxBufferDataBlock, common.Hash(claim.StagedOutputsMerkleRoot))
+	assertUnstaged(ctx)
+	stored, err := readEpoch(ctx, s.appName, invalid.Index)
+	s.Require().NoError(err)
+	s.Require().Equal(model.EpochStatus_ClaimComputed, stored.Status)
+	s.Require().Nil(stored.ClaimTransactionHash)
+	s.Require().True(stored.HasInvalidOutputsRoot())
+	rpc := jsonrpcclient.NewClient(envOrDefault("CARTESI_JSONRPC_API_URL", "http://localhost:10011/rpc"))
+	s.Require().Equal(model.ApplicationStatus_OK, s.getApplication(rpc).Status)
 }
 
 func (s *TerminalMachineStatesSuite) TestInvalidTemplateOutputsRootInFirstPrtEpoch() {
 	s.appName = uniqueAppName("invalid-template-root")
 	dappPath := envOrDefault("CARTESI_TEST_INVALID_TEMPLATE_OUTPUTS_ROOT_DAPP_PATH",
 		"applications/invalid-template-outputs-root-dapp")
-	_, err := deployApplication(s.ctx, s.appName, dappPath, terminalFixtureSaltFlag, uniqueSalt(), prtFlag)
+	appAddress, consensusAddress, err := deployApplicationWithConsensus(s.ctx, s.appName, dappPath,
+		terminalFixtureSaltFlag, uniqueSalt(), prtFlag,
+		claimStagingPeriodFlag, strconv.FormatUint(iorClaimStagingPeriod, 10))
 	s.Require().NoError(err)
-	ctx, cancel := context.WithTimeout(s.ctx, inputProcessingTimeout)
+	ctx, cancel := context.WithTimeout(s.ctx, claimAcceptedTimeout)
 	defer cancel()
-	s.requireInvalidOutputsRoot(ctx, 0, 0)
-	epoch, err := readEpoch(s.ctx, s.appName, 0)
-	s.Require().NoError(err)
+	epoch := s.requireComputedInvalidOutputsRoot(ctx, 0, 0)
 	s.Require().Zero(epoch.InputIndexLowerBound)
 	s.Require().Zero(epoch.InputIndexUpperBound, "the first sealed epoch must contain no inputs")
-	rpc := jsonrpcclient.NewClient(envOrDefault("CARTESI_JSONRPC_API_URL", "http://localhost:10011/rpc"))
-	app := s.getApplication(rpc)
-	s.Require().NotNil(app.Reason)
 	client := newIntegrationEthClient(ctx, s.T())
 	defer client.Close()
-	root, closeBlock := prtProtectionEnd(ctx, s.T(), client, app.IConsensusAddress, 0)
-	for _, source := range []string{prtStoredClockSource, prtPinnedClockSource} {
-		requirePrtProtectionLogs(ctx, s.T(), &s.LogChecker, prtProtectionStopLog(s.appName, app.IApplicationAddress,
-			0, root, closeBlock, *app.Reason, source))
-	}
+	app, err := iapplication.NewIApplication(common.HexToAddress(appAddress), client)
+	s.Require().NoError(err)
+	template, err := app.GetTemplateHash(&bind.CallOpts{Context: ctx})
+	s.Require().NoError(err)
+	s.Require().Equal(common.Hash(template), *epoch.MachineHash)
+	consensus, err := idaveconsensus.NewIDaveConsensus(common.HexToAddress(consensusAddress), client)
+	s.Require().NoError(err)
+	period, err := consensus.GetClaimStagingPeriod(&bind.CallOpts{Context: ctx})
+	s.Require().NoError(err)
+	s.Require().Zero(period.Cmp(new(big.Int).SetUint64(iorClaimStagingPeriod)))
+	sentries, err := consensus.GetNumberOfSentries(&bind.CallOpts{Context: ctx})
+	s.Require().NoError(err)
+	s.Require().Zero(sentries.Sign(), "the test must not have a sentry fast path")
+	tournament := waitForTournamentAndCommitment(ctx, s.T(), s.Require(), s.appName, epoch.Index)
+	commitments, err := readCommitments(ctx, s.appName)
+	s.Require().NoError(err)
+	joined := findCommitmentForEpoch(commitments.Data, epoch.Index)
+	s.Require().NotNil(joined)
+	s.Require().Equal(tournament.Address, joined.TournamentAddress)
+	s.Require().Equal(*epoch.Commitment, joined.Commitment)
+	s.Require().Equal(common.Hash(template), joined.FinalStateHash)
+	s.Require().NotZero(joined.TxHash, "the commitment must come from an observed join transaction")
+	s.Require().NotZero(joined.BlockNumber)
+	_, err = mineForTournamentTimeout(ctx, client, tournament.Address)
+	s.Require().NoError(err)
+	waitForTournamentWinner(ctx, s.T(), s.Require(), client, s.appName, epoch.Index)
+
+	// A healthy root settles in this same environment before the negative
+	// interval. The IOR veto is not masked by an inactive publisher or signer.
+	s.requireHealthyPrtPublication(ctx, client)
+	observeIORPublicationWindow(ctx, s.T(), func(ctx context.Context) {
+		s.requireIORPrtState(ctx, consensus, epoch, false)
+	})
+	s.requireNoIORStageEvent(ctx, consensus, epoch)
+	s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist, s.iorDetectionExpectedLog(),
+		ExpectedLog{Pattern: regexp.MustCompile(`condition=ior_winner_settlement_withheld.*application=` + regexp.QuoteMeta(s.appName)),
+			Level: LevelError, Required: true, Reason: "the current true winner is held by the local IOR veto"},
+		ExpectedLog{Pattern: regexp.MustCompile(`condition=ior_result_staged.*application=` + regexp.QuoteMeta(s.appName)),
+			Level: LevelError, Required: true, Reason: "another actor stages the true IOR result"},
+		ExpectedLog{Pattern: regexp.MustCompile(`condition=ior_result_accepted.*application=` + regexp.QuoteMeta(s.appName)),
+			Level: LevelError, Required: true, Reason: "matching external acceptance retains the IOR fact"})
+	external := transactorForMnemonicIndex(ctx, s.T(), client, iorExternalSettlementAccount)
+	s.Require().NotEqual(joined.SubmitterAddress, external.From, "the external actor must not be the node claimer")
+	proof := iorDaveMachineProof(s.T(), epoch)
+	tx, err := consensus.StageTournamentResult(external, new(big.Int).SetUint64(epoch.Index), proof)
+	s.Require().NoError(err)
+	receipt, err := bind.WaitMined(ctx, client, tx)
+	s.Require().NoError(err)
+	s.Require().Equal(types.ReceiptStatusSuccessful, receipt.Status)
+	staged, err := waitForEpochStatus(ctx, s.T(), s.appName, epoch.Index, model.EpochStatus_ClaimStaged)
+	s.Require().NoError(err)
+	s.Require().NotNil(staged.StagedAtBlock)
+	s.Require().Equal(receipt.BlockNumber.Uint64(), *staged.StagedAtBlock)
+	mineIORAcceptanceBoundary(ctx, s.T(), client, *staged.StagedAtBlock)
+	canAccept, err := consensus.CanAcceptStagedTournamentResult(&bind.CallOpts{Context: ctx})
+	s.Require().NoError(err)
+	s.Require().True(canAccept.IsClaimStagingPeriodOver)
+	s.Require().False(canAccept.DoAllSentriesAgreeWithStagedTournamentResult)
+	observeIORPublicationWindow(ctx, s.T(), func(ctx context.Context) {
+		s.requireIORPrtState(ctx, consensus, epoch, true)
+	})
+
+	// Computation in the accumulating successor remains enabled before accept.
+	index, _, err := sendInput(ctx, s.appName, "before-external-accept")
+	s.Require().NoError(err)
+	s.Require().Zero(index)
+	input, err := waitForInputProcessed(ctx, s.T(), s.appName, index)
+	s.Require().NoError(err)
+	s.Require().Equal(model.InputCompletionStatus_Accepted, input.Status)
+	s.Require().Equal(epoch.Index+1, input.EpochIndex)
+	tx, err = consensus.AcceptStagedTournamentResult(external, new(big.Int).SetUint64(epoch.Index))
+	s.Require().NoError(err)
+	receipt, err = bind.WaitMined(ctx, client, tx)
+	s.Require().NoError(err)
+	s.Require().Equal(types.ReceiptStatusSuccessful, receipt.Status)
+	accepted, err := waitForEpochStatus(ctx, s.T(), s.appName, epoch.Index, model.EpochStatus_ClaimAccepted)
+	s.Require().NoError(err)
+	s.Require().Equal(epoch.TxBufferDataBlock, accepted.TxBufferDataBlock)
+	s.Require().Equal(epoch.CalculatedOutputsRoot, accepted.CalculatedOutputsRoot)
+	s.Require().True(accepted.HasInvalidOutputsRoot())
+	later := s.requireComputedInvalidOutputsRoot(ctx, input.EpochIndex, 1)
+	laterTournament := waitForTournamentAndCommitment(ctx, s.T(), s.Require(), s.appName, later.Index)
+	commitments, err = readCommitments(ctx, s.appName)
+	s.Require().NoError(err)
+	laterJoin := findCommitmentForEpoch(commitments.Data, later.Index)
+	s.Require().NotNil(laterJoin)
+	s.Require().Equal(laterTournament.Address, laterJoin.TournamentAddress)
+	s.Require().Equal(*later.Commitment, laterJoin.Commitment)
+	s.Require().NotZero(laterJoin.TxHash)
+	index, _, err = sendInput(ctx, s.appName, "after-external-accept")
+	s.Require().NoError(err)
+	s.Require().Equal(uint64(1), index)
+	input, err = waitForInputProcessed(ctx, s.T(), s.appName, index)
+	s.Require().NoError(err)
+	s.Require().Equal(model.InputCompletionStatus_Accepted, input.Status)
+	s.Require().Greater(input.EpochIndex, later.Index)
+	rpc := jsonrpcclient.NewClient(envOrDefault("CARTESI_JSONRPC_API_URL", "http://localhost:10011/rpc"))
+	s.Require().Equal(model.ApplicationStatus_OK, s.getApplication(rpc).Status)
 }
 
-func (s *TerminalMachineStatesSuite) requireInvalidOutputsRoot(ctx context.Context, epochIndex, processed uint64) {
+func (s *TerminalMachineStatesSuite) requireComputedInvalidOutputsRoot(
+	ctx context.Context, epochIndex, processed uint64,
+) *model.Epoch {
 	s.T().Helper()
 	r := s.Require()
-	r.NoError(waitForApplicationStatus(ctx, s.T(), s.appName, string(model.ApplicationStatus_InvalidOutputsRoot)))
+	epoch, err := waitForEpochStatus(ctx, s.T(), s.appName, epochIndex, model.EpochStatus_ClaimComputed)
+	r.NoError(err)
 	rpc := jsonrpcclient.NewClient(envOrDefault("CARTESI_JSONRPC_API_URL", "http://localhost:10011/rpc"))
 	app := s.getApplication(rpc)
-	r.Equal(model.ApplicationStatus_InvalidOutputsRoot, app.Status)
+	r.Equal(model.ApplicationStatus_OK, app.Status)
 	r.Equal(processed, app.ProcessedInputs)
-	reason := fmt.Sprintf(
-		"epoch %d: declared outputs root does not match the root calculated from stored outputs; declared=%s; calculated=%s",
-		epochIndex, common.Hash{}.Hex(), merkle.CreatePostContext()[merkle.TREE_DEPTH].Hex())
-	r.Equal(&reason, app.Reason)
-	s.SetExpectedLogs(s.T(), ExpectedLog{
-		Pattern: regexp.MustCompile(`Invalid outputs root recorded.*application=` +
-			regexp.QuoteMeta(s.appName)),
-		Level: LevelError, Required: true,
-		Reason: "the validator records the tested application's failed root rule",
-	}, ExpectedLog{
-		Pattern: regexp.MustCompile(`Tick service=validator.*` + regexp.QuoteMeta(reason)),
-		Level:   LevelError, Required: true,
-		Reason: "the validator returns the exact root-rule failure to its service loop",
-	})
-	epoch, err := readEpoch(s.ctx, s.appName, epochIndex)
-	r.NoError(err)
-	r.Equal(model.EpochStatus_InputsProcessed, epoch.Status)
-	r.Nil(epoch.ClaimTransactionHash, "the failing epoch must not publish a claim")
-	r.Nil(epoch.Commitment, "the failing PRT epoch must not publish a commitment")
+	r.Nil(app.Reason)
+	r.Equal(new(common.Hash{}), epoch.TxBufferDataBlock)
+	calculated := merkle.CreatePostContext()[merkle.TREE_DEPTH]
+	r.Equal(&calculated, epoch.CalculatedOutputsRoot)
+	r.True(epoch.HasInvalidOutputsRoot())
+	r.Nil(epoch.ClaimTransactionHash, "local settlement is withheld")
 	r.True(epoch.HasCompleteStateProof())
+	if app.IsDaveConsensus() {
+		r.NotNil(epoch.Commitment, "the true execution remains available to join")
+		r.Len(epoch.CommitmentProof, int(model.Log2EpochComputationHashLeafCount))
+	}
+	if len(s.expectedLogs) == 0 {
+		s.SetExpectedLogs(s.T(), anvilBlockOutOfRangeAllowlist, s.iorDetectionExpectedLog())
+	}
+	return epoch
+}
 
-	// Enabling observation is not a request to clear an immutable diagnosis.
-	r.NoError(disableApplication(s.ctx, s.appName))
-	_, err = runCLI(s.ctx, "app", "status", s.appName, "enabled", "--yes")
-	r.NoError(err)
-	app = s.getApplication(rpc)
-	r.True(app.Enabled)
-	r.Equal(model.ApplicationStatus_InvalidOutputsRoot, app.Status)
-	r.Equal(&reason, app.Reason)
-	status, err := readApplicationStatus(s.ctx, s.appName)
-	r.NoError(err)
-	r.Equal(string(model.ApplicationStatus_InvalidOutputsRoot), firstStatusLine(status))
-	r.Contains(status, reason)
+func (s *TerminalMachineStatesSuite) iorDetectionExpectedLog() ExpectedLog {
+	return ExpectedLog{
+		Pattern: regexp.MustCompile(`condition=ior_settlement_withheld.*application=` + regexp.QuoteMeta(s.appName)),
+		Level:   LevelWarn, Required: true,
+		Reason: "the completed epoch retains its invalid-root evidence while execution remains enabled",
+	}
 }

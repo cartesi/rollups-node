@@ -196,7 +196,7 @@ func TestClaimPlanningWarningDoesNotHideAnotherApplicationsPublicationFailure(t 
 				if !strings.Contains(line, "level=WARN") || !strings.Contains(line, "Claim publication deferred") {
 					continue
 				}
-				if strings.Contains(line, "persisted claim is missing its machine or outputs root") {
+				if strings.Contains(line, "persisted claim is missing its machine hash") {
 					planningWarnings++
 					require.Contains(t, line, broken.IApplicationAddress.Hex())
 				}
@@ -259,7 +259,7 @@ func TestClaimRunRoutesPlanningAndPublicationWarningsSeparately(t *testing.T) {
 			s.publisher.interval = time.Hour // Both warning channels must fire in the first pass.
 			require.ErrorIs(t, s.publisher.run(ctx), context.Canceled, "both warnings must arrive before the test deadline")
 			require.Equal(t, 2, strings.Count(output.String(), "level=WARN msg=\"Claim publication deferred\""))
-			require.Contains(t, output.String(), "persisted claim is missing its machine or outputs root")
+			require.Contains(t, output.String(), "persisted claim is missing its machine hash")
 			require.Contains(t, output.String(), "insufficient funds")
 			require.Equal(t, canceling, strings.Contains(output.String(), "before cancellation"))
 		})

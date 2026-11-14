@@ -5,13 +5,17 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"testing"
+	"time"
 
+	"github.com/cartesi/rollups-node/internal/merkle"
+	"github.com/cartesi/rollups-node/internal/merkle/merkletest"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
 	"github.com/cartesi/rollups-node/test/tooling/db"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
@@ -81,40 +85,6 @@ func TestApplicationProblemRuntimeSourcesSurviveReconnect(t *testing.T) {
 	}
 }
 
-func TestApplicationProblemEarlierIORAndFirstIntegrityStop(t *testing.T) {
-	r := newEpochPublicationRepository(t)
-	app, epochs := seedProblemEpochs(t, r)
-	require.NoError(t, recordTestRuntimeStop(t, r, app, model.InputCompletionStatus_MachineHalted))
-	require.NoError(t, r.StoreInvalidOutputsRoot(t.Context(), app.ID, 1, "epoch 1 root mismatch"))
-	require.NoError(t, r.StoreInvalidOutputsRoot(t.Context(), app.ID, 1, "same evidence retried"))
-	state, err := r.GetEpochCompletionState(t.Context(), app.Name, 0)
-	require.NoError(t, err)
-	require.Equal(t, model.ApplicationStatus_MachineHalted, state.Application.Status)
-	require.Equal(t, &model.ApplicationProblem{EpochIndex: 1, Kind: model.ApplicationStatus_InvalidOutputsRoot}, state.Problem)
-	require.Equal(t, uint64(3), state.Application.ProcessedInputs, "publication cutoff does not rewind execution")
-	// Defensive stale-caller case: the ordered, single validator does not
-	// normally compute epoch 1 concurrently with its own earlier IOR finding.
-	// A cut already visible when the write starts still rejects that epoch.
-	require.ErrorIs(t, r.StoreClaimAndProofs(t.Context(), epochs[1], nil), repository.ErrApplicationNotRunnable)
-	require.NoError(t, r.StoreClaimAndProofs(t.Context(), epochs[0], nil))
-	for _, kind := range []model.ApplicationStatus{model.ApplicationStatus_Diverged, model.ApplicationStatus_Corrupted} {
-		reason := "integrity finding"
-		err := r.UpdateApplicationStatus(t.Context(), app.ID, kind, &reason)
-		if kind == model.ApplicationStatus_Diverged {
-			require.NoError(t, err)
-		} else {
-			require.Error(t, err)
-		}
-	}
-	state, err = r.GetEpochCompletionState(t.Context(), app.Name, 1)
-	require.NoError(t, err)
-	require.Equal(t, model.ApplicationStatus_Diverged, state.Application.Status)
-	require.Equal(t, uint64(1), state.Problem.EpochIndex)
-	allowed, err := state.AllowsEpochCompletion()
-	require.NoError(t, err)
-	require.False(t, allowed)
-}
-
 func TestApplicationProblemCorruptedPreservesStopBoundary(t *testing.T) {
 	for _, stop := range []model.ApplicationStatus{
 		model.ApplicationStatus_MachineHalted, model.ApplicationStatus_InvalidOutputsRoot,
@@ -122,13 +92,13 @@ func TestApplicationProblemCorruptedPreservesStopBoundary(t *testing.T) {
 		t.Run(stop.String(), func(t *testing.T) {
 			r := newEpochPublicationRepository(t)
 			app, _ := seedProblemEpochs(t, r)
-			wantProblem := &model.ApplicationProblem{EpochIndex: 1, Kind: model.ApplicationStatus_InvalidOutputsRoot}
-			if stop == model.ApplicationStatus_MachineHalted {
-				require.NoError(t, recordTestRuntimeStop(t, r, app, model.InputCompletionStatus_MachineHalted))
-				wantProblem = &model.ApplicationProblem{EpochIndex: 2, Kind: stop, InputIndex: new(uint64(2))}
-			} else {
-				require.NoError(t, r.StoreInvalidOutputsRoot(t.Context(), app.ID, 1, "epoch 1 root mismatch"))
+			inputStatus := model.InputCompletionStatus_MachineHalted
+			if stop == model.ApplicationStatus_InvalidOutputsRoot {
+				inputStatus = model.InputCompletionStatus_InvalidOutputsRoot
 			}
+			require.NoError(t, recordTestRuntimeStop(t, r, app, inputStatus))
+			wantProblem := &model.ApplicationProblem{EpochIndex: 2, Kind: stop, InputIndex: new(uint64(2))}
+
 			before, err := r.GetEpochCompletionState(t.Context(), app.Name, 0)
 			require.NoError(t, err)
 			require.Equal(t, stop, before.Application.Status)
@@ -170,20 +140,6 @@ func TestApplicationProblemRuntimeWriteRollsBackTogether(t *testing.T) {
 	require.Nil(t, state.Epoch.MachineHash)
 }
 
-func TestApplicationProblemValidatorWriteRollsBackTogether(t *testing.T) {
-	r := newEpochPublicationRepository(t).(*PostgresRepository)
-	app, _ := seedProblemEpochs(t, r)
-	_, err := r.db.Exec(t.Context(), `ALTER TABLE application ADD CONSTRAINT node3_validator_rollback
-        CHECK (status <> 'INVALID_OUTPUTS_ROOT') NOT VALID`)
-	require.NoError(t, err)
-	require.Error(t, r.StoreInvalidOutputsRoot(t.Context(), app.ID, 0, "root mismatch"))
-	state, err := r.GetEpochCompletionState(t.Context(), app.Name, 0)
-	require.NoError(t, err)
-	require.Nil(t, state.Problem)
-	require.Equal(t, model.ApplicationStatus_OK, state.Application.Status)
-	require.Equal(t, model.EpochStatus_InputsProcessed, state.Epoch.Status)
-}
-
 func TestApplicationProblemValidationRejectsStopVisibleBeforeWrite(t *testing.T) {
 	for _, status := range []model.ApplicationStatus{model.ApplicationStatus_Failed,
 		model.ApplicationStatus_Diverged, model.ApplicationStatus_Corrupted} {
@@ -192,10 +148,7 @@ func TestApplicationProblemValidationRejectsStopVisibleBeforeWrite(t *testing.T)
 			app, epochs := seedProblemEpochs(t, r)
 			reason := "independent service or integrity failure"
 			require.NoError(t, r.UpdateApplicationStatus(t.Context(), app.ID, status, &reason))
-			// Both paths begin their writes after the durable stop is visible.
 			// A stop arriving during the claim batch need not roll back valid work.
-			err := r.StoreInvalidOutputsRoot(t.Context(), app.ID, 0, "later root finding")
-			require.ErrorIs(t, err, repository.ErrApplicationNotRunnable)
 			require.ErrorIs(t, r.StoreClaimAndProofs(t.Context(), epochs[0], nil), repository.ErrApplicationNotRunnable)
 			state, err := r.GetEpochCompletionState(t.Context(), app.Name, 0)
 			require.NoError(t, err)
@@ -205,26 +158,6 @@ func TestApplicationProblemValidationRejectsStopVisibleBeforeWrite(t *testing.T)
 			require.Equal(t, model.EpochStatus_InputsProcessed, state.Epoch.Status)
 		})
 	}
-}
-
-func TestApplicationProblemConcurrentIOROnlyLowersBoundary(t *testing.T) {
-	r := newEpochPublicationRepository(t)
-	app, _ := seedProblemEpochs(t, r)
-	require.NoError(t, recordTestRuntimeStop(t, r, app, model.InputCompletionStatus_MachineHalted))
-	start := make(chan struct{})
-	results := make(chan error, 2)
-	for _, index := range []uint64{0, 1} {
-		go func() { <-start; results <- r.StoreInvalidOutputsRoot(t.Context(), app.ID, index, "root mismatch") }()
-	}
-	close(start)
-	for range 2 {
-		err := <-results
-		require.True(t, err == nil || errors.Is(err, repository.ErrApplicationNotRunnable), "unexpected writer result: %v", err)
-	}
-	state, err := r.GetEpochCompletionState(t.Context(), app.Name, 0)
-	require.NoError(t, err)
-	require.Equal(t, &model.ApplicationProblem{EpochIndex: 0, Kind: model.ApplicationStatus_InvalidOutputsRoot}, state.Problem)
-	require.Equal(t, model.ApplicationStatus_MachineHalted, state.Application.Status)
 }
 
 func TestApplicationProblemReaderDistinguishesAbsenceAndSnapshot(t *testing.T) {
@@ -256,6 +189,24 @@ func TestApplicationProblemReaderDistinguishesAbsenceAndSnapshot(t *testing.T) {
 	require.NotNil(t, state.Epoch.MachineHash)
 }
 
+func TestDecodeApplicationProblemRequiresInput(t *testing.T) {
+	for _, kind := range []model.ApplicationStatus{model.ApplicationStatus_GuestException,
+		model.ApplicationStatus_MachineHalted, model.ApplicationStatus_McycleOverflow,
+		model.ApplicationStatus_UnexpectedYield, model.ApplicationStatus_InvalidOutputsRoot} {
+		t.Run(kind.String(), func(t *testing.T) {
+			epoch := uint64(0)
+			problem, err := decodeApplicationProblem(&epoch, &kind, nil)
+			require.Error(t, err, "every retained input-stop kind requires its input source")
+			require.Nil(t, problem)
+			input := uint64(0)
+			problem, err = decodeApplicationProblem(&epoch, &kind, &input)
+			require.NoError(t, err)
+			require.Equal(t, &model.ApplicationProblem{EpochIndex: epoch, Kind: kind, InputIndex: &input}, problem,
+				"input zero is a present source, including legacy input IOR")
+		})
+	}
+}
+
 func TestApplicationProblemSchemaRejectsPartialSources(t *testing.T) {
 	r := newEpochPublicationRepository(t).(*PostgresRepository)
 	app, _ := seedProblemEpochs(t, r)
@@ -264,6 +215,7 @@ func TestApplicationProblemSchemaRejectsPartialSources(t *testing.T) {
 		`UPDATE application SET problem_kind='INVALID_OUTPUTS_ROOT' WHERE id=$1`,
 		`UPDATE application SET problem_epoch_index=0,problem_kind='OK' WHERE id=$1`,
 		`UPDATE application SET problem_epoch_index=0,problem_kind='MACHINE_HALTED' WHERE id=$1`,
+		`UPDATE application SET problem_epoch_index=0,problem_kind='INVALID_OUTPUTS_ROOT' WHERE id=$1`,
 	} {
 		_, err := r.db.Exec(t.Context(), query, app.ID)
 		var pgerr *pgconn.PgError
@@ -276,4 +228,200 @@ func TestApplicationProblemSchemaRejectsPartialSources(t *testing.T) {
 	state, err := r.GetEpochCompletionState(context.Background(), app.Name, 0)
 	require.NoError(t, err)
 	require.Nil(t, state)
+}
+
+func storeTestIORClaim(t *testing.T, r repository.Repository, app *model.Application, index uint64) *model.Epoch {
+	t.Helper()
+	epoch, err := r.GetEpoch(t.Context(), app.Name, index)
+	require.NoError(t, err)
+	calculated := merkle.CreatePostContext()[merkle.TREE_DEPTH]
+	require.NotEqual(t, &calculated, epoch.TxBufferDataBlock)
+	epoch.CalculatedOutputsRoot = &calculated
+	if app.IsDaveConsensus() {
+		epoch.Commitment = new(repotest.UniqueHash())
+		epoch.CommitmentProof = make([]common.Hash, model.Log2EpochComputationHashLeafCount)
+	}
+	require.NoError(t, r.StoreClaimAndProofs(t.Context(), epoch, nil))
+	return epoch
+}
+
+func TestFinalIORAndOpenSuccessorTerminalKeepSeparateEvidence(t *testing.T) {
+	for _, terminalFirst := range []bool{false, true} {
+		name := "IOR before terminal"
+		if terminalFirst {
+			name = "terminal before IOR"
+		}
+		t.Run(name, func(t *testing.T) {
+			r := newEpochPublicationRepository(t)
+			app := repotest.NewApplicationBuilder().WithConsensus(model.Consensus_PRT).Create(t.Context(), t, r)
+			epoch := repotest.NewEpochBuilder(app.ID).WithIndex(0).WithStatus(model.EpochStatus_Closed).
+				WithBlocks(0, 9).WithInputBounds(0, 1).Build()
+			successor := repotest.NewEpochBuilder(app.ID).WithIndex(1).WithStatus(model.EpochStatus_Open).
+				WithBlocks(9, 19).WithInputBounds(1, 3).Build()
+			input := repotest.NewInputBuilder().WithIndex(0).WithBlockNumber(5).Build()
+			nextInput := repotest.NewInputBuilder().WithIndex(1).WithBlockNumber(9).Build()
+			pendingInput := repotest.NewInputBuilder().WithIndex(2).WithBlockNumber(10).Build()
+			require.NoError(t, r.CreateEpochsAndInputs(t.Context(), app.Name,
+				map[*model.Epoch][]*model.Input{epoch: {input}, successor: {nextInput, pendingInput}}, 19))
+			proof := repotest.DummyStateProof()
+			require.NoError(t, r.StoreAdvanceResult(t.Context(), app.ID, &model.AdvanceResult{
+				EpochIndex: 0, InputIndex: 0, Status: model.InputCompletionStatus_Accepted, StateProof: *proof}))
+			require.NoError(t, r.UpdateEpochInputsProcessed(t.Context(), app.Name, 0, proof))
+			terminal := func() {
+				require.NoError(t, r.StoreAdvanceResult(t.Context(), app.ID, &model.AdvanceResult{
+					EpochIndex: 1, InputIndex: 1, Status: model.InputCompletionStatus_MachineHalted,
+					StateProof: *repotest.DummyStateProof()}))
+			}
+			if terminalFirst {
+				terminal()
+			}
+			computed := storeTestIORClaim(t, r, app, 0)
+			if !terminalFirst {
+				terminal()
+			}
+			state, err := r.GetEpochCompletionState(t.Context(), app.Name, 0)
+			require.NoError(t, err)
+			require.Equal(t, model.ApplicationStatus_MachineHalted, state.Application.Status)
+			require.Equal(t, uint64(2), state.Application.ProcessedInputs)
+			require.ErrorIs(t, r.StoreAdvanceResult(t.Context(), app.ID, &model.AdvanceResult{
+				EpochIndex: 1, InputIndex: 2, Status: model.InputCompletionStatus_Accepted,
+				StateProof: *repotest.DummyStateProof()}), repository.ErrAdvanceAfterTerminal)
+			pending, err := r.GetInput(t.Context(), app.Name, 2)
+			require.NoError(t, err)
+			require.Equal(t, model.InputCompletionStatus_None, pending.Status)
+			require.Equal(t, &model.ApplicationProblem{EpochIndex: 1, Kind: model.ApplicationStatus_MachineHalted,
+				InputIndex: new(uint64(1))}, state.Problem)
+			require.Equal(t, model.EpochStatus_ClaimComputed, state.Epoch.Status)
+			require.Equal(t, computed.CalculatedOutputsRoot, state.Epoch.CalculatedOutputsRoot)
+			require.True(t, state.Epoch.HasInvalidOutputsRoot())
+			require.NotNil(t, state.Epoch.Commitment)
+			allowed, err := state.AllowsEpochCompletion()
+			require.NoError(t, err)
+			require.True(t, allowed, "the completed current epoch remains eligible for root join")
+			next, err := r.GetEpochCompletionState(t.Context(), app.Name, 1)
+			require.NoError(t, err)
+			require.Equal(t, model.EpochStatus_Open, next.Epoch.Status)
+			allowed, err = next.AllowsEpochCompletion()
+			require.NoError(t, err)
+			require.False(t, allowed)
+		})
+	}
+}
+
+func TestFinalIORProofBatchAllowsOpenSuccessorTerminal(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	r := newEpochPublicationRepository(t)
+	app, epoch := seedEpochPublication(t, r)
+	storedInput, err := r.GetInput(ctx, app.Name, 0)
+	require.NoError(t, err)
+	stateProof := repotest.DummyStateProof()
+	stateProof.MachineHash = *storedInput.MachineHash
+	stateProof.TxBufferDataBlock = *storedInput.TxBufferDataBlock
+	require.NoError(t, r.UpdateEpochInputsProcessed(ctx, app.Name, epoch.Index, stateProof))
+	successor := repotest.NewEpochBuilder(app.ID).WithIndex(1).WithStatus(model.EpochStatus_Open).
+		WithBlocks(9, 19).WithInputBounds(1, 2).Build()
+	input := repotest.NewInputBuilder().WithIndex(1).WithBlockNumber(9).Build()
+	require.NoError(t, r.CreateEpochsAndInputs(ctx, app.Name, map[*model.Epoch][]*model.Input{successor: {input}}, 19))
+	output, err := r.GetOutput(ctx, app.Name, 0)
+	require.NoError(t, err)
+	pristine := merkle.CreatePostContext()
+	proof := repository.OutputProof{Index: output.Index, Hash: crypto.Keccak256Hash(output.RawData),
+		Siblings: pristine[:merkle.TREE_DEPTH]}
+	calculated := merkletest.ComputeRootHashFromProof(proof.Index, proof.Hash, proof.Siblings)
+	require.NotEqual(t, stateProof.TxBufferDataBlock, calculated)
+	epoch.CalculatedOutputsRoot = &calculated
+	epoch.Commitment = new(repotest.UniqueHash())
+	epoch.CommitmentProof = make([]common.Hash, model.Log2EpochComputationHashLeafCount)
+
+	endpoint, err := db.GetTestDatabaseEndpoint()
+	require.NoError(t, err)
+	advancer, err := NewPostgresRepository(ctx, endpoint, 1, 0)
+	require.NoError(t, err)
+	defer advancer.Close()
+	paused := make(chan struct{})
+	release := make(chan struct{})
+	result := make(chan error, 1)
+	completed := false
+	t.Cleanup(func() {
+		cancel()
+		if !completed {
+			select {
+			case err := <-result:
+				if err != nil {
+					t.Logf("claim callback stopped during cleanup: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Error("claim callback did not stop after cancellation")
+			}
+		}
+	})
+	go func() {
+		result <- r.StoreClaimAndProofs(ctx, epoch, func(ctx context.Context, writer repository.ClaimProofWriter) error {
+			if err := writer.StoreOutputProofs(ctx, []repository.OutputProof{proof}); err != nil {
+				return err
+			}
+			close(paused)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+	}()
+	select {
+	case <-paused:
+	case err := <-result:
+		completed = true
+		t.Fatalf("claim callback stopped before its first proof batch: %v", err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	pending, err := advancer.GetEpoch(ctx, app.Name, 0)
+	require.NoError(t, err)
+	require.Equal(t, model.EpochStatus_InputsProcessed, pending.Status)
+	require.Nil(t, pending.CalculatedOutputsRoot)
+	pendingOutput, err := advancer.GetOutput(ctx, app.Name, output.Index)
+	require.NoError(t, err)
+	require.Nil(t, pendingOutput.Hash)
+
+	terminalCtx, stopTerminal := context.WithTimeout(ctx, 3*time.Second)
+	err = advancer.StoreAdvanceResult(terminalCtx, app.ID, &model.AdvanceResult{
+		EpochIndex: 1, InputIndex: 1, Status: model.InputCompletionStatus_MachineHalted,
+		StateProof: *repotest.DummyStateProof()})
+	stopTerminal()
+	require.NoError(t, err, "the real input writer must not wait for the earlier proof callback")
+	during, err := advancer.GetEpochCompletionState(ctx, app.Name, 0)
+	require.NoError(t, err)
+	require.Equal(t, model.ApplicationStatus_MachineHalted, during.Application.Status)
+	expectedProblem := &model.ApplicationProblem{EpochIndex: 1, Kind: model.ApplicationStatus_MachineHalted,
+		InputIndex: new(uint64(1))}
+	require.Equal(t, expectedProblem, during.Problem)
+	require.Equal(t, uint64(2), during.Application.ProcessedInputs)
+	require.Nil(t, during.Epoch.CalculatedOutputsRoot)
+	close(release)
+	select {
+	case err := <-result:
+		completed = true
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	stored, err := advancer.GetEpochCompletionState(ctx, app.Name, 0)
+	require.NoError(t, err)
+	require.Equal(t, expectedProblem, stored.Problem)
+	require.Equal(t, model.ApplicationStatus_MachineHalted, stored.Application.Status)
+	require.Equal(t, model.EpochStatus_ClaimComputed, stored.Epoch.Status)
+	require.Equal(t, &calculated, stored.Epoch.CalculatedOutputsRoot)
+	require.Equal(t, epoch.Commitment, stored.Epoch.Commitment)
+	require.Equal(t, epoch.CommitmentProof, stored.Epoch.CommitmentProof)
+	require.True(t, stored.Epoch.HasInvalidOutputsRoot())
+	storedOutput, err := advancer.GetOutput(ctx, app.Name, output.Index)
+	require.NoError(t, err)
+	require.Equal(t, &proof.Hash, storedOutput.Hash)
+	require.Equal(t, proof.Siblings, storedOutput.OutputHashesSiblings)
+	allowed, err := stored.AllowsEpochCompletion()
+	require.NoError(t, err)
+	require.True(t, allowed)
 }

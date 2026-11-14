@@ -320,7 +320,7 @@ func TestObservedResultRequiresLocalMachineHash(t *testing.T) {
 			return reason != nil && strings.Contains(*reason, "missing required fields")
 		})).Return(nil).Once()
 	expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
-	err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
+	err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view, resultTestObservation(f.epoch, view))
 	require.ErrorContains(t, err, "missing required fields")
 	require.Equal(t, model.ApplicationStatus_Corrupted, f.app.Status)
 	f.repo.AssertExpectations(t)
@@ -342,7 +342,7 @@ func TestObservedResultChecksLocalMachineState(t *testing.T) {
 			if mismatch {
 				expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
 			}
-			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
+			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view, resultTestObservation(f.epoch, view))
 			if mismatch {
 				require.Error(t, err)
 				require.Equal(t, model.ApplicationStatus_Diverged, f.app.Status)

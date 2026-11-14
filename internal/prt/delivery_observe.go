@@ -58,6 +58,8 @@ func (s *Service) observe(ctx context.Context) error {
 	if err != nil || through == 0 {
 		if err == nil {
 			s.protectionNotices = nil
+			s.iorStages = nil
+			s.iorWinners = nil
 		}
 		return err
 	}
@@ -96,6 +98,16 @@ func (s *Service) observe(ctx context.Context) error {
 			}
 		}
 	}
+	for key := range s.iorStages {
+		if _, ok := active[key.applicationID]; !ok {
+			delete(s.iorStages, key)
+		}
+	}
+	for id := range s.iorWinners {
+		if _, ok := active[id]; !ok {
+			delete(s.iorWinners, id)
+		}
+	}
 	for id := range s.protectionNotices {
 		if _, ok := active[id]; !ok {
 			delete(s.protectionNotices, id)
@@ -108,6 +120,7 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 	if !app.Enabled {
 		s.clearTournamentObservationFailure(app.ID)
 		delete(s.protectionNotices, app.ID)
+		delete(s.iorWinners, app.ID)
 		return nil
 	}
 	stored, storedErr := s.loadObservedTournaments(ctx, app, facts.Number)
@@ -224,7 +237,7 @@ func (s *Service) observeApplication(ctx context.Context, app *model.Application
 			return errors.Join(observeErr, readErr)
 		}
 		if s.rootObservationCovers(root, facts.Number) {
-			err = s.recordTournamentResult(ctx, app, epoch, *view)
+			err = s.recordTournamentResult(ctx, app, epoch, *view, facts)
 		}
 	}
 	return errors.Join(observeErr, err)

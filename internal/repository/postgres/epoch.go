@@ -1025,6 +1025,9 @@ func (r *PostgresRepository) ListEpochs(
 	if f.BeforeBlock != nil {
 		conditions = append(conditions, table.Epoch.LastBlock.LT(uint64Expr(*f.BeforeBlock)))
 	}
+	if f.InvalidOutputsRoot {
+		conditions = append(conditions, table.Epoch.CalculatedOutputsRoot.NOT_EQ(table.Epoch.TxBufferDataBlock))
+	}
 	if f.HasTournament != nil {
 		if *f.HasTournament {
 			conditions = append(conditions, table.Epoch.TournamentAddress.IS_NOT_NULL())

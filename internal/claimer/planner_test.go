@@ -253,22 +253,28 @@ func TestClaimPlannerRepairsVanishedStageOnlyUnderProvisionalPolicy(t *testing.T
 	}
 }
 
-func TestClaimPlannerIncompleteSavedContentIsAnActionableError(t *testing.T) {
-	for _, missing := range []string{"machine-root", "outputs-root", "proof"} {
+func TestClaimPlannerIncompleteSavedContentDoesNotPublish(t *testing.T) {
+	const outputsRoot = "outputs-root"
+	for _, missing := range []string{"machine-root", outputsRoot, "proof"} {
 		t.Run(missing, func(t *testing.T) {
 			s, backend, lookup := newDeliveryFixture(t)
 			app, epoch := queueDelivery(t, backend, lookup, 1)
 			switch missing {
 			case "machine-root":
 				epoch.MachineHash = nil
-			case "outputs-root":
+			case outputsRoot:
 				epoch.TxBufferDataBlock = nil
 			case "proof":
 				epoch.TxBufferProof = nil
 			}
 			err := s.publisher.tick(t.Context())
 			require.Error(t, err)
-			require.False(t, txsender.WaitOnly(err))
+			if missing == outputsRoot {
+				require.ErrorIs(t, err, txsender.ErrInconclusive)
+				require.True(t, txsender.WaitOnly(err))
+			} else {
+				require.False(t, txsender.WaitOnly(err))
+			}
 			require.Contains(t, err.Error(), app.IApplicationAddress.Hex())
 			require.Contains(t, err.Error(), "epoch 3")
 			require.Empty(t, backend.published)

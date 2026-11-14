@@ -15,7 +15,9 @@ import (
 
 // These reads use the observer's selected view. Publication at latest cannot
 // replace audit evidence saved by a safe/finalized observer.
-func (s *Service) refreshSubmittedClaim(ctx context.Context, app *model.Application, epoch *model.Epoch, block uint64) error {
+func (s *Service) refreshSubmittedClaim(
+	ctx context.Context, app *model.Application, epoch *model.Epoch, block uint64,
+) error {
 	if epoch.ClaimTransactionHash != nil {
 		canonical, err := s.blockchain.claimTransactionCanonical(ctx, *epoch.ClaimTransactionHash, block)
 		if err != nil || canonical {
@@ -56,7 +58,8 @@ func (s *Service) refreshStagedClaim(
 			return err
 		}
 	}
-	_, event, _, err := s.blockchain.findClaimStagedEventAndSucc(ctx, app, epoch, epoch.LastBlock+1, block)
+	_, event, _, err := s.blockchain.findClaimStagedEventAndSucc(ctx, app, epoch,
+		claim.StagingBlockNumber.Uint64(), claim.StagingBlockNumber.Uint64())
 	if err != nil {
 		return err
 	}

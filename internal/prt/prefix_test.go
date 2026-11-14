@@ -25,7 +25,7 @@ const (
 
 func prtTestProblem(kind model.ApplicationStatus, cutoff uint64) *model.ApplicationProblem {
 	p := &model.ApplicationProblem{EpochIndex: cutoff, Kind: kind}
-	if kind.IsExecutionTerminal() {
+	if kind.IsExecutionTerminal() || kind == model.ApplicationStatus_InvalidOutputsRoot {
 		p.InputIndex = new(uint64(99))
 	}
 	return p

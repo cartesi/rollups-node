@@ -391,13 +391,13 @@ func TestValidatorStreamsNonemptyEpochBeforeTerminalBoundary(t *testing.T) {
 		InputIndex: new(epoch.InputIndexUpperBound)}
 	later := &model.Epoch{ApplicationID: app.ID, Index: epoch.Index + 1, VirtualIndex: epoch.VirtualIndex + 1,
 		Status: model.EpochStatus_InputsProcessed}
-	r.On("ListApplications", mock.Anything, validationApplicationsFilter(), repository.Pagination{}, false).
+	r.On("ListApplications", mock.Anything, enabledApplicationsFilter(), repository.Pagination{}, false).
 		Return([]*model.Application{app}, uint64(1), nil).Once()
 	r.On("ListEpochs", mock.Anything, app.IApplicationAddress.Hex(), mock.Anything, repository.Pagination{}, false).
 		Return([]*model.Epoch{epoch, later}, uint64(2), nil).Once()
 	expectValidPrefixEpoch(r.Mockrepo, app, epoch, false)
 	r.On("GetEpochByVirtualIndex", mock.Anything, app.IApplicationAddress.Hex(), epoch.VirtualIndex-1).
-		Return(&model.Epoch{TxBufferDataBlock: &s.pristineRootHash}, nil).Once()
+		Return(&model.Epoch{TxBufferDataBlock: &s.pristineRootHash, CalculatedOutputsRoot: &s.pristineRootHash}, nil).Once()
 	r.On("StoreClaimAndProofs", mock.Anything, epoch, mock.Anything).Return(nil).Once()
 	_, err := s.Tick(t.Context())
 	require.NoError(t, err)

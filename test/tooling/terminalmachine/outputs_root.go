@@ -15,11 +15,13 @@ import (
 )
 
 const (
-	outputsRootSize  = uint64(32)
-	txBufferStart    = uint64(0x60800000)
-	rootKindValue    = "value"
-	rootKindLength   = "length"
-	rootKindTemplate = "template"
+	outputsRootSize     = uint64(32)
+	txBufferStart       = uint64(0x60800000)
+	rootKindValue       = "value"
+	rootKindLength      = "length"
+	rootKindTemplate    = "template"
+	rootKindRecovery    = "recovery"
+	recoveryRootAddress = ramStart + 0x100
 )
 
 // After one input, clear the TX word and yield with the request held in x19.
@@ -35,17 +37,33 @@ var invalidOutputsRootProgram = []uint32{
 	0xfe5ff06f, // jal zero,-28: repeat after the next input
 }
 
+// After the first bad yield, copy the stored empty root on every later input.
+var recoveredOutputsRootProgram = []uint32{
+	0x000ab283, // ld t0,0(x21)
+	0x005a3023, // sd t0,0(x20)
+	0x008ab283, // ld t0,8(x21)
+	0x005a3423, // sd t0,8(x20)
+	0x010ab283, // ld t0,16(x21)
+	0x005a3823, // sd t0,16(x20)
+	0x018ab283, // ld t0,24(x21)
+	0x005a3c23, // sd t0,24(x20)
+	0x400082b7, // lui t0,0x40008: HTIF base address
+	0x0002b423, // sd zero,8(t0): clear fromhost
+	0x0132b023, // sd x19,0(t0): issue the accepted yield
+	0xfd5ff06f, // jal zero,-44: repeat the correct declaration
+}
+
 func runInvalidOutputsRoot(args []string) error {
 	flags := flag.NewFlagSet("invalid-outputs-root", flag.ContinueOnError)
 	output := flags.String("output", "", "snapshot output directory")
-	kind := flags.String("kind", rootKindValue, "failure: value, length, or template")
+	kind := flags.String("kind", rootKindValue, "root declaration: value, length, template, or recovery")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || *output == "" {
 		return errors.New("invalid-outputs-root requires --output")
 	}
-	if *kind != rootKindValue && *kind != rootKindLength && *kind != rootKindTemplate {
+	if *kind != rootKindValue && *kind != rootKindLength && *kind != rootKindTemplate && *kind != rootKindRecovery {
 		return fmt.Errorf("unknown outputs-root failure %q", *kind)
 	}
 	if err := requireAbsent(*output); err != nil {
@@ -66,8 +84,13 @@ func runInvalidOutputsRoot(args []string) error {
 	defer machine.Delete()
 	defer func() { _ = machine.Destroy() }()
 
-	program := make([]byte, 4*len(invalidOutputsRootProgram))
-	for i, instruction := range invalidOutputsRootProgram {
+	instructions := invalidOutputsRootProgram
+	if *kind == rootKindRecovery {
+		instructions = append([]uint32{}, invalidOutputsRootProgram[:len(invalidOutputsRootProgram)-1]...)
+		instructions = append(instructions, recoveredOutputsRootProgram...)
+	}
+	program := make([]byte, 4*len(instructions))
+	for i, instruction := range instructions {
 		binary.LittleEndian.PutUint32(program[4*i:], instruction)
 	}
 	if err := machine.WriteMemory(ramStart, program); err != nil {
@@ -77,6 +100,15 @@ func runInvalidOutputsRoot(args []string) error {
 		root := merkle.CreatePostContext()[merkle.TREE_DEPTH]
 		if err := machine.WriteMemory(txBufferStart, root[:]); err != nil {
 			return fmt.Errorf("write initial outputs root: %w", err)
+		}
+	}
+	if *kind == rootKindRecovery {
+		root := merkle.CreatePostContext()[merkle.TREE_DEPTH]
+		if err := machine.WriteMemory(recoveryRootAddress, root[:]); err != nil {
+			return fmt.Errorf("write recovery outputs root: %w", err)
+		}
+		if err := machine.WriteReg(emulator.REG_X21, recoveryRootAddress); err != nil {
+			return fmt.Errorf("initialize recovery root address: %w", err)
 		}
 	}
 	length := outputsRootSize

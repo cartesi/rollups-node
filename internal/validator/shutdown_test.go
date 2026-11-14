@@ -147,9 +147,9 @@ func TestValidatorTickShutdownRetainsEarlierError(t *testing.T) {
 	s := &Service{repository: repo}
 	s.Logger = slog.New(slog.NewTextHandler(new(bytes.Buffer), nil))
 	apps := []*model.Application{
-		{IApplicationAddress: common.HexToAddress("0x1")},
-		{IApplicationAddress: common.HexToAddress("0x2")},
-		{IApplicationAddress: common.HexToAddress("0x3")},
+		{IApplicationAddress: common.HexToAddress("0x1"), Enabled: true, Status: model.ApplicationStatus_OK},
+		{IApplicationAddress: common.HexToAddress("0x2"), Enabled: true, Status: model.ApplicationStatus_OK},
+		{IApplicationAddress: common.HexToAddress("0x3"), Enabled: true, Status: model.ApplicationStatus_OK},
 	}
 	repo.On("ListApplications", ctx, mock.Anything, mock.Anything, false).Return(apps, uint64(len(apps)), nil).Once()
 	firstErr := errors.New("first application database read failed")

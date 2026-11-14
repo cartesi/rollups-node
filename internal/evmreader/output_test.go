@@ -4,15 +4,13 @@
 package evmreader
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"math/big"
-	"time"
 
-	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
-	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
-	"github.com/cartesi/rollups-node/pkg/service"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -336,190 +334,45 @@ func (s *EvmReaderSuite) TestOutputExecutionWaitsWhenOutputRowMissing() {
 	applicationContract.AssertExpectations(s.T())
 }
 
-// TestOutputExecutionMismatchMarksApplicationDiverged verifies that an
-// OutputExecuted event whose on-chain output bytes differ from the locally
-// stored output marks the application DIVERGED (the chain executed an output
-// this node never produced).
-func (s *EvmReaderSuite) TestOutputExecutionMismatchMarksApplicationDiverged() {
-	s.repository = newMockRepository()
-	s.evmReader.repository = s.repository
-	applicationContract := newMockApplicationContract()
-
-	foreclosedApp := copyApplications(applications)[0]
-	foreclosedApp.ID = 1
-	foreclosedApp.Status = ApplicationStatus_OK
-	foreclosedApp.ForecloseBlock = 0x12
-	foreclosedApp.LastOutputCheckBlock = 0x12
-
-	mismatchedOutput := &Output{
-		Index:   outputExecution0.OutputIndex,
-		RawData: common.Hex2Bytes("FFBBCCDDEE"),
+// OutputExecuted has no accepted-root identity. Different bytes can come from a later IOR root.
+func (s *EvmReaderSuite) TestOutputMismatchIsDiagnosticForEveryHealth() {
+	for _, status := range ApplicationStatusAllValues {
+		s.Run(status.String(), func() {
+			s.repository = newMockRepository()
+			s.evmReader.repository = s.repository
+			var output bytes.Buffer
+			previousLogger := s.evmReader.Logger
+			s.evmReader.Logger = slog.New(slog.NewTextHandler(&output, nil))
+			defer func() { s.evmReader.Logger = previousLogger }()
+			contract := newMockApplicationContract()
+			app := copyApplications(applications)[0]
+			app.ID, app.Status = 1, status
+			app.ForecloseBlock, app.LastOutputCheckBlock = 0x12, 0x12
+			mismatch := &Output{Index: outputExecution0.OutputIndex, RawData: common.Hex2Bytes("FFBBCCDDEE")}
+			matching := &Output{Index: outputExecution1.OutputIndex, RawData: outputExecution1.Output}
+			contract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).Return(new(big.Int).SetUint64(2), nil)
+			contract.On("RetrieveOutputExecutionEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
+				return opts.Start == 0x13
+			})).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0, outputExecution1}, nil).Once()
+			s.repository.On("GetNumberOfExecutedOutputs", mock.Anything, app.IApplicationAddress.Hex()).Return(uint64(0), nil).Once()
+			s.repository.On("GetOutput", mock.Anything, app.IApplicationAddress.Hex(), mismatch.Index).Return(mismatch, nil).Once()
+			s.repository.On("GetOutput", mock.Anything, app.IApplicationAddress.Hex(), matching.Index).Return(matching, nil).Once()
+			s.repository.On("UpdateOutputsExecution", mock.Anything, app.IApplicationAddress.Hex(),
+				mock.MatchedBy(func(outputs []*Output) bool {
+					return len(outputs) == 1 && outputs[0] == matching && outputs[0].ExecutionTransactionHash != nil &&
+						*outputs[0].ExecutionTransactionHash == outputExecution1.Raw.TxHash
+				}), uint64(0x13)).Return(nil).Once()
+			s.evmReader.checkForOutputExecution(s.ctx, []appContracts{{application: app, applicationContract: contract}}, 0x13)
+			s.Equal(status, app.Status)
+			s.Contains(output.String(), "accepted-root provenance is unavailable")
+			s.Contains(output.String(), "local_output_hash=")
+			s.Contains(output.String(), "chain_output_hash=")
+			s.Nil(mismatch.ExecutionTransactionHash)
+			s.repository.AssertNotCalled(s.T(), "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			s.repository.AssertExpectations(s.T())
+			contract.AssertExpectations(s.T())
+		})
 	}
-
-	applicationContract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
-		Return(new(big.Int).SetUint64(1), nil)
-
-	applicationContract.On("RetrieveOutputExecutionEvents",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
-	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
-
-	s.repository.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		foreclosedApp.IApplicationAddress.String(),
-	).Return(uint64(0), nil).Once()
-
-	s.repository.On("GetOutput",
-		mock.Anything,
-		foreclosedApp.IApplicationAddress.Hex(),
-		outputExecution0.OutputIndex,
-	).Return(mismatchedOutput, nil).Once()
-
-	s.repository.On("UpdateApplicationStatus",
-		mock.Anything,
-		foreclosedApp.ID,
-		ApplicationStatus_Diverged,
-		mock.Anything,
-	).Return(nil).Once()
-	s.repository.On("UpdateOutputsExecution",
-		mock.Anything,
-		foreclosedApp.IApplicationAddress.Hex(),
-		mock.MatchedBy(func(outputs []*Output) bool { return len(outputs) == 0 }),
-		uint64(0x13),
-	).Return(nil).Once()
-
-	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
-		{application: foreclosedApp, applicationContract: applicationContract},
-	}, 0x13)
-
-	s.Equal(ApplicationStatus_Diverged, foreclosedApp.Status)
-	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 1)
-	s.repository.AssertExpectations(s.T())
-	applicationContract.AssertExpectations(s.T())
-}
-
-func (s *EvmReaderSuite) TestOutputExecutionMismatchEscalatesExecutionTerminalToCorrupted() {
-	s.repository = newMockRepository()
-	s.evmReader.repository = s.repository
-	applicationContract := newMockApplicationContract()
-
-	app := copyApplications(applications)[0]
-	app.ID = 1
-	app.Status = ApplicationStatus_MachineHalted
-	app.ForecloseBlock = 0x12
-	app.LastOutputCheckBlock = 0x12
-
-	mismatchedOutput := &Output{
-		Index:   outputExecution0.OutputIndex,
-		RawData: common.Hex2Bytes("FFBBCCDDEE"),
-	}
-	applicationContract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
-		Return(new(big.Int).SetUint64(1), nil)
-	applicationContract.On("RetrieveOutputExecutionEvents",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
-	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
-	s.repository.On("GetNumberOfExecutedOutputs",
-		mock.Anything, app.IApplicationAddress.String()).Return(uint64(0), nil).Once()
-	s.repository.On("GetOutput",
-		mock.Anything, app.IApplicationAddress.Hex(), outputExecution0.OutputIndex).
-		Return(mismatchedOutput, nil).Once()
-	s.repository.On("UpdateApplicationStatus",
-		mock.Anything, app.ID, ApplicationStatus_Corrupted, mock.Anything).
-		Return(nil).Once()
-	s.repository.On("UpdateOutputsExecution",
-		mock.Anything,
-		app.IApplicationAddress.Hex(),
-		mock.MatchedBy(func(outputs []*Output) bool { return len(outputs) == 0 }),
-		uint64(0x13),
-	).Return(nil).Once()
-
-	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
-		{application: app, applicationContract: applicationContract},
-	}, 0x13)
-
-	s.Equal(ApplicationStatus_Corrupted, app.Status)
-	s.repository.AssertExpectations(s.T())
-	applicationContract.AssertExpectations(s.T())
-}
-
-func (s *EvmReaderSuite) TestOutputExecutionMismatchRetriesWhenStatusWriteFails() {
-	s.repository = newMockRepository()
-	s.evmReader.repository = s.repository
-	applicationContract := newMockApplicationContract()
-
-	app := copyApplications(applications)[0]
-	app.ID = 1
-	app.Status = ApplicationStatus_OK
-	app.ForecloseBlock = 0x12
-	app.LastOutputCheckBlock = 0x12
-	mismatchedOutput := &Output{
-		Index:   outputExecution0.OutputIndex,
-		RawData: common.Hex2Bytes("FFBBCCDDEE"),
-	}
-	dbErr := errors.New("database unavailable")
-
-	applicationContract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
-		Return(new(big.Int).SetUint64(1), nil)
-	applicationContract.On("RetrieveOutputExecutionEvents",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
-	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
-	s.repository.On("GetNumberOfExecutedOutputs",
-		mock.Anything, app.IApplicationAddress.String()).Return(uint64(0), nil).Once()
-	s.repository.On("GetOutput",
-		mock.Anything, app.IApplicationAddress.Hex(), outputExecution0.OutputIndex).
-		Return(mismatchedOutput, nil).Once()
-	s.repository.On("UpdateApplicationStatus",
-		mock.Anything, app.ID, ApplicationStatus_Diverged, mock.Anything).
-		Return(dbErr).Once()
-
-	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
-		{application: app, applicationContract: applicationContract},
-	}, 0x13)
-
-	s.Equal(ApplicationStatus_OK, app.Status)
-	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
-	s.repository.AssertExpectations(s.T())
-	applicationContract.AssertExpectations(s.T())
-}
-
-func (s *EvmReaderSuite) TestOutputExecutionMismatchDoesNotRewriteIntegrityTerminal() {
-	s.repository = newMockRepository()
-	s.evmReader.repository = s.repository
-	applicationContract := newMockApplicationContract()
-
-	app := copyApplications(applications)[0]
-	app.ID = 1
-	app.Status = ApplicationStatus_Corrupted
-	app.ForecloseBlock = 0x12
-	app.LastOutputCheckBlock = 0x12
-
-	mismatchedOutput := &Output{
-		Index:   outputExecution0.OutputIndex,
-		RawData: common.Hex2Bytes("FFBBCCDDEE"),
-	}
-	applicationContract.On("GetNumberOfExecutedOutputs", blockFrom(0x13)).
-		Return(new(big.Int).SetUint64(1), nil)
-	applicationContract.On("RetrieveOutputExecutionEvents",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
-	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil).Once()
-	s.repository.On("GetNumberOfExecutedOutputs",
-		mock.Anything, app.IApplicationAddress.String()).Return(uint64(0), nil).Once()
-	s.repository.On("GetOutput",
-		mock.Anything, app.IApplicationAddress.Hex(), outputExecution0.OutputIndex).
-		Return(mismatchedOutput, nil).Once()
-	s.repository.On("UpdateOutputsExecution",
-		mock.Anything,
-		app.IApplicationAddress.Hex(),
-		mock.MatchedBy(func(outputs []*Output) bool { return len(outputs) == 0 }),
-		uint64(0x13),
-	).Return(nil).Once()
-
-	s.evmReader.checkForOutputExecution(s.ctx, []appContracts{
-		{application: app, applicationContract: applicationContract},
-	}, 0x13)
-
-	s.repository.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 0)
-	s.repository.AssertExpectations(s.T())
-	applicationContract.AssertExpectations(s.T())
 }
 
 func (s *EvmReaderSuite) TestCheckOutputFailsWhenRetrieveOutputsFails() {
@@ -714,196 +567,6 @@ func (s *EvmReaderSuite) TestCheckOutputFailsWhenGetOutputsFails() {
 	s.Require().True(waitNotification(called), "evmreader did not read new header")
 
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 0)
-	s.repository.AssertExpectations(s.T())
-
-	s.inputBox.AssertExpectations(s.T())
-	s.applicationContract1.AssertExpectations(s.T())
-	s.applicationContract2.AssertExpectations(s.T())
-	s.contractFactory.AssertExpectations(s.T())
-	s.client.AssertExpectations(s.T())
-
-	close(blocked) // release blocked calls
-}
-
-func (s *EvmReaderSuite) setupOutputMismatchTest() {
-	s.client = newMockEthClient()
-	s.repository = newMockRepository()
-	s.applicationContract1 = newMockApplicationContract()
-	s.inputBox = newMockInputBox()
-	s.contractFactory = newMockAdapterFactory()
-
-	s.evmReader = &Service{
-		client:         s.client,
-		repository:     s.repository,
-		defaultBlock:   DefaultBlock_Latest,
-		adapterFactory: s.contractFactory,
-		hasEnabledApps: true,
-	}
-
-	logLevel, err := config.GetLogLevel()
-	s.Require().NoError(err)
-
-	serviceArgs := &service.TickServiceConfigs{
-		BaseConfigs: service.BaseConfigs{
-			Name:     "evm-reader",
-			LogLevel: logLevel,
-		},
-		PollInterval: 100 * time.Millisecond,
-	}
-	err = service.InitTickServiceTemplate(&s.evmReader.TickServiceTemplate, serviceArgs, s.evmReader)
-	s.Require().NoError(err)
-
-	s.evmReader.resolver = newApplicationAdapterResolver(s.evmReader.Logger, s.contractFactory)
-
-	apps := copyApplications(applications)
-	for _, app := range apps {
-		app.LastForecloseCheckBlock = 0x100
-	}
-	s.repository.On("ListApplications",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-		false,
-	).Return(apps, uint64(2), nil).Once()
-
-	apps = copyApplications(applications[1:2])
-	apps[0].LastInputCheckBlock = 0x11
-	apps[0].LastOutputCheckBlock = 0x11
-	apps[0].LastForecloseCheckBlock = 0x100
-	s.repository.On("ListApplications",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-		false,
-	).Return(apps, uint64(1), nil).Once()
-
-	apps = copyApplications(applications[1:2])
-	apps[0].LastInputCheckBlock = 0x12
-	apps[0].LastOutputCheckBlock = 0x12
-	apps[0].LastForecloseCheckBlock = 0x100
-	s.repository.On("ListApplications",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-		false,
-	).Return(apps, uint64(1), nil).Once()
-	// Catch-all for sentinel / extra headers
-	s.repository.On("ListApplications", mock.Anything, mock.Anything, mock.Anything, false).
-		Return([]*Application{}, uint64(0), nil)
-
-	s.repository.On("UpdateEventLastCheckBlock",
-		mock.Anything,
-		mock.Anything,
-		MonitoredEvent_InputAdded,
-		mock.Anything,
-	).Return(nil).Times(5)
-	s.repository.On("UpdateEventLastCheckBlock",
-		mock.Anything,
-		mock.Anything,
-		MonitoredEvent_OutputExecuted,
-		mock.Anything,
-	).Return(nil).Times(5)
-	s.repository.On("UpdateApplicationLastForecloseCheckBlock",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-	).Return(nil).Maybe()
-
-	s.repository.On("GetNumberOfInputs", mock.Anything, app1Addr.String()).Once().Return(uint64(0), nil)
-	s.repository.On("GetNumberOfInputs", mock.Anything, app2Addr.String()).Return(uint64(0), nil).Times(3)
-
-	s.repository.On("GetNumberOfExecutedOutputs",
-		mock.Anything,
-		mock.Anything,
-	).Return(uint64(0), nil).Times(4)
-
-	s.repository.On("CreateEpochsAndInputs",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-		mock.Anything).Return(nil).Once()
-
-	s.repository.On("GetEpoch", mock.Anything, app1Addr.String(), uint64(0)).Return(nil, nil).Once()
-	s.repository.On("GetEpoch", mock.Anything, app2Addr.String(), uint64(0)).Return(nil, nil).Once()
-	s.repository.On("GetEpoch", mock.Anything, app2Addr.String(), uint64(1)).Return(nil, nil).Twice()
-
-	output := &Output{
-		Index:   1,
-		RawData: common.Hex2Bytes("FFBBCCDDEE"),
-	}
-	s.repository.On("GetOutput",
-		mock.Anything,
-		mock.Anything,
-		mock.Anything,
-	).Return(output, nil).Once()
-
-	s.repository.On("UpdateApplicationStatus",
-		mock.Anything,
-		applications[0].ID,
-		ApplicationStatus_Diverged,
-		mock.Anything,
-	).Return(nil).Once()
-	s.repository.On("UpdateOutputsExecution",
-		mock.Anything,
-		applications[0].IApplicationAddress.Hex(),
-		mock.MatchedBy(func(outputs []*Output) bool { return len(outputs) == 0 }),
-		uint64(0x11),
-	).Return(nil).Once()
-
-	s.applicationContract1.On("GetDeploymentBlockNumber",
-		mock.Anything,
-	).Return(new(big.Int).SetUint64(0x10), nil).Once()
-
-	// On-chain state: 0 executed outputs before 0x11, 1 from 0x11
-	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockRange(0, 0x11)).
-		Return(new(big.Int).SetUint64(0), nil)
-	s.applicationContract1.On("GetNumberOfExecutedOutputs", blockFrom(0x11)).
-		Return(new(big.Int).SetUint64(1), nil)
-
-	s.applicationContract1.On("RetrieveOutputExecutionEvents",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
-	).Return([]*iapplication.IApplicationOutputExecuted{outputExecution0}, nil)
-
-	s.inputBox.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
-		[]common.Address{app1Addr},
-		mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent0}, nil)
-
-	// On-chain: 0 inputs before block 0x11, 1 from block 0x11
-	s.inputBox.On("GetNumberOfInputs", blockRange(0, 0x11), app1Addr).
-		Return(new(big.Int).SetUint64(0), nil)
-	s.inputBox.On("GetNumberOfInputs", blockFrom(0x11), app1Addr).
-		Return(new(big.Int).SetUint64(1), nil)
-	s.inputBox.On("GetNumberOfInputs", mock.Anything, app2Addr).
-		Return(new(big.Int).SetUint64(0), nil)
-
-	s.contractFactory.On("CreateAdapters",
-		mock.MatchedBy(func(app *Application) bool {
-			return app.IApplicationAddress == applications[0].IApplicationAddress
-		}),
-	).Return(s.applicationContract1, s.inputBox, nil, nil)
-	s.contractFactory.On("CreateAdapters",
-		mock.MatchedBy(func(app *Application) bool {
-			return app.IApplicationAddress == applications[1].IApplicationAddress
-		}),
-	).Return(s.applicationContract2, s.inputBox, nil, nil)
-}
-
-func (s *EvmReaderSuite) TestCheckOutputFailsWhenOutputMismatches() {
-	s.setupOutputMismatchTest()
-
-	s.client.EnqueueNewHead(0x11).Once()
-	s.client.EnqueueNewHead(0x12).Once()
-	s.client.EnqueueNewHead(0x13).Once()
-	called, blocked := newBlockedCallNotification(s.client.EnqueueNewHead(0x13))
-
-	// Start service
-	go s.evmReader.Serve(s.ctx) //nolint: errcheck
-
-	s.Require().True(waitNotification(called), "evmreader did not read new header")
-
-	s.repository.AssertNumberOfCalls(s.T(), "UpdateOutputsExecution", 1)
 	s.repository.AssertExpectations(s.T())
 
 	s.inputBox.AssertExpectations(s.T())

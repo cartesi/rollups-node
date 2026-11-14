@@ -111,17 +111,17 @@ CREATE TABLE "application"
     "enabled" BOOLEAN NOT NULL DEFAULT true,
     "status" "ApplicationStatus" NOT NULL DEFAULT 'OK',
     "reason" VARCHAR(4096),
-    -- Earliest known epoch that cannot be published. A later validator finding
-    -- may lower this boundary without changing the first execution diagnosis.
+    -- Earliest known input execution stop. Final validator root findings
+    -- remain on the epoch and do not change this boundary.
     "problem_epoch_index" uint64,
     "problem_kind" "ApplicationStatus",
     "problem_input_index" uint64,
     CONSTRAINT "application_problem_shape" CHECK (
         ("problem_epoch_index" IS NULL AND "problem_kind" IS NULL AND "problem_input_index" IS NULL)
         OR ("problem_epoch_index" IS NOT NULL AND "problem_kind" IS NOT NULL
-            AND ("problem_kind" = 'INVALID_OUTPUTS_ROOT'
-                 OR ("problem_kind" IN ('GUEST_EXCEPTION', 'MACHINE_HALTED',
-                     'MCYCLE_OVERFLOW', 'UNEXPECTED_YIELD') AND "problem_input_index" IS NOT NULL)))
+            AND "problem_input_index" IS NOT NULL
+            AND "problem_kind" IN ('GUEST_EXCEPTION', 'MACHINE_HALTED',
+                'MCYCLE_OVERFLOW', 'UNEXPECTED_YIELD', 'INVALID_OUTPUTS_ROOT'))
     ),
     "last_epoch_check_block" uint64 NOT NULL,
     "last_input_check_block" uint64 NOT NULL,

@@ -406,9 +406,9 @@ func TestDeploymentEnablePreservesHealthBoundariesForeclosureAndClaimEvidence(t 
 				deploymentRestrict(t, r, key, 0, model.DeploymentTierGeneration, "incompatible generation")
 				require.NoError(t, r.UpdateApplicationForeclosure(t.Context(), app.ID, 100, repotest.UniqueHash(), 100))
 				kind := model.ApplicationStatus_MachineHalted
-				var input any = uint64(2)
+				input := uint64(2)
 				if status == model.ApplicationStatus_InvalidOutputsRoot {
-					kind, input = status, nil
+					kind = status
 				}
 				_, err := r.db.Exec(t.Context(), `UPDATE application SET enabled=false,status=$2,reason='retained health',
 				problem_epoch_index=3,problem_kind=$3,problem_input_index=$4,

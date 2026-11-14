@@ -212,6 +212,20 @@ func (s *delivery) planEpochAction(
 	if epoch.Index != view.sealed.EpochNumber {
 		return nil, txsender.ErrInconclusive
 	}
+	// Stored progress selects fresh work. A retained call instead follows the
+	// current protocol state, even if a provisional terminal observation remains.
+	if !retained && !pendingTournamentResult(epoch) {
+		return nil, txsender.ErrIneligible
+	}
+	if epoch.TournamentAddress == nil || epoch.Commitment == nil || epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
+		if revalidating {
+			return nil, txsender.ErrInconclusive
+		}
+		return nil, txsender.ErrIneligible
+	}
+	if err := checkEpochOutputsRoot(epoch, kind); err != nil {
+		return nil, err
+	}
 	if revalidating {
 		if epoch.StagedAtBlock != nil && *epoch.StagedAtBlock > snap.Number {
 			return nil, txsender.ErrInconclusive
@@ -225,17 +239,6 @@ func (s *delivery) planEpochAction(
 				return nil, txsender.ErrInconclusive
 			}
 		}
-	}
-	// Stored progress selects fresh work. A retained call instead follows the
-	// current protocol state, even if a provisional terminal observation remains.
-	if !retained && !pendingTournamentResult(epoch) {
-		return nil, txsender.ErrIneligible
-	}
-	if epoch.TournamentAddress == nil || epoch.Commitment == nil || epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
-		if revalidating {
-			return nil, txsender.ErrInconclusive
-		}
-		return nil, txsender.ErrIneligible
 	}
 	if err = matchConsensusSnapshotToEpoch(epoch, view); err != nil {
 		if revalidating {

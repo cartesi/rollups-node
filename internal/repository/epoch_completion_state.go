@@ -38,8 +38,7 @@ func (s *EpochCompletionState) AllowsEpochCompletion() (bool, error) {
 		return true, nil
 	}
 	p := s.Problem
-	if !p.Kind.IsExecutionTerminal() && p.Kind != model.ApplicationStatus_InvalidOutputsRoot ||
-		p.Kind.IsExecutionTerminal() && p.InputIndex == nil {
+	if !p.Kind.IsExecutionTerminal() && p.Kind != model.ApplicationStatus_InvalidOutputsRoot || p.InputIndex == nil {
 		return false, fmt.Errorf("application %d has an inconsistent epoch stop boundary", s.Application.ID)
 	}
 	return s.Epoch.Index < p.EpochIndex, nil

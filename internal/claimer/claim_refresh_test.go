@@ -34,7 +34,7 @@ func TestProvisionalObserverRefreshesMatchingStageMetadataAtSelectedView(t *test
 				if sameHeight {
 					chain.On("claimTransactionCanonical", mock.Anything, oldHash, uint64(60)).Return(false, nil).Once()
 				}
-				chain.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, epoch.LastBlock+1, uint64(60)).
+				chain.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, staged, staged).
 					Return(&iconsensus.IConsensus{}, event, (*iconsensus.IConsensusClaimStaged)(nil), nil).Once()
 				repo.On("RefreshClaimObservation", mock.Anything, epoch, new(event.Raw.TxHash), new(staged)).
 					Run(func(args mock.Arguments) {
@@ -75,7 +75,7 @@ func TestProvisionalObserverRejectsInconsistentOrConcurrentStageRefresh(t *testi
 			case "different block":
 				event.Raw.BlockNumber = 47
 			}
-			chain.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, epoch.LastBlock+1, uint64(60)).
+			chain.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, uint64(46), uint64(46)).
 				Return(&iconsensus.IConsensus{}, event, (*iconsensus.IConsensusClaimStaged)(nil), nil).Once()
 			if concurrent {
 				repo.On("RefreshClaimObservation", mock.Anything, epoch, new(event.Raw.TxHash), new(uint64(46))).
@@ -136,7 +136,8 @@ func TestUnchangedCanonicalClaimMetadataDoesNotRescanHistory(t *testing.T) {
 	s, repo, chain := newServiceMock(t)
 	epoch := makeStagedEpoch(makeApplication(), 3, 44)
 	chain.On("claimTransactionCanonical", mock.Anything, *epoch.ClaimTransactionHash, uint64(60)).Return(true, nil).Twice()
-	require.NoError(t, s.refreshStagedClaim(t.Context(), makeApplication(), epoch, makeClaimStatus(claimStatusStaged, epoch, 44), 60))
+	require.NoError(t, s.refreshStagedClaim(t.Context(), makeApplication(), epoch,
+		makeClaimStatus(claimStatusStaged, epoch, 44), 60))
 	require.NoError(t, s.refreshSubmittedClaim(t.Context(), makeApplication(), epoch, 60))
 	chain.AssertNotCalled(t, "findClaimStagedEventAndSucc", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	chain.AssertNotCalled(t, "findClaimSubmittedEventAndSucc", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -153,7 +154,7 @@ func TestRepairedStageAcceptedBetweenPollsRefreshesAuditBeforeTerminalWrite(t *t
 			staged := makeStagedEvent(app, epoch)
 			staged.Raw.BlockNumber, staged.Raw.TxHash = 46, common.HexToHash("0xcafe")
 			claim := makeClaimStatus(claimStatusAccepted, epoch, 46)
-			chain.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, epoch.LastBlock+1, uint64(60)).
+			chain.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, uint64(46), uint64(46)).
 				Return(&iconsensus.IConsensus{}, staged, (*iconsensus.IConsensusClaimStaged)(nil), nil).Once()
 			refresh := repo.On("RefreshClaimObservation", mock.Anything, epoch, new(staged.Raw.TxHash), new(uint64(46))).Return(nil).Once()
 			if eventPath {

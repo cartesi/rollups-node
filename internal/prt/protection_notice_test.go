@@ -120,3 +120,13 @@ func TestProtectionBacklogNoticeKeepsClockTransitions(t *testing.T) {
 	f.s.reportSealBacklog(f.app, target, clock, observerFacts(110))
 	require.Contains(t, output.String(), "join_window_closed=true")
 }
+
+func TestProtectionReadinessRequiresCalculatedSourceButAllowsIOR(t *testing.T) {
+	epoch := resultTestEpoch(model.EpochStatus_ClaimComputed)
+	require.True(t, protectionLocallyReady(epoch))
+	epoch.CalculatedOutputsRoot = nil
+	require.False(t, protectionLocallyReady(epoch))
+	epoch.CalculatedOutputsRoot = new(common.HexToHash("0xbad"))
+	require.True(t, epoch.HasInvalidOutputsRoot())
+	require.True(t, protectionLocallyReady(epoch), "true execution is ready to join despite its invalid declaration")
+}

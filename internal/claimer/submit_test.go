@@ -176,12 +176,12 @@ func TestSubmitClaimReconcilesStagedBeforeBroadcast(t *testing.T) {
 	defer r.AssertExpectations(t)
 	defer b.AssertExpectations(t)
 
-	endBlock := big.NewInt(40)
 	app := makeApplication()
 	app.ConsensusType = model.Consensus_Quorum
 	currEpoch := makeComputedEpoch(app, 3)
 	var currEvent *iconsensus.IConsensusClaimSubmitted
 	stagedAt := currEpoch.LastBlock + 2
+	endBlock := new(big.Int).SetUint64(stagedAt)
 
 	b.On("getConsensusAddress", mock.Anything, app, mock.Anything).
 		Return(app.IConsensusAddress, nil).Once()

@@ -64,7 +64,8 @@ func (s *ValidatorSuite) SetupSubTest() {
 	dummyTxBufferDataBlock := common.HexToHash("0x0a162946e56158bac0673e6dd3bdfdc1e4a0e7744a120fdb640050c8d7abe1c6")
 	dummyEpochs = []Epoch{
 		{Index: 0, VirtualIndex: 0, FirstBlock: 0, LastBlock: 9, Status: EpochStatus_InputsProcessed,
-			TxBufferDataBlock: &dummyTxBufferDataBlock, MachineHash: &validator.pristineRootHash},
+			TxBufferDataBlock: &dummyTxBufferDataBlock, CalculatedOutputsRoot: &dummyTxBufferDataBlock,
+			MachineHash: &validator.pristineRootHash},
 		{Index: 1, VirtualIndex: 1, FirstBlock: 10, LastBlock: 19, Status: EpochStatus_InputsProcessed},
 		{Index: 2, VirtualIndex: 2, FirstBlock: 20, LastBlock: 29, Status: EpochStatus_InputsProcessed},
 		{Index: 3, VirtualIndex: 3, FirstBlock: 30, LastBlock: 39, Status: EpochStatus_InputsProcessed},
@@ -191,7 +192,7 @@ func (s *ValidatorSuite) TestCreateClaimAndProofSuccess() {
 
 		claimHash, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NoError(err)
-		s.Equal(dummyEpochs[0].TxBufferDataBlock, claimHash)
+		s.Equal(dummyEpochs[0].CalculatedOutputsRoot, claimHash)
 		repo.AssertExpectations(s.T())
 	})
 
@@ -255,12 +256,10 @@ func (s *ValidatorSuite) TestCreateClaimAndProofFailures() {
 		expectEpochOutputs(repo, &app, &dummyEpochs[1], []*Output{})
 
 		invalidEpoch := dummyEpochs[0]
-		invalidEpoch.TxBufferDataBlock = nil
+		invalidEpoch.CalculatedOutputsRoot = nil
 		repo.On("GetEpochByVirtualIndex",
 			mock.Anything, mock.Anything, mock.Anything,
 		).Return(&invalidEpoch, nil).Once()
-
-		expectCorrupted(&app, "Previous epoch has no claim")
 
 		_, _, err := validator.computeMerkleTreeAndProofs(ctx, &app, &dummyEpochs[1])
 		s.NotNil(err)
@@ -384,26 +383,13 @@ func (s *ValidatorSuite) TestValidateApplicationSuccess() {
 	})
 }
 
-func (s *ValidatorSuite) TestValidationApplicationsFilterSelectsValidPrefixes() {
-	s.Run("Filter", func() {
-		repo.On("ListApplications",
-			mock.Anything,
-			mock.MatchedBy(func(f repository.ApplicationFilter) bool {
-				return f.Enabled != nil && *f.Enabled &&
-					s.ElementsMatch([]ApplicationStatus{
-						ApplicationStatus_OK, ApplicationStatus_MachineHalted, ApplicationStatus_GuestException,
-						ApplicationStatus_McycleOverflow, ApplicationStatus_UnexpectedYield,
-						ApplicationStatus_InvalidOutputsRoot,
-					}, f.Statuses)
-			}),
-			repository.Pagination{},
-			false,
-		).Return([]*Application{}, uint64(0), nil).Once()
-
-		_, _, err := getAllRunningApplications(context.Background(), repo)
-		s.NoError(err)
-		repo.AssertExpectations(s.T())
-	})
+func (s *ValidatorSuite) TestEnabledApplicationsFilterKeepsObservationIndependentOfHealth() {
+	filter := enabledApplicationsFilter()
+	s.Require().NotNil(filter.Enabled)
+	s.True(*filter.Enabled)
+	s.Nil(filter.Status)
+	s.Empty(filter.Statuses)
+	s.Nil(filter.ForeclosureRecorded)
 }
 
 func (s *ValidatorSuite) TestValidateApplicationFailure() {
@@ -1040,6 +1026,10 @@ type Mockrepo struct {
 	epochs                   []*Epoch
 	problem                  *ApplicationProblem
 	readEpochCompletionState func(context.Context, string, uint64) (*repository.EpochCompletionState, error)
+	invalidRootEpochs        []*Epoch
+	invalidRootError         error
+	invalidRootReads         int
+	invalidRootVisit         func(context.Context) error
 }
 
 func newMockrepo() *Mockrepo {
@@ -1095,6 +1085,13 @@ func (m *Mockrepo) ListEpochs(
 	p repository.Pagination,
 	descending bool,
 ) ([]*Epoch, uint64, error) {
+	if f.InvalidOutputsRoot {
+		m.invalidRootReads++
+		if m.invalidRootVisit != nil {
+			return m.invalidRootEpochs, uint64(len(m.invalidRootEpochs)), m.invalidRootVisit(ctx)
+		}
+		return m.invalidRootEpochs, uint64(len(m.invalidRootEpochs)), m.invalidRootError
+	}
 	args := m.Called(ctx, nameOrAddress, f, p, descending)
 	m.epochs = args.Get(0).([]*Epoch)
 	return m.epochs, args.Get(1).(uint64), args.Error(2)
@@ -1129,11 +1126,6 @@ func (m *Mockrepo) ListEpochStateHashes(
 
 func (m *Mockrepo) UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error {
 	args := m.Called(ctx, appID, status, reason)
-	return args.Error(0)
-}
-
-func (m *Mockrepo) StoreInvalidOutputsRoot(ctx context.Context, appID int64, epochIndex uint64, reason string) error {
-	args := m.Called(ctx, appID, epochIndex, reason)
 	return args.Error(0)
 }
 

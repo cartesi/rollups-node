@@ -18,8 +18,8 @@ func TestUpdateEpochStagedFromClaimStatus_NilStagingBlock_ReturnsError(t *testin
 	epoch := makeComputedEpoch(app, 1)
 	claim := makeClaimStatus(claimStatusStaged, epoch, 0)
 
-	_, err := m.updateEpochStagedFromClaimStatus(context.Background(), app, epoch, claim, "test")
+	_, err := m.updateEpochStagedFromClaimStatus(context.Background(), app, epoch, claim, "test", epoch.LastBlock)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "nil staging block")
+	require.Contains(t, err.Error(), "staging block")
 }

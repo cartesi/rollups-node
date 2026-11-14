@@ -549,7 +549,8 @@ func claimPublicationCondition() postgres.BoolExpression {
 		enum.ApplicationStatus.UnexpectedYield, enum.ApplicationStatus.InvalidOutputsRoot).
 		AND(table.Application.ForecloseBlock.EQ(uint64Expr(0))).
 		AND(table.Application.ProblemEpochIndex.IS_NULL().AND(table.Application.Status.EQ(enum.ApplicationStatus.Ok)).
-			OR(table.Epoch.Index.LT(table.Application.ProblemEpochIndex)))
+			OR(table.Epoch.Index.LT(table.Application.ProblemEpochIndex))).
+		AND(table.Epoch.CalculatedOutputsRoot.EQ(table.Epoch.TxBufferDataBlock))
 }
 
 func claimWindowRows(

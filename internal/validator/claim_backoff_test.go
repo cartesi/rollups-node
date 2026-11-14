@@ -27,7 +27,6 @@ import (
 // A failed publication cannot silently advance the next discovery result.
 const (
 	claimForeclosedExemption = "foreclosed"
-	claimRootExemption       = "root boundary"
 	claimStatusExemption     = "status"
 )
 
@@ -39,9 +38,7 @@ type claimBackoffRepository struct {
 	stores      []claimRetryKey
 	reads       []claimRetryKey
 	statusCalls int
-	rootCalls   int
 	statusError error
-	rootError   error
 	read        func(claimRetryKey) error
 	rangeRead   func(claimRetryKey) error
 	store       func(context.Context, claimRetryKey) error
@@ -75,7 +72,7 @@ func (r *claimBackoffRepository) epoch(key claimRetryKey) *model.Epoch {
 func (r *claimBackoffRepository) ListEpochs(
 	_ context.Context, address string, filter repository.EpochFilter, _ repository.Pagination, _ bool,
 ) ([]*model.Epoch, uint64, error) {
-	if filter.HasTournament != nil {
+	if filter.HasTournament != nil || filter.InvalidOutputsRoot {
 		return nil, 0, nil
 	}
 	var epochs []*model.Epoch
@@ -141,6 +138,7 @@ func (r *claimBackoffRepository) StoreClaimAndProofs(
 		}
 	}
 	r.epoch(key).Status = model.EpochStatus_ClaimComputed
+	r.epoch(key).CalculatedOutputsRoot = epoch.CalculatedOutputsRoot
 	return nil
 }
 
@@ -157,11 +155,6 @@ func (r *claimBackoffRepository) UpdateApplicationStatus(
 		}
 	}
 	return nil
-}
-
-func (r *claimBackoffRepository) StoreInvalidOutputsRoot(context.Context, int64, uint64, string) error {
-	r.rootCalls++
-	return r.rootError
 }
 
 func (r *claimBackoffRepository) CountEpochStateHashes(context.Context, int64, uint64) (uint64, error) {
@@ -335,7 +328,7 @@ func TestClaimBackoffStateHashRecheck(t *testing.T) {
 }
 
 func TestClaimBackoffExemptionsPreserveExistingRetries(t *testing.T) {
-	for _, exemption := range []string{claimForeclosedExemption, "canceled", claimStatusExemption, claimRootExemption} {
+	for _, exemption := range []string{claimForeclosedExemption, "canceled", claimStatusExemption} {
 		for _, priorFailure := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/prior=%t", exemption, priorFailure), func(t *testing.T) {
 				s, repo, now, _ := newClaimBackoffFixture(t, time.Minute)
@@ -373,28 +366,23 @@ func TestClaimBackoffExemptionsPreserveExistingRetries(t *testing.T) {
 					}
 				case claimStatusExemption:
 					repo.epochs[73][0].MachineHash = nil
-				case claimRootExemption:
-					// The successful transaction can keep execution status and only
-					// record an earlier boundary. app.Status cannot classify it.
-					repo.apps[0].Status = model.ApplicationStatus_MachineHalted
-					repo.problems[73] = &model.ApplicationProblem{EpochIndex: 9, Kind: model.ApplicationStatus_MachineHalted,
-						InputIndex: new(uint64(4))}
-					repo.epochs[73][0].TxBufferDataBlock = new(common.Hash)
+
 				}
-				if exemption == claimStatusExemption || exemption == claimRootExemption {
+				switch exemption {
+				case claimStatusExemption:
 					reschedule, err := s.Tick(t.Context())
 					require.False(t, reschedule)
 					require.Error(t, err)
-				} else {
+				case claimForeclosedExemption:
+					_, err := s.Tick(t.Context())
+					require.ErrorContains(t, err, "has no calculated outputs root")
+				default:
 					_ = backoffTick(t, s, cause)
 				}
 				require.Equal(t, prior, s.claimRetries[key])
 				if exemption == claimForeclosedExemption {
-					require.Equal(t, model.EpochStatus_ClaimComputed, repo.epochs[73][1].Status)
-				}
-				if exemption == claimRootExemption {
-					require.Equal(t, 1, repo.rootCalls)
-					require.Equal(t, model.ApplicationStatus_MachineHalted, repo.apps[0].Status)
+					require.Equal(t, model.EpochStatus_InputsProcessed, repo.epochs[73][1].Status)
+					require.Contains(t, s.claimRetries, claimRetryKey{73, 7})
 				}
 			})
 		}
@@ -433,6 +421,7 @@ func TestClaimBackoffCapKeysRestartAndExternalCommit(t *testing.T) {
 	repo2.read = func(k claimRetryKey) error {
 		if k == key {
 			repo2.epoch(k).Status = model.EpochStatus_ClaimComputed
+			repo2.epoch(k).CalculatedOutputsRoot = repo2.epoch(k).TxBufferDataBlock
 		}
 		return nil
 	}
@@ -490,7 +479,7 @@ func TestClaimBackoffPreservedHealthIsNotRecordedFailure(t *testing.T) {
 			s, repo, _, _ := newClaimBackoffFixture(t, time.Minute)
 			repo.apps[0].Status = status
 			repo.problems[73] = &model.ApplicationProblem{EpochIndex: 9, Kind: status}
-			if status.IsExecutionTerminal() {
+			if status.IsExecutionTerminal() || status == model.ApplicationStatus_InvalidOutputsRoot {
 				repo.problems[73].InputIndex = new(uint64(4))
 			}
 			failure := errors.New("operational error before the stop boundary")
@@ -551,7 +540,12 @@ func TestClaimBackoffFailedStatusPersistenceStillRetries(t *testing.T) {
 			failure := errors.New("status transaction failed")
 			if rootBoundary {
 				repo.epochs[73][0].TxBufferDataBlock = new(common.Hash)
-				repo.rootError = failure
+				repo.store = func(_ context.Context, key claimRetryKey) error {
+					if key == (claimRetryKey{73, 2}) {
+						return failure
+					}
+					return nil
+				}
 			} else {
 				repo.epochs[73][0].MachineHash = nil
 				repo.statusError = failure

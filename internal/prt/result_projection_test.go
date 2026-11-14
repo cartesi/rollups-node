@@ -29,7 +29,7 @@ func TestFailedRootRepeatedObservationAndForeclosure(t *testing.T) {
 	snapshot.stage.WinnerPostEpochMachineStateHash = common.Hash{}
 	service, repo := newPRTServiceMock()
 	for range 2 {
-		require.NoError(t, service.recordTournamentResult(t.Context(), app, epoch, snapshot))
+		require.NoError(t, service.recordTournamentResult(t.Context(), app, epoch, snapshot, resultTestObservation(epoch, snapshot)))
 		require.Equal(t, model.ApplicationStatus_OK, app.Status)
 	}
 
