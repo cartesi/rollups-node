@@ -647,10 +647,10 @@ validated epochs retain their normal reconciliation.
 Known limitations:
 
 - An `OutputExecuted` event names an output index and bytes, but not the accepted
-  cumulative root proving them. After an execution stop, different bytes can
-  cause a false `CORRUPTED` diagnosis when a later invalid root proves them.
-  This can also happen after an earlier invalid-root finding has moved P back,
-  because the application status may still name the execution stop.
+  cumulative root proving them. Different bytes produce a diagnostic without an
+  integrity verdict. The local output stays unexecuted; the chain can have consumed
+  its index. See [invalid outputs root handling](invalid-outputs-root.md) for the
+  comparison, stored-proof and scan limits.
 - A machine can be released before a closed epoch of a foreclosed application
   has been finalized.
 - The output reader can stall on an executed output index that is absent locally.
@@ -720,6 +720,10 @@ It is ignored; there is no cumulative application revert breaker.
 | PRT cannot publish consensus action with the registered contracts | Check the named contract link or geometry; staging and acceptance for that application are paused |
 | Action prefixed with "cancel obsolete" | The node is trying to replace a sent action; check funds, the fee ceiling and pool replacement policy |
 | PRT cannot join a tournament | Check the named geometry, registration link or missed join window; protection for that epoch is unavailable |
+| `ior_settlement_withheld` | Inspect the declared and calculated roots, join evidence from the normal observers and guardian foreclosure options. See [invalid outputs root handling](invalid-outputs-root.md) |
+| `ior_result_staged` | An observed IOR result is staged. Check the source block, staging period and guardian options; the observation policy does not guarantee time to act |
+| `ior_result_accepted` | A matching IOR result was accepted. The local finding and publication veto remain; check the stored-proof and consumed-index limits |
+| `output_execution_mismatch` | Compare the named output index, sizes and hashes. Local bytes stay unexecuted even when the chain consumed the index; the event alone does not establish divergence |
 | Recorded submission or provisional staging is absent from the current chain | Check provider consistency or a provisional reorg; same-claim delivery can recover, but invalidated inputs require a rebuild |
 | Input observation is inconclusive | The count and logs disagree; the cursor stays unchanged and the next poll retries. Restore a coherent provider if failures persist |
 | Finality or call-content contradiction | Stop and investigate; do not edit saved facts to force progress |
