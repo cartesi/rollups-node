@@ -299,6 +299,7 @@ func getEpoch(
 			table.Epoch.InputIndexUpperBound,
 			table.Epoch.MachineHash,
 			table.Epoch.TxBufferDataBlock,
+			table.Epoch.CalculatedOutputsRoot,
 			table.Epoch.TxBufferProof,
 			table.Epoch.IflagsYDataBlock,
 			table.Epoch.IflagsYProof,
@@ -338,6 +339,7 @@ func getEpoch(
 		&ep.InputIndexUpperBound,
 		&ep.MachineHash,
 		&ep.TxBufferDataBlock,
+		&ep.CalculatedOutputsRoot,
 		&ep.TxBufferProof,
 		&ep.IflagsYDataBlock,
 		&ep.IflagsYProof,
@@ -635,6 +637,7 @@ func (r *PostgresRepository) GetLastNonOpenEpoch(
 			table.Epoch.InputIndexUpperBound,
 			table.Epoch.MachineHash,
 			table.Epoch.TxBufferDataBlock,
+			table.Epoch.CalculatedOutputsRoot,
 			table.Epoch.TxBufferProof,
 			table.Epoch.IflagsYDataBlock,
 			table.Epoch.IflagsYProof,
@@ -676,6 +679,7 @@ func (r *PostgresRepository) GetLastNonOpenEpoch(
 		&ep.InputIndexUpperBound,
 		&ep.MachineHash,
 		&ep.TxBufferDataBlock,
+		&ep.CalculatedOutputsRoot,
 		&ep.TxBufferProof,
 		&ep.IflagsYDataBlock,
 		&ep.IflagsYProof,
@@ -718,6 +722,7 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 			table.Epoch.InputIndexUpperBound,
 			table.Epoch.MachineHash,
 			table.Epoch.TxBufferDataBlock,
+			table.Epoch.CalculatedOutputsRoot,
 			table.Epoch.TxBufferProof,
 			table.Epoch.IflagsYDataBlock,
 			table.Epoch.IflagsYProof,
@@ -757,6 +762,7 @@ func (r *PostgresRepository) GetEpochByVirtualIndex(
 		&ep.InputIndexUpperBound,
 		&ep.MachineHash,
 		&ep.TxBufferDataBlock,
+		&ep.CalculatedOutputsRoot,
 		&ep.TxBufferProof,
 		&ep.IflagsYDataBlock,
 		&ep.IflagsYProof,
@@ -1019,6 +1025,9 @@ func (r *PostgresRepository) ListEpochs(
 	if f.BeforeBlock != nil {
 		conditions = append(conditions, table.Epoch.LastBlock.LT(uint64Expr(*f.BeforeBlock)))
 	}
+	if f.InvalidOutputsRoot {
+		conditions = append(conditions, table.Epoch.CalculatedOutputsRoot.NOT_EQ(table.Epoch.TxBufferDataBlock))
+	}
 	if f.HasTournament != nil {
 		if *f.HasTournament {
 			conditions = append(conditions, table.Epoch.TournamentAddress.IS_NOT_NULL())
@@ -1053,6 +1062,7 @@ func (r *PostgresRepository) ListEpochs(
 			table.Epoch.InputIndexUpperBound,
 			table.Epoch.MachineHash,
 			table.Epoch.TxBufferDataBlock,
+			table.Epoch.CalculatedOutputsRoot,
 			table.Epoch.IflagsYDataBlock,
 			table.Epoch.HtifTohostDataBlock,
 			table.Epoch.Commitment,
@@ -1100,6 +1110,7 @@ func (r *PostgresRepository) ListEpochs(
 			&ep.InputIndexUpperBound,
 			&ep.MachineHash,
 			&ep.TxBufferDataBlock,
+			&ep.CalculatedOutputsRoot,
 			&ep.IflagsYDataBlock,
 			&ep.HtifTohostDataBlock,
 			&ep.Commitment,

@@ -701,11 +701,13 @@ func updateEpochClaim(
 		UPDATE(
 			table.Epoch.Commitment,
 			table.Epoch.CommitmentProof,
+			table.Epoch.CalculatedOutputsRoot,
 			table.Epoch.Status,
 		).
 		SET(
 			hashToBytes(e.Commitment),
 			encodeSiblings(e.CommitmentProof),
+			hashToBytes(e.CalculatedOutputsRoot),
 			postgres.NewEnumValue(model.EpochStatus_ClaimComputed.String()),
 		).
 		FROM(table.Application).

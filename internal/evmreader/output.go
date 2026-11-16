@@ -6,7 +6,6 @@ package evmreader
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +17,7 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // Find an appropriate value to start scanning the blockchain for executed outputs of this application.
@@ -245,55 +245,15 @@ func (r *Service) readAndUpdateOutputs(
 		}
 
 		if !bytes.Equal(output.RawData, event.Output) {
-			reasonFmt :=
-				"Output mismatch. Application is in an invalid state. Output Index %d, raw data %s != event data %s"
-			localOutput := "0x" + hex.EncodeToString(output.RawData)
-			chainOutput := "0x" + hex.EncodeToString(event.Output)
-			args := []any{
-				output.Index,
-				localOutput,
-				chainOutput,
-			}
-
-			switch {
-			case app.application.Status == ApplicationStatus_OK ||
-				app.application.Status == ApplicationStatus_Failed:
-				_ = r.setApplicationDiverged(ctx, app.application, reasonFmt, args...)
-				if app.application.Status != ApplicationStatus_Diverged {
-					return false // persistence failed; retry this event next tick
-				}
-			case app.application.Status.IsExecutionTerminal():
-				// This verdict assumes the mismatch refutes a valid local root.
-				// An earlier IOR may still be undiscovered, or may already have
-				// tightened the cutoff while status remains ET. OutputExecuted
-				// does not identify the accepted cumulative root used as proof;
-				// a sound source-aware verdict needs the separate output reform.
-				_ = r.setApplicationCorrupted(ctx, app.application, reasonFmt, args...)
-				if app.application.Status != ApplicationStatus_Corrupted {
-					return false // persistence failed; retry this event next tick
-				}
-			case app.application.Status == ApplicationStatus_InvalidOutputsRoot:
-				// A later accepted cumulative root can prove different bytes at
-				// an earlier output index. The event does not identify that root,
-				// so this mismatch cannot refute the accepted root of that earlier
-				// epoch. Per-epoch root comparisons retain their integrity checks.
-				r.Logger.Error("Output mismatch; preserving terminal application status",
-					"application", app.application.Name,
-					"address", app.application.IApplicationAddress,
-					"index", output.Index,
-					"status", app.application.Status,
-					"local_output", localOutput,
-					"chain_output", chainOutput)
-			case app.application.Status == ApplicationStatus_Diverged ||
-				app.application.Status == ApplicationStatus_Corrupted:
-				// The integrity failure is already durable. Do not retry an
-				// impossible status rewrite on every polling tick.
-			default:
-				r.Logger.Error("Output mismatch found for application with unknown status",
-					"application", app.application.Name,
-					"status", app.application.Status)
-				return false
-			}
+			// The event does not identify the accepted cumulative root used as
+			// proof. A later invalid declaration can authorize different bytes
+			// at an earlier index, even before local validation discovers it.
+			r.Logger.Warn("OutputExecuted bytes differ from local output; accepted-root provenance is unavailable",
+				"condition", "output_execution_mismatch", "application", app.application.Name,
+				"address", app.application.IApplicationAddress, "index", output.Index, "status", app.application.Status,
+				"local_output_size", len(output.RawData), "chain_output_size", len(event.Output),
+				"local_output_hash", crypto.Keccak256Hash(output.RawData), "chain_output_hash", crypto.Keccak256Hash(event.Output),
+				"event_block", event.Raw.BlockNumber, "event_transaction", event.Raw.TxHash)
 			continue
 		}
 

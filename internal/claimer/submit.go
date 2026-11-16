@@ -105,10 +105,11 @@ func (s *Service) shouldRecordMatchingClaimSubmitted(
 	if !ok || event.Submitter == (common.Address{}) || event.Submitter == submitter {
 		return true
 	}
-	s.Logger.Info("Quorum: observed matching ClaimSubmitted from another validator; submitting local vote",
+	s.Logger.Info("Quorum: observed matching ClaimSubmitted from another validator",
 		"app", app.IApplicationAddress,
 		"event_submitter", event.Submitter,
 		"our_submitter", submitter,
+		"epoch_index", epoch.Index, "invalid_outputs_root", epoch.HasInvalidOutputsRoot(),
 		"outputs_merkle_root", hashToHex(epoch.TxBufferDataBlock),
 		"last_block", epoch.LastBlock,
 	)
@@ -131,7 +132,7 @@ func (s *Service) processComputedClaim(
 	ctx context.Context,
 	work claimWork,
 	defaultBlockNumber *big.Int,
-) claimStepResult {
+) (out claimStepResult) {
 	app := work.app
 	currEpoch := work.epoch
 	if err := requireObservedStaging(currEpoch, defaultBlockNumber.Uint64()); err != nil {
@@ -141,6 +142,17 @@ func (s *Service) processComputedClaim(
 	// Stop if the consensus contract address changed on chain.
 	if err := s.checkConsensusForAddressChange(ctx, app, defaultBlockNumber); err != nil {
 		return claimDropped(err)
+	}
+
+	if currEpoch.HasInvalidOutputsRoot() {
+		var err error
+		work, err = s.prepareIORObservation(ctx, work, claimSubmitPage, defaultBlockNumber.Uint64())
+		if work.ior != nil {
+			defer func() { out = s.completeIORObservation(ctx, work, out) }()
+		}
+		if err != nil {
+			return s.fallbackIORObservation(ctx, work, defaultBlockNumber, err)
+		}
 	}
 
 	if result, done := s.reconcileComputedAcceptedEvent(ctx, work, defaultBlockNumber); done {
@@ -164,6 +176,11 @@ func (s *Service) processComputedClaim(
 		return s.recordSubmittedEvent(ctx, app, currEpoch, currEvent)
 	}
 
+	if work.ior != nil {
+		if result, done := s.projectIORObservation(ctx, work, defaultBlockNumber); done {
+			return result
+		}
+	}
 	if s.submissionEnabled || app.ForecloseBlock != 0 {
 		// Before sending a transaction, read the claim state from the chain.
 		// The claim identity is (app, last processed block number,
@@ -173,15 +190,16 @@ func (s *Service) processComputedClaim(
 		// This read also runs for foreclosed apps. A claim accepted before
 		// foreclosure must still be copied into the DB. Only the new submitClaim
 		// transaction is skipped for foreclosed apps.
-		if reconciled, err := s.reconcileBeforeSubmit(ctx, app, currEpoch, defaultBlockNumber); reconciled {
-			if err != nil {
+		if work.ior == nil {
+			if reconciled, err := s.reconcileBeforeSubmit(ctx, app, currEpoch, defaultBlockNumber); reconciled {
+				if err != nil {
+					return claimDropped(err)
+				}
+				return claimWorkCompleted(1)
+			} else if err != nil {
 				return claimDropped(err)
 			}
-			return claimWorkCompleted(1)
-		} else if err != nil {
-			return claimDropped(err)
 		}
-
 		// Foreclosed apps cannot submit new claims. The getClaim call above
 		// already showed that this claim is not STAGED or ACCEPTED, so it has
 		// no remaining on-chain path.
@@ -218,12 +236,15 @@ func (s *Service) reconcileComputedAcceptedEvent(
 	// CLAIM_COMPUTED when another validator's vote wins before ours is staged.
 	// Authority usually finds the mismatch earlier, during submission, but this
 	// path handles both consensus types.
-	acceptScanFrom := currEpoch.LastBlock + 1
+	if work.scanCovered() {
+		return claimNoProgress(), false
+	}
+	acceptScanFrom := work.scanFromBlock()
 	_, foreignAccepted, _, err := s.blockchain.findClaimAcceptedEventAndSucc(
 		ctx, app, currEpoch, acceptScanFrom, defaultBlockNumber.Uint64(),
 	)
 	if err != nil {
-		return claimDropped(fmt.Errorf(
+		return s.fallbackIORObservation(ctx, work, defaultBlockNumber, fmt.Errorf(
 			"scanning ClaimAccepted for computed epoch %d (%d): %w",
 			currEpoch.Index, currEpoch.VirtualIndex, err)), true
 	}
@@ -244,6 +265,8 @@ func (s *Service) reconcileComputedAcceptedEvent(
 			"reconciling COMPUTED→ACCEPTED for epoch %d (%d): %w",
 			currEpoch.Index, currEpoch.VirtualIndex, err)), true
 	}
+	s.reportAcceptedIOR(app, currEpoch, "claim_accepted_event", defaultBlockNumber.Uint64(),
+		"event_block", foreignAccepted.Raw.BlockNumber, "event_transaction", acceptedTxHash)
 	s.Logger.Info("ClaimAccepted observed for computed epoch (deep catch-up; reconciled)",
 		"app", app.IApplicationAddress,
 		"epoch_index", currEpoch.Index,
@@ -260,11 +283,14 @@ func (s *Service) findSubmittedEventsForComputedClaim(
 ) (*iconsensus.IConsensus, []*iconsensus.IConsensusClaimSubmitted, claimStepResult, bool) {
 	app := work.app
 	currEpoch := work.epoch
+	if work.scanCovered() {
+		return nil, nil, claimNoProgress(), false
+	}
 	ic, submittedEvents, err := s.blockchain.findClaimSubmittedEventAndSucc(
-		ctx, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
+		ctx, app, currEpoch, work.scanFromBlock(), defaultBlockNumber.Uint64(),
 	)
 	if err != nil {
-		return nil, nil, claimDropped(err), true
+		return nil, nil, s.fallbackIORObservation(ctx, work, defaultBlockNumber, err), true
 	}
 	return ic, submittedEvents, claimNoProgress(), false
 }
@@ -348,9 +374,17 @@ func (s *Service) reconcileBeforeSubmit(
 		return false, fmt.Errorf("pre-submit getClaim (app=%v, epoch=%d): %w",
 			app.IApplicationAddress, currEpoch.Index, err)
 	}
+	return s.reconcileObservedClaimStatus(ctx, app, currEpoch, claim, defaultBlockNumber)
+}
+
+func (s *Service) reconcileObservedClaimStatus(
+	ctx context.Context, app *model.Application, currEpoch *model.Epoch,
+	claim iconsensus.IConsensusClaim, defaultBlockNumber *big.Int,
+) (bool, error) {
 	switch claim.Status {
 	case claimStatusAccepted:
-		if err := s.updateEpochAcceptedFromClaimStatus(ctx, app, currEpoch, claim, "reconcileBeforeSubmit"); err != nil {
+		if err := s.updateEpochAcceptedFromClaimStatus(
+			ctx, app, currEpoch, claim, "reconcileBeforeSubmit", defaultBlockNumber.Uint64()); err != nil {
 			return false, fmt.Errorf("reconciling epoch %d (%d) to ACCEPTED: %w",
 				currEpoch.Index, currEpoch.VirtualIndex, err)
 		}
@@ -362,7 +396,8 @@ func (s *Service) reconcileBeforeSubmit(
 		)
 		return true, nil
 	case claimStatusStaged:
-		stagingBlock, err := s.updateEpochStagedFromClaimStatus(ctx, app, currEpoch, claim, "reconcileBeforeSubmit")
+		stagingBlock, err := s.updateEpochStagedFromClaimStatus(
+			ctx, app, currEpoch, claim, "reconcileBeforeSubmit", defaultBlockNumber.Uint64())
 		if err != nil {
 			return false, fmt.Errorf("reconciling epoch %d (%d) to STAGED: %w",
 				currEpoch.Index, currEpoch.VirtualIndex, err)

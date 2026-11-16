@@ -26,6 +26,8 @@ import (
 )
 
 type iclaimerBlockchain interface {
+	claimReference(ctx context.Context, number uint64) (txsender.BlockRef, error)
+	checkClaimReference(ctx context.Context, ref txsender.BlockRef) error
 	claimTransactionCanonical(ctx context.Context, hash common.Hash, block uint64) (bool, error)
 	findClaimSubmittedEventAndSucc(
 		ctx context.Context,

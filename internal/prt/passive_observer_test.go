@@ -48,10 +48,7 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 					epoch.Commitment, epoch.MachineHash, epoch.TxBufferDataBlock = nil, nil, nil
 				}
 				if status.IsExecutionTerminal() || status == model.ApplicationStatus_InvalidOutputsRoot {
-					problem := &model.ApplicationProblem{EpochIndex: 0, Kind: status}
-					if status.IsExecutionTerminal() {
-						problem.InputIndex = new(uint64(0))
-					}
+					problem := &model.ApplicationProblem{EpochIndex: 0, Kind: status, InputIndex: new(uint64(0))}
 					f.repo.On("GetEpochCompletionState", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).
 						Return(&repository.EpochCompletionState{Application: f.app, Epoch: epoch, Problem: problem}, nil).Maybe()
 				}

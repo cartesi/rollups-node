@@ -53,17 +53,17 @@ func TestTerminalInputDrainUsesExecutionCursorAfterEarlierIOR(t *testing.T) {
 			pending, err := r.HasUndrainedEpochsBeforeBlock(t.Context(), app.ID, 35)
 			require.NoError(t, err)
 			require.False(t, pending, "the terminal machine cannot execute its later same-block input")
-			require.NoError(t, r.StoreInvalidOutputsRoot(t.Context(), app.ID, 1, "earlier root mismatch"))
+			storeTestIORClaim(t, r, app, 1)
 			state, err := r.GetEpochCompletionState(t.Context(), app.Name, 0)
 			require.NoError(t, err)
-			require.Equal(t, uint64(1), state.Problem.EpochIndex)
+			require.Equal(t, uint64(2), state.Problem.EpochIndex)
 			require.Equal(t, uint64(3), state.Application.ProcessedInputs)
 			pending, err = r.HasUndrainedEpochsBeforeBlock(t.Context(), app.ID, 35)
 			require.NoError(t, err)
 			require.False(t, pending)
 			// A cut is not a substitute for execution progress. Detect an
 			// inconsistent NONE below the actual cursor, even outside the
-			// now-smaller publication prefix.
+			// earlier completed prefix.
 			_, err = r.db.Exec(t.Context(), `UPDATE application SET processed_inputs=4 WHERE id=$1`, app.ID)
 			require.NoError(t, err)
 			pending, err = r.HasUndrainedEpochsBeforeBlock(t.Context(), app.ID, 35)
@@ -91,15 +91,17 @@ func TestTerminalForeclosureDrainsSuffixPreservingValidationAndAcceptance(t *tes
 				require.NoError(t, err)
 				require.Equal(t, model.EpochStatus_InputsProcessed, epoch.Status, "earlier validation remains required")
 			}
-			require.NoError(t, r.StoreInvalidOutputsRoot(t.Context(), app.ID, 1, "earlier root mismatch"))
+			storeTestIORClaim(t, r, app, 1)
 			count, err = r.ForecloseUnacceptedEpochsAtOrAfterBlock(t.Context(), app.ID, 35)
 			require.NoError(t, err)
-			require.Equal(t, int64(1), count, "the newly invalid earlier epoch can drain")
+			require.Zero(t, count, "a completed earlier IOR does not move the real terminal boundary")
 			epoch, err := r.GetEpoch(t.Context(), app.Name, 0)
 			require.NoError(t, err)
+			epoch.CalculatedOutputsRoot = epoch.TxBufferDataBlock
 			require.NoError(t, r.StoreClaimAndProofs(t.Context(), epoch, nil))
 			accepted := repotest.UniqueHash()
 			require.NoError(t, r.UpdateEpochWithAcceptedClaim(t.Context(), app.ID, 0, &accepted))
+			require.NoError(t, r.UpdateEpochWithAcceptedClaim(t.Context(), app.ID, 1, &accepted))
 			count, err = r.ForecloseUnacceptedEpochsAtOrAfterBlock(t.Context(), app.ID, 35)
 			require.NoError(t, err)
 			require.Zero(t, count)
@@ -142,7 +144,7 @@ func TestTerminalForeclosureDrainRetainsGlobalStopGuards(t *testing.T) {
 func TestTerminalIndividualDrainPreservesPrefixAwaitingValidator(t *testing.T) {
 	r, app := terminalDrainFixture(t, model.Consensus_PRT)
 	require.ErrorIs(t, r.UpdateEpochWithForeclosedClaim(t.Context(), app.ID, 0), repository.ErrNoUpdate)
-	require.NoError(t, r.StoreInvalidOutputsRoot(t.Context(), app.ID, 1, "earlier root mismatch"))
+	storeTestIORClaim(t, r, app, 1)
 	require.NoError(t, r.UpdateEpochWithForeclosedClaim(t.Context(), app.ID, 1))
 	require.NoError(t, r.UpdateEpochWithForeclosedClaim(t.Context(), app.ID, 2))
 	epoch, err := r.GetEpoch(t.Context(), app.Name, 0)

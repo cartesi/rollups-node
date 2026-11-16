@@ -191,7 +191,7 @@ func TestDeploymentVerdictGatePreservesTrueResultPolicyAndConsensusBounds(t *tes
 				expectStoredProtection(t, f.repo.prtRepositoryMock, f.app)
 			}
 			setTestDeployment(f.d.Service, f.repo.prtRepositoryMock, f.app, 1, state, saved)
-			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
+			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view, resultTestObservation(f.epoch, view))
 			if state == deploymentTable {
 				require.Error(t, err)
 				f.repo.AssertExpectations(t)

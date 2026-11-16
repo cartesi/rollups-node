@@ -100,10 +100,6 @@ func listEnabledApplications(ctx context.Context, er EvmReaderRepository) ([]*Ap
 	return er.ListApplications(ctx, repository.ApplicationFilter{Enabled: new(true)}, repository.Pagination{}, false)
 }
 
-func (r *Service) setApplicationDiverged(ctx context.Context, app *Application, reasonFmt string, args ...any) error {
-	return appstatus.SetDivergedf(ctx, r.Logger, r.repository, app, reasonFmt, args...)
-}
-
 // The status helper logs its reason and any failed status write. Outer scan
 // loops can consume this marker without repeating those logs or continuing work.
 var errApplicationStatusReported = errors.New("application status already reported")

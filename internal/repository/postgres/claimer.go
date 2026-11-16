@@ -549,7 +549,8 @@ func claimPublicationCondition() postgres.BoolExpression {
 		enum.ApplicationStatus.UnexpectedYield, enum.ApplicationStatus.InvalidOutputsRoot).
 		AND(table.Application.ForecloseBlock.EQ(uint64Expr(0))).
 		AND(table.Application.ProblemEpochIndex.IS_NULL().AND(table.Application.Status.EQ(enum.ApplicationStatus.Ok)).
-			OR(table.Epoch.Index.LT(table.Application.ProblemEpochIndex)))
+			OR(table.Epoch.Index.LT(table.Application.ProblemEpochIndex))).
+		AND(table.Epoch.CalculatedOutputsRoot.EQ(table.Epoch.TxBufferDataBlock))
 }
 
 func claimWindowRows(
@@ -565,7 +566,7 @@ func claimWindowRows(
 			WHERE(table.Application.ID.EQ(table.Epoch.ApplicationID).AND(claimPublicationCondition()))))
 	}
 	stmt := table.Epoch.SELECT(table.Epoch.ApplicationID, table.Epoch.Index, table.Epoch.FirstBlock, table.Epoch.LastBlock,
-		table.Epoch.MachineHash, table.Epoch.TxBufferDataBlock, table.Epoch.TxBufferProof,
+		table.Epoch.MachineHash, table.Epoch.TxBufferDataBlock, table.Epoch.CalculatedOutputsRoot, table.Epoch.TxBufferProof,
 		table.Epoch.IflagsYDataBlock, table.Epoch.IflagsYProof, table.Epoch.HtifTohostDataBlock,
 		table.Epoch.HtifTohostProof, table.Epoch.ClaimTransactionHash, table.Epoch.Status,
 		table.Epoch.StagedAtBlock, table.Epoch.VirtualIndex, table.Epoch.CreatedAt, table.Epoch.UpdatedAt).
@@ -580,7 +581,7 @@ func claimWindowRows(
 	for rows.Next() {
 		epoch := new(model.Epoch)
 		if err := rows.Scan(&epoch.ApplicationID, &epoch.Index, &epoch.FirstBlock, &epoch.LastBlock,
-			&epoch.MachineHash, &epoch.TxBufferDataBlock, &epoch.TxBufferProof,
+			&epoch.MachineHash, &epoch.TxBufferDataBlock, &epoch.CalculatedOutputsRoot, &epoch.TxBufferProof,
 			&epoch.IflagsYDataBlock, &epoch.IflagsYProof, &epoch.HtifTohostDataBlock, &epoch.HtifTohostProof,
 			&epoch.ClaimTransactionHash, &epoch.Status, &epoch.StagedAtBlock, &epoch.VirtualIndex,
 			&epoch.CreatedAt, &epoch.UpdatedAt); err != nil {

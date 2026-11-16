@@ -101,6 +101,8 @@ func TestTournamentFinalResultObservationChecksBothComponents(t *testing.T) {
 	for _, component := range []string{matchingFinalResult, finalMachineResultComponent, finalOutputsResultComponent} {
 		t.Run(component, func(t *testing.T) {
 			f := newDeliveryFixture(t)
+			f.epoch.CalculatedOutputsRoot = new(common.HexToHash("0xdecaf"))
+			require.True(t, f.epoch.HasInvalidOutputsRoot())
 			view := resultTestSnapshot(f.epoch, true)
 			view.stage.WinnerCommitment = common.HexToHash("0x600")
 			switch component {
@@ -125,7 +127,7 @@ func TestTournamentFinalResultObservationChecksBothComponents(t *testing.T) {
 			if component != matchingFinalResult {
 				expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
 			}
-			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
+			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view, resultTestObservation(f.epoch, view))
 			if component == matchingFinalResult {
 				require.NoError(t, err)
 				require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
@@ -142,6 +144,8 @@ func TestTournamentFinalResultObservationChecksBothComponents(t *testing.T) {
 
 func TestTournamentFinalResultAcceptsForeignCommitment(t *testing.T) {
 	f := newAcceptanceReceiptFixture(t)
+	f.epoch.CalculatedOutputsRoot = new(common.HexToHash("0xdecaf"))
+	require.True(t, f.epoch.HasInvalidOutputsRoot())
 	foreign := common.HexToHash("0x600")
 	f.root.Snapshot.WinnerCommitment = &foreign
 	f.expectReceipt()

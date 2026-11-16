@@ -460,20 +460,21 @@ func resultTestEpoch(status model.EpochStatus) *model.Epoch {
 	machineHash := common.HexToHash("0x400")
 	outputsRoot := common.HexToHash("0x500")
 	epoch := &model.Epoch{
-		ApplicationID:        7,
-		Index:                3,
-		InputIndexLowerBound: 4,
-		InputIndexUpperBound: 9,
-		Status:               status,
-		TournamentAddress:    &tournament,
-		Commitment:           &commitment,
-		MachineHash:          &machineHash,
-		TxBufferDataBlock:    &outputsRoot,
-		IflagsYDataBlock:     new(common.Hash),
-		HtifTohostDataBlock:  new(common.Hash),
-		TxBufferProof:        make([]common.Hash, model.StateProofSiblingCount),
-		IflagsYProof:         make([]common.Hash, model.StateProofSiblingCount),
-		HtifTohostProof:      make([]common.Hash, model.StateProofSiblingCount),
+		ApplicationID:         7,
+		Index:                 3,
+		InputIndexLowerBound:  4,
+		InputIndexUpperBound:  9,
+		Status:                status,
+		TournamentAddress:     &tournament,
+		Commitment:            &commitment,
+		MachineHash:           &machineHash,
+		TxBufferDataBlock:     &outputsRoot,
+		CalculatedOutputsRoot: &outputsRoot,
+		IflagsYDataBlock:      new(common.Hash),
+		HtifTohostDataBlock:   new(common.Hash),
+		TxBufferProof:         make([]common.Hash, model.StateProofSiblingCount),
+		IflagsYProof:          make([]common.Hash, model.StateProofSiblingCount),
+		HtifTohostProof:       make([]common.Hash, model.StateProofSiblingCount),
 	}
 	if status == model.EpochStatus_ClaimStaged {
 		epoch.StagedAtBlock = new(uint64)
@@ -518,6 +519,7 @@ func applyPRTStateProof(epoch *model.Epoch, proof model.StateProof) {
 	*epoch.MachineHash = proof.MachineHash
 	epoch.TxBufferDataBlock = new(common.Hash)
 	*epoch.TxBufferDataBlock = proof.TxBufferDataBlock
+	epoch.CalculatedOutputsRoot = epoch.TxBufferDataBlock
 	epoch.TxBufferProof = stateProofHashes(proof.TxBufferProof)
 	epoch.IflagsYDataBlock = new(common.Hash)
 	*epoch.IflagsYDataBlock = proof.IflagsYDataBlock
@@ -570,4 +572,8 @@ func TestTournamentResultStageProofPreservesContractValidation(t *testing.T) {
 			f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 		})
 	}
+}
+
+func resultTestObservation(epoch *model.Epoch, snapshot daveConsensusSnapshot) txsender.BlockRef {
+	return observerFacts(max(epoch.LastBlock, snapshot.sealed.StagingBlockNumber))
 }

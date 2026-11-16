@@ -33,14 +33,12 @@ func TestValidatorCompletesEpochBeforeTerminalBoundary(t *testing.T) {
 				// be empty and uses its template as the pre-computation state.
 				app.TemplateHash = *epoch.MachineHash
 				repo.problem = &model.ApplicationProblem{EpochIndex: 1, Kind: status}
-				if status.IsExecutionTerminal() {
-					repo.problem.InputIndex = new(uint64(1))
-				}
+				repo.problem.InputIndex = new(uint64(1))
 				epochs := []*model.Epoch{epoch,
 					{ApplicationID: app.ID, Index: 1, VirtualIndex: 1, Status: model.EpochStatus_InputsProcessed},
 					{ApplicationID: app.ID, Index: 2, VirtualIndex: 2, Status: model.EpochStatus_InputsProcessed},
 				}
-				repo.On("ListApplications", mock.Anything, validationApplicationsFilter(), repository.Pagination{}, false).
+				repo.On("ListApplications", mock.Anything, enabledApplicationsFilter(), repository.Pagination{}, false).
 					Return([]*model.Application{app}, uint64(1), nil).Once()
 				repo.On("ListEpochs", mock.Anything, app.IApplicationAddress.String(), mock.Anything, repository.Pagination{}, false).
 					Return(epochs, uint64(len(epochs)), nil).Once()
@@ -84,14 +82,15 @@ func TestValidatorReloadsPrefixBeforeComputation(t *testing.T) {
 	}{
 		{name: "runtime stopped after discovery", status: model.ApplicationStatus_MachineHalted, wantClaim: true,
 			problem: &model.ApplicationProblem{EpochIndex: 2, Kind: model.ApplicationStatus_MachineHalted, InputIndex: new(uint64(2))}},
-		{name: "root finding after discovery", status: model.ApplicationStatus_InvalidOutputsRoot, wantClaim: true,
-			problem: &model.ApplicationProblem{EpochIndex: 2, Kind: model.ApplicationStatus_InvalidOutputsRoot}},
+		{name: "legacy input IOR after discovery", status: model.ApplicationStatus_InvalidOutputsRoot, wantClaim: true,
+			problem: &model.ApplicationProblem{EpochIndex: 2,
+				Kind: model.ApplicationStatus_InvalidOutputsRoot, InputIndex: new(uint64(2))}},
 		{name: "failed after discovery", status: model.ApplicationStatus_Failed},
 		{name: "diverged after discovery", status: model.ApplicationStatus_Diverged},
 		{name: "corrupted after discovery", status: model.ApplicationStatus_Corrupted},
 		{name: "disabled after discovery", status: model.ApplicationStatus_OK, disabled: true},
-		{name: "cut tightened to this epoch", status: model.ApplicationStatus_MachineHalted,
-			problem: &model.ApplicationProblem{EpochIndex: 0, Kind: model.ApplicationStatus_InvalidOutputsRoot}},
+		{name: "terminal boundary at this epoch", status: model.ApplicationStatus_MachineHalted,
+			problem: &model.ApplicationProblem{EpochIndex: 0, Kind: model.ApplicationStatus_MachineHalted, InputIndex: new(uint64(0))}},
 		{name: "terminal without source", status: model.ApplicationStatus_MachineHalted, wantErr: "without an epoch stop boundary"},
 		{name: "epoch missing", status: model.ApplicationStatus_OK, missingEpoch: true, wantErr: "source is unavailable"},
 		{name: "read failed", readErr: errors.New("snapshot unavailable"), wantErr: "snapshot unavailable"},
@@ -138,23 +137,20 @@ func TestValidatorReloadsPrefixBeforeComputation(t *testing.T) {
 	}
 }
 
-func TestValidatorEarlierRootFindingTightensRuntimeStop(t *testing.T) {
+func TestValidatorEarlierFinalIORPreservesRuntimeStop(t *testing.T) {
 	repo, validator, app, epoch := rootValidationFixture()
 	app.Status = model.ApplicationStatus_MachineHalted
-	repo.problem = &model.ApplicationProblem{EpochIndex: 2, Kind: app.Status, InputIndex: new(uint64(2))}
-	// The epoch and last input agree with each other, but their declared word
-	// fails the independently computed outputs root rule.
+	problem := &model.ApplicationProblem{EpochIndex: 2, Kind: app.Status, InputIndex: new(uint64(2))}
+	repo.problem = problem
 	epoch.TxBufferDataBlock = &app.TemplateHash
 	input := &model.Input{MachineHash: epoch.MachineHash, TxBufferDataBlock: epoch.TxBufferDataBlock}
 	expectRootValidationReads(repo, app, epoch, input, nil)
-	repo.On("StoreInvalidOutputsRoot", mock.Anything, app.ID, epoch.Index, mock.Anything).
-		Return(nil).Once()
-
-	err := validator.validateApplication(t.Context(), app)
-
-	require.ErrorContains(t, err, "declared outputs root does not match")
+	repo.On("StoreClaimAndProofs", mock.Anything, epoch, mock.Anything).Return(nil).Once()
+	require.NoError(t, validator.validateApplication(t.Context(), app))
 	require.Equal(t, model.ApplicationStatus_MachineHalted, app.Status)
-	repo.AssertNotCalled(t, "StoreClaimAndProofs", mock.Anything, mock.Anything, mock.Anything)
+	require.Equal(t, problem, repo.problem)
+	require.Equal(t, model.EpochStatus_ClaimComputed, epoch.Status)
+	require.True(t, epoch.HasInvalidOutputsRoot())
 	repo.AssertExpectations(t)
 }
 
@@ -170,18 +166,7 @@ func TestValidatorCompletesSeparateApplicationPrefixes(t *testing.T) {
 	secondEpoch := *firstEpoch
 	secondEpoch.ApplicationID = second.ID
 	repo.problem = &model.ApplicationProblem{EpochIndex: 1, Kind: first.Status, InputIndex: new(uint64(1))}
-	repo.On("ListApplications", mock.Anything,
-		mock.MatchedBy(func(filter repository.ApplicationFilter) bool {
-			if filter.Enabled == nil || !*filter.Enabled {
-				return false
-			}
-			for _, status := range filter.Statuses {
-				if status == model.ApplicationStatus_MachineHalted {
-					return true
-				}
-			}
-			return false
-		}), repository.Pagination{}, false).
+	repo.On("ListApplications", mock.Anything, enabledApplicationsFilter(), repository.Pagination{}, false).
 		Return([]*model.Application{first, &second}, uint64(2), nil).Once()
 	for _, pair := range []struct {
 		app   *model.Application

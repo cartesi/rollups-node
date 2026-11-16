@@ -37,6 +37,8 @@ type Service struct {
 	repository    iclaimerRepository
 	blockchain    iclaimerBlockchain
 	claimObserver *independentClaimObserver
+	iorStages     map[iorStageKey]uint64         // Owned by the epoch observer.
+	iorScans      map[iorScanKey]iorScanProgress // Successful prefixes owned by the epoch observer.
 
 	// publisher owns all volatile transaction state. PostgreSQL is the only
 	// handoff to the observer's independent domain traversal.

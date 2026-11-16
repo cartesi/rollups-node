@@ -315,10 +315,10 @@ func (a *Application) IsDaveConsensus() bool {
 //
 //	OK ⇄ FAILED                                 (FAILED is recoverable)
 //	OK, FAILED → DIVERGED, CORRUPTED              (integrity terminal)
-//	OK         → INVALID_OUTPUTS_ROOT            (validation terminal)
+//	OK         → INVALID_OUTPUTS_ROOT            (legacy input terminal)
 //	OK         → GUEST_EXCEPTION, MACHINE_HALTED  (execution terminal)
 //	             MCYCLE_OVERFLOW, UNEXPECTED_YIELD
-//	execution/validation terminal → DIVERGED, CORRUPTED (integrity escalation)
+//	execution/legacy input terminal → DIVERGED, CORRUPTED (integrity escalation)
 //
 // FAILED is recoverable and suspends execution, but enabled applications in
 // every status continue L1 observation. Consequently, later evidence may
@@ -332,10 +332,10 @@ func (a *Application) IsDaveConsensus() bool {
 // establishes an integrity failure. The input retains its original
 // completion status and terminal state proof. Foreclosure is orthogonal and
 // may coexist with any application status.
-// INVALID_OUTPUTS_ROOT records a failed outputs-root rule. It can be detected
-// during an advance or later by the validator, including for an empty epoch.
-// It does not establish the fault's cause. It may escalate to DIVERGED or
-// CORRUPTED; the typed stop boundary retains the original finding.
+// INVALID_OUTPUTS_ROOT records the legacy accepted-root length failure at an input.
+// It may escalate to DIVERGED or CORRUPTED; the typed stop boundary retains the
+// original finding. Final epoch root mismatches are stored on the epoch and do
+// not set application health.
 type ApplicationStatus string
 
 //nolint:revive // Public enum names preserve the generated/API naming convention.
@@ -379,11 +379,10 @@ func (e ApplicationStatus) IsTerminal() bool {
 	return false
 }
 
-// IsExecutionTerminal identifies outcomes that must be stored atomically with
-// an input result. These four states may escalate to DIVERGED/CORRUPTED. The validation
-// terminal INVALID_OUTPUTS_ROOT is separate: a validator can also set it after
-// input storage. A genuine integrity finding can replace its status and reason
-// while retaining the typed epoch stop boundary.
+// IsExecutionTerminal identifies the four execution outcomes stored atomically
+// with an input result. Legacy input INVALID_OUTPUTS_ROOT has a separate stop
+// rule. A genuine integrity finding can replace either status and reason while
+// retaining the typed epoch stop boundary.
 func (e ApplicationStatus) IsExecutionTerminal() bool {
 	switch e {
 	case ApplicationStatus_GuestException,
@@ -737,28 +736,42 @@ func ParseHexDuration(s string) (time.Duration, error) {
 }
 
 type Epoch struct {
-	ApplicationID        int64           `sql:"primary_key" json:"-"`
-	Index                uint64          `sql:"primary_key" json:"index"`
-	FirstBlock           uint64          `json:"first_block"`
-	LastBlock            uint64          `json:"last_block"`
-	InputIndexLowerBound uint64          `json:"input_index_lower_bound"`
-	InputIndexUpperBound uint64          `json:"input_index_upper_bound"`
-	MachineHash          *common.Hash    `json:"machine_hash"`
-	TxBufferDataBlock    *common.Hash    `json:"tx_buffer_data_block"`
-	TxBufferProof        []common.Hash   `json:"tx_buffer_proof,omitempty"`
-	IflagsYDataBlock     *common.Hash    `json:"iflags_y_data_block"`
-	IflagsYProof         []common.Hash   `json:"iflags_y_proof,omitempty"`
-	HtifTohostDataBlock  *common.Hash    `json:"htif_tohost_data_block"`
-	HtifTohostProof      []common.Hash   `json:"htif_tohost_proof,omitempty"`
-	ClaimTransactionHash *common.Hash    `json:"claim_transaction_hash"`
-	Commitment           *common.Hash    `json:"commitment"`
-	CommitmentProof      []common.Hash   `json:"commitment_proof,omitempty"`
-	TournamentAddress    *common.Address `json:"tournament_address"`
-	Status               EpochStatus     `json:"status"`
-	StagedAtBlock        *uint64         `json:"staged_at_block"`
-	VirtualIndex         uint64          `json:"virtual_index"`
-	CreatedAt            time.Time       `json:"created_at"`
-	UpdatedAt            time.Time       `json:"updated_at"`
+	ApplicationID         int64           `sql:"primary_key" json:"-"`
+	Index                 uint64          `sql:"primary_key" json:"index"`
+	FirstBlock            uint64          `json:"first_block"`
+	LastBlock             uint64          `json:"last_block"`
+	InputIndexLowerBound  uint64          `json:"input_index_lower_bound"`
+	InputIndexUpperBound  uint64          `json:"input_index_upper_bound"`
+	MachineHash           *common.Hash    `json:"machine_hash"`
+	TxBufferDataBlock     *common.Hash    `json:"tx_buffer_data_block"`
+	CalculatedOutputsRoot *common.Hash    `json:"calculated_outputs_root"`
+	TxBufferProof         []common.Hash   `json:"tx_buffer_proof,omitempty"`
+	IflagsYDataBlock      *common.Hash    `json:"iflags_y_data_block"`
+	IflagsYProof          []common.Hash   `json:"iflags_y_proof,omitempty"`
+	HtifTohostDataBlock   *common.Hash    `json:"htif_tohost_data_block"`
+	HtifTohostProof       []common.Hash   `json:"htif_tohost_proof,omitempty"`
+	ClaimTransactionHash  *common.Hash    `json:"claim_transaction_hash"`
+	Commitment            *common.Hash    `json:"commitment"`
+	CommitmentProof       []common.Hash   `json:"commitment_proof,omitempty"`
+	TournamentAddress     *common.Address `json:"tournament_address"`
+	Status                EpochStatus     `json:"status"`
+	StagedAtBlock         *uint64         `json:"staged_at_block"`
+	VirtualIndex          uint64          `json:"virtual_index"`
+	CreatedAt             time.Time       `json:"created_at"`
+	UpdatedAt             time.Time       `json:"updated_at"`
+}
+
+// HasMatchingOutputsRoot requires a calculated root and the same declared root.
+func (e *Epoch) HasMatchingOutputsRoot() bool {
+	return e.CalculatedOutputsRoot != nil && e.TxBufferDataBlock != nil &&
+		*e.CalculatedOutputsRoot == *e.TxBufferDataBlock
+}
+
+// HasInvalidOutputsRoot identifies a declared root that differs from local outputs.
+// Missing local computation is not evidence of an invalid declaration.
+func (e *Epoch) HasInvalidOutputsRoot() bool {
+	return e.CalculatedOutputsRoot != nil && e.TxBufferDataBlock != nil &&
+		*e.CalculatedOutputsRoot != *e.TxBufferDataBlock
 }
 
 func (e *Epoch) MarshalJSON() ([]byte, error) {

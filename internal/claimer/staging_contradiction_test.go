@@ -151,7 +151,8 @@ func TestStagingContradictionRecoveryReason(t *testing.T) {
 			}
 			repo := s.repository.(*claimerRepositoryMock)
 			repo.On("UpdateApplicationStatus", mock.Anything, app.ID, expected, mock.Anything).Return(nil).Once()
-			_, done := s.handlePreAcceptClaimStatus(t.Context(), app, epoch, makeClaimStatus(claimStatusUnstaged, epoch, 0), 50)
+			_, done := s.handlePreAcceptClaimStatus(t.Context(), app, epoch,
+				makeClaimStatus(claimStatusUnstaged, epoch, 0), 50)
 			require.True(t, done)
 			require.Equal(t, expected, app.Status)
 			require.Contains(t, *app.Reason, "UNSTAGED")

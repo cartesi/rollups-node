@@ -2283,6 +2283,17 @@
 							}
 						]
 					},
+					"calculated_outputs_root": {
+						"description": "The locally calculated cumulative outputs root. Null until computation completes. Used to gate local publication.",
+						"oneOf": [
+							{
+								"$ref": "#/components/schemas/Hash"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
 					"tx_buffer_proof": {
 						"description": "Merkle siblings proving the TX-buffer data block against machine_hash.",
 						"type": [

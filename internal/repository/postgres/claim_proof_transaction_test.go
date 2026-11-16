@@ -22,6 +22,7 @@ func TestClaimProofWriterIsNotInvokedForComputedEpoch(t *testing.T) {
 	repo := newEpochPublicationRepository(t)
 	app, epoch := seedEpochPublication(t, repo)
 	require.NoError(t, repo.UpdateEpochInputsProcessed(t.Context(), app.Name, epoch.Index, repotest.DummyStateProof()))
+	setMatchingCalculatedRoot(t, repo, epoch)
 	epoch.Commitment = new(repotest.UniqueHash())
 	epoch.CommitmentProof = make([]common.Hash, model.Log2EpochComputationHashLeafCount)
 	require.NoError(t, repo.StoreClaimAndProofs(t.Context(), epoch, nil))
@@ -40,6 +41,7 @@ func TestClaimProofWriterBetweenBatchesDoesNotLockApplication(t *testing.T) {
 	repo := newEpochPublicationRepository(t)
 	app, epoch := seedEpochPublication(t, repo)
 	require.NoError(t, repo.UpdateEpochInputsProcessed(ctx, app.Name, epoch.Index, repotest.DummyStateProof()))
+	setMatchingCalculatedRoot(t, repo, epoch)
 	epoch.Commitment = new(repotest.UniqueHash())
 	epoch.CommitmentProof = make([]common.Hash, model.Log2EpochComputationHashLeafCount)
 	output, err := repo.GetOutput(ctx, app.Name, 0)
@@ -125,6 +127,7 @@ func TestClaimProofWriterUpdatesOnlyItsApplication(t *testing.T) {
 	other, _ := seedEpochPublication(t, r, []byte("other application's output"))
 	require.Equal(t, app.ID+1, other.ID)
 	require.NoError(t, r.UpdateEpochInputsProcessed(t.Context(), app.Name, epoch.Index, repotest.DummyStateProof()))
+	setMatchingCalculatedRoot(t, r, epoch)
 	epoch.Commitment = new(repotest.UniqueHash())
 	epoch.CommitmentProof = make([]common.Hash, model.Log2EpochComputationHashLeafCount)
 	proof := repository.OutputProof{Index: 0, Hash: repotest.UniqueHash(), Siblings: make([]common.Hash, 63)}

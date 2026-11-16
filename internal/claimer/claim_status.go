@@ -23,6 +23,7 @@ func (s *Service) updateEpochAcceptedFromClaimStatus(
 	epoch *model.Epoch,
 	claim iconsensus.IConsensusClaim,
 	site string,
+	observedBlock uint64,
 ) error {
 	if err := s.verifyClaimOutputsMatch(ctx, app, epoch, claim, site); err != nil {
 		return err
@@ -34,6 +35,7 @@ func (s *Service) updateEpochAcceptedFromClaimStatus(
 		ctx, epoch.ApplicationID, epoch.Index, nil); err != nil {
 		return err
 	}
+	s.reportAcceptedIOR(app, epoch, "claim_status", observedBlock)
 	return nil
 }
 
@@ -43,18 +45,23 @@ func (s *Service) updateEpochStagedFromClaimStatus(
 	epoch *model.Epoch,
 	claim iconsensus.IConsensusClaim,
 	site string,
+	observedBlock uint64,
 ) (uint64, error) {
 	if err := s.verifyClaimOutputsMatch(ctx, app, epoch, claim, site); err != nil {
 		return 0, err
 	}
-	if claim.StagingBlockNumber == nil {
-		return 0, fmt.Errorf("claim status STAGED for epoch %d (%d) has nil staging block",
-			epoch.Index, epoch.VirtualIndex)
+	if claim.StagingBlockNumber == nil || !claim.StagingBlockNumber.IsUint64() ||
+		claim.StagingBlockNumber.Uint64() > observedBlock {
+		return 0, fmt.Errorf("claim status STAGED for epoch %d (%d) has invalid or future staging block", epoch.Index, epoch.VirtualIndex)
 	}
 	stagingBlock := claim.StagingBlockNumber.Uint64()
-	if err := s.repository.UpdateEpochReconciledStaged(
-		ctx, epoch.ApplicationID, epoch.Index, stagingBlock); err != nil {
+	update := s.repository.UpdateEpochReconciledStaged
+	if epoch.Status == model.EpochStatus_ClaimSubmitted {
+		update = s.repository.UpdateEpochToStaged
+	}
+	if err := update(ctx, epoch.ApplicationID, epoch.Index, stagingBlock); err != nil {
 		return 0, err
 	}
+	s.reportStagedIOR(app, epoch, stagingBlock, "claim_status", observedBlock)
 	return stagingBlock, nil
 }

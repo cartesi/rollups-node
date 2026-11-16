@@ -53,7 +53,11 @@ func TestQuorumStagingPreservesLocalVoteIdentityThroughBothObservationPaths(t *t
 							Return(&iconsensus.IConsensus{}, events, nil).Once()
 					}
 				}
-				chain.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, epoch.LastBlock+1, uint64(60)).
+				stageFrom, stageTo := staged.Raw.BlockNumber, staged.Raw.BlockNumber
+				if path == submittedPath {
+					stageFrom, stageTo = epoch.LastBlock+1, 60
+				}
+				chain.On("findClaimStagedEventAndSucc", mock.Anything, app, epoch, stageFrom, stageTo).
 					Return(&iconsensus.IConsensus{}, staged, (*iconsensus.IConsensusClaimStaged)(nil), nil).Once()
 				if path == submittedPath {
 					chain.On("getConsensusAddress", mock.Anything, app, big.NewInt(60)).Return(app.IConsensusAddress, nil).Once()
@@ -66,7 +70,8 @@ func TestQuorumStagingPreservesLocalVoteIdentityThroughBothObservationPaths(t *t
 					require.Equal(t, 1, result.progress, "a peer majority stages even when our orphaned vote has no replacement")
 				} else {
 					repo.On("RefreshClaimObservation", mock.Anything, epoch, want, new(uint64(46))).Return(nil).Once()
-					require.NoError(t, s.refreshStagedClaim(t.Context(), app, epoch, makeClaimStatus(claimStatusStaged, epoch, 46), 60))
+					require.NoError(t, s.refreshStagedClaim(t.Context(), app, epoch,
+						makeClaimStatus(claimStatusStaged, epoch, 46), 60))
 					require.EqualValues(t, 46, *epoch.StagedAtBlock)
 				}
 				require.Equal(t, want, epoch.ClaimTransactionHash)

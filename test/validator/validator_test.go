@@ -242,6 +242,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsPreviousClaim() {
 		s.Require().Nil(err)
 
 		firstEpoch.TxBufferDataBlock = &firstEpochClaim
+		firstEpoch.CalculatedOutputsRoot = &firstEpochClaim
 		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, nil)
 		s.Require().Nil(err)
 
@@ -428,6 +429,7 @@ func (s *ValidatorRepositoryIntegrationSuite) TestItReturnsANewClaimAndProofs() 
 
 		// update epoch with its claim and insert it in the db
 		firstEpoch.TxBufferDataBlock = &firstEpochClaim
+		firstEpoch.CalculatedOutputsRoot = &firstEpochClaim
 		firstOutput.OutputHashesSiblings = firstEpochProofs
 		err = s.repository.StoreClaimAndProofs(s.ctx, &firstEpoch, repotest.WriteProofs(&firstOutput))
 		s.Require().Nil(err)

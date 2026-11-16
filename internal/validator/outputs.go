@@ -20,7 +20,7 @@ const outputsChunkHeight = 11
 
 // computeMerkleTreeAndProofs reads the epoch's outputs once and returns the
 // outputs root. The returned writer reads them again and stores their proofs.
-// An epoch without outputs keeps the previous epoch's root and needs no writer.
+// An epoch without outputs keeps the previous calculated root and needs no writer.
 func (s *Service) computeMerkleTreeAndProofs(
 	ctx context.Context, app *model.Application, epoch *model.Epoch,
 ) (root *common.Hash, write repository.ClaimProofWriteFunc, err error) {
@@ -55,12 +55,12 @@ func (s *Service) computeMerkleTreeAndProofs(
 		if epoch.VirtualIndex == 0 {
 			return &s.pristineRootHash, nil, nil
 		}
-		if previousEpoch.TxBufferDataBlock == nil {
-			return nil, nil, s.setApplicationCorrupted(ctx, app,
-				"invalid application state for epoch %v (%v) of application %v. Previous epoch has no claim.",
-				epoch.Index, epoch.VirtualIndex, appAddress)
+		if previousEpoch.CalculatedOutputsRoot == nil {
+			return nil, nil, fmt.Errorf("cannot calculate outputs root for epoch %d (%d) of application %s: "+
+				"previous epoch %d has no calculated outputs root (status %s)",
+				epoch.Index, epoch.VirtualIndex, appAddress, previousEpoch.Index, previousEpoch.Status)
 		}
-		return previousEpoch.TxBufferDataBlock, nil, nil
+		return previousEpoch.CalculatedOutputsRoot, nil, nil
 	}
 	if span.Last < span.First || span.Last-span.First != span.Count-1 {
 		return nil, nil, s.setApplicationCorrupted(ctx, app,

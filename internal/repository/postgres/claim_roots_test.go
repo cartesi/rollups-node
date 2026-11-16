@@ -87,7 +87,8 @@ func TestClaimValidationRollbackAndPrefix(t *testing.T) {
 	require.NoError(t, r.UpdateEpochInputsProcessed(t.Context(), app.Name, epoch.Index, proof))
 	tx, err := r.db.Begin(t.Context())
 	require.NoError(t, err)
-	_, err = tx.Exec(t.Context(), `UPDATE epoch SET status='CLAIM_COMPUTED' WHERE application_id=$1 AND index=$2`, app.ID, epoch.Index)
+	_, err = tx.Exec(t.Context(), `UPDATE epoch SET status='CLAIM_COMPUTED',calculated_outputs_root=tx_buffer_data_block
+ WHERE application_id=$1 AND index=$2`, app.ID, epoch.Index)
 	require.NoError(t, err)
 	var validated bool
 	require.NoError(t, tx.QueryRow(t.Context(),
@@ -188,7 +189,8 @@ func TestClaimRootsPlansBoundFutureAndValidatedHistory(t *testing.T) {
  'INPUTS_PROCESSED'::"EpochStatus" FROM epoch WHERE application_id=$1 AND index=4)
  WHERE e.application_id=$1 AND e.index>=100`, app.ID)
 				require.NoError(t, err)
-				_, err = r.db.Exec(t.Context(), `UPDATE epoch SET status='CLAIM_COMPUTED' WHERE application_id=$1 AND index>=100`, app.ID)
+				_, err = r.db.Exec(t.Context(), `UPDATE epoch SET status='CLAIM_COMPUTED',calculated_outputs_root=tx_buffer_data_block
+ WHERE application_id=$1 AND index>=100`, app.ID)
 				require.NoError(t, err)
 			}
 			// Measure steady history. Qualification creates obsolete partial-index
@@ -251,6 +253,7 @@ func TestClaimRootsSelectLatestValidatedEpochBeforeCoveredBlock(t *testing.T) {
 		EpochIndex: second.Index, InputIndex: 1, Status: model.InputCompletionStatus_Accepted, StateProof: *secondProof,
 	}))
 	require.NoError(t, r.UpdateEpochInputsProcessed(t.Context(), app.Name, second.Index, secondProof))
+	second.CalculatedOutputsRoot = &secondProof.TxBufferDataBlock
 	require.NoError(t, r.StoreClaimAndProofs(t.Context(), second, nil))
 	_, err := r.db.Exec(t.Context(), `INSERT INTO epoch(application_id,index,virtual_index,first_block,last_block,
  input_index_lower_bound,input_index_upper_bound,status) VALUES($1,7,7,70,79,2,3,'CLOSED')`, app.ID)

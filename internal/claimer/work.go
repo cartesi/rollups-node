@@ -13,6 +13,7 @@ import (
 type claimWork struct {
 	app   *model.Application
 	epoch *model.Epoch
+	ior   *iorClaimObservation
 }
 
 func (s *Service) observeClaims(

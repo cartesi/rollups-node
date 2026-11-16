@@ -17,63 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func expectProtectionRoots(repo *Mockrepo, app *model.Application) {
-	var epochs []*model.Epoch
-	for index := uint64(0); index < 3; index++ {
-		root := common.Address{byte(index + 1)}
-		epochs = append(epochs, &model.Epoch{ApplicationID: app.ID, Index: index,
-			LastBlock: 100 + index, TournamentAddress: &root, Status: model.EpochStatus_Closed})
-		if index > 0 {
-			repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), root.Hex()).Return(&model.Tournament{
-				ApplicationID: app.ID, EpochIndex: index, Address: root, StartInstant: 100 + index, Allowance: 50,
-			}, nil).Once()
-		}
-	}
-	repo.On("ListEpochs", mock.Anything, app.IApplicationAddress.Hex(), repository.EpochFilter{
-		HasTournament: new(true), Status: model.NonTerminalEpochStatuses(),
-	}, repository.Pagination{}, false).Return(epochs, uint64(len(epochs)), nil).Once()
-}
-
-func TestValidatorInvalidRootProtectionStartsAtCommittedCutoff(t *testing.T) {
-	for _, storeFailure := range []bool{false, true} {
-		t.Run(map[bool]string{false: "committed", true: "write failed"}[storeFailure], func(t *testing.T) {
-			repo, s, app, epoch := rootValidationFixture()
-			app.ConsensusType = model.Consensus_PRT
-			epoch.Index = 1
-			zero := common.Hash{}
-			epoch.TxBufferDataBlock = &zero
-			var output bytes.Buffer
-			s.Logger = slog.New(slog.NewTextHandler(&output, nil))
-			repo.On("ListEpochs", mock.Anything, app.IApplicationAddress.Hex(),
-				repository.EpochFilter{Status: []model.EpochStatus{model.EpochStatus_InputsProcessed}},
-				repository.Pagination{}, false).
-				Return([]*model.Epoch{epoch}, uint64(1), nil).Once()
-			expectEpochOutputs(repo, app, epoch, nil)
-			repo.On("GetLastInput", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index).
-				Return(&model.Input{MachineHash: epoch.MachineHash, TxBufferDataBlock: epoch.TxBufferDataBlock}, nil).Once()
-			var storeErr error
-			if storeFailure {
-				storeErr = errors.New("atomic root finding was not saved")
-			} else {
-				expectProtectionRoots(repo, app)
-			}
-			repo.On("StoreInvalidOutputsRoot", mock.Anything, app.ID, epoch.Index, mock.Anything).Return(storeErr).Once()
-			err := s.validateApplication(t.Context(), app)
-			require.Error(t, err)
-			if storeFailure {
-				require.ErrorIs(t, err, storeErr)
-				require.NotContains(t, output.String(), "PRT protection stopped")
-			} else {
-				require.Contains(t, output.String(), "join_close_block=151")
-				require.Contains(t, output.String(), "join_close_block=152")
-				require.NotContains(t, output.String(), "join_close_block=150")
-				repo.AssertNumberOfCalls(t, "GetTournament", 2)
-			}
-			repo.AssertExpectations(t)
-		})
-	}
-}
-
 func TestValidatorIntegrityAndProofFailureProtection(t *testing.T) {
 	for _, proofFailure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "corruption", true: "proof failure"}[proofFailure], func(t *testing.T) {
@@ -106,6 +49,38 @@ func TestValidatorIntegrityAndProofFailureProtection(t *testing.T) {
 			require.ErrorIs(t, err, writeErr)
 			require.Contains(t, output.String(), "join_close_block=150")
 			require.Contains(t, output.String(), "epoch_index=3")
+			require.Equal(t, model.ApplicationStatus_OK, app.Status)
+			repo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestValidatorIORSignalRequiresCommittedClaim(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "stored", true: "store failed"}[fail], func(t *testing.T) {
+			repo, s, app, epoch := rootValidationFixture()
+			epoch.TxBufferDataBlock = new(common.Hash{})
+			input := &model.Input{MachineHash: epoch.MachineHash, TxBufferDataBlock: epoch.TxBufferDataBlock}
+			expectRootValidationReads(repo, app, epoch, input, nil)
+			var output bytes.Buffer
+			s.Logger = slog.New(slog.NewTextHandler(&output, nil))
+			var failure error
+			if fail {
+				failure = errors.New("claim transaction failed")
+			}
+			repo.On("StoreClaimAndProofs", mock.Anything, epoch, mock.Anything).Return(failure).Once()
+			err := s.validateApplication(t.Context(), app)
+			if fail {
+				require.ErrorIs(t, err, failure)
+				require.NotContains(t, output.String(), "condition=ior_settlement_withheld")
+			} else {
+				require.NoError(t, err)
+				require.Contains(t, output.String(), "condition=ior_settlement_withheld")
+				require.Contains(t, output.String(), "join_state=not_checked")
+				require.Contains(t, output.String(), "declared_outputs_root=")
+				require.Contains(t, output.String(), "calculated_outputs_root=")
+			}
+			require.NotContains(t, output.String(), "PRT protection stopped")
 			require.Equal(t, model.ApplicationStatus_OK, app.Status)
 			repo.AssertExpectations(t)
 		})

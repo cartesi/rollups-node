@@ -495,6 +495,7 @@ func (s *Service) reconcileAcceptedEpochs(
 				"application", app.Name, "epoch", epoch.Index)
 			return true, err
 		}
+		s.reportAcceptedIOR(app, epoch, &event.Raw)
 	}
 	return false, nil
 }

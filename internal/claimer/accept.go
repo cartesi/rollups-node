@@ -35,7 +35,7 @@ func (s *Service) processAcceptedClaimEvent(
 	ctx context.Context,
 	work claimWork,
 	defaultBlockNumber *big.Int,
-) claimStepResult {
+) (out claimStepResult) {
 	app := work.app
 	currEpoch := work.epoch
 
@@ -47,14 +47,34 @@ func (s *Service) processAcceptedClaimEvent(
 		return claimDropped(err)
 	}
 
-	_, currEvent, _, err := s.blockchain.findClaimAcceptedEventAndSucc(
-		ctx, app, currEpoch, currEpoch.LastBlock+1, defaultBlockNumber.Uint64(),
-	)
-	if err != nil {
-		return claimDropped(err)
+	if currEpoch.HasInvalidOutputsRoot() {
+		// This pass also owns the retained IOR staging substep. Remove only
+		// its temporary batch entry, so the outer loop does not repeat it.
+		defer func() { out.drop = true }()
+		var err error
+		work, err = s.prepareIORObservation(ctx, work, claimAcceptPage, defaultBlockNumber.Uint64())
+		if work.ior != nil {
+			defer func() { out = s.completeIORObservation(ctx, work, out) }()
+		}
+		if err != nil {
+			return s.fallbackStagedIORObservation(ctx, work, defaultBlockNumber, err)
+		}
+	}
+	var currEvent *iconsensus.IConsensusClaimAccepted
+	if !work.scanCovered() {
+		var err error
+		_, currEvent, _, err = s.blockchain.findClaimAcceptedEventAndSucc(
+			ctx, app, currEpoch, work.scanFromBlock(), defaultBlockNumber.Uint64(),
+		)
+		if err != nil {
+			return s.fallbackStagedIORObservation(ctx, work, defaultBlockNumber, err)
+		}
 	}
 
 	if currEvent == nil || !claimAcceptedEventMatchesEpoch(app, currEpoch, currEvent) {
+		if work.ior != nil {
+			return s.reconcileRetainedStagedIOR(ctx, work, defaultBlockNumber)
+		}
 		return claimNoProgress()
 	}
 
@@ -71,7 +91,7 @@ func (s *Service) processAcceptedClaimEvent(
 		return claimDropped(s.markAcceptedDivergence(ctx, app, currEpoch, currEvent, "acceptClaimsAndUpdateDatabase"))
 	}
 	if s.defaultBlock.Provisional() {
-		claim, err := s.blockchain.getClaimStatus(ctx, app, currEpoch, defaultBlockNumber)
+		claim, err := s.observedStagedClaimStatus(ctx, work, defaultBlockNumber)
 		if err != nil {
 			return claimRetryLater(err)
 		}
@@ -82,16 +102,23 @@ func (s *Service) processAcceptedClaimEvent(
 			return claimRetryLater(err)
 		}
 	}
+	if work.ior != nil {
+		if err := s.validateIORPointReference(ctx, work); err != nil {
+			return claimRetryLater(err)
+		}
+	}
 	s.Logger.Debug("Updating claim status to accepted",
 		"app", app.IApplicationAddress,
 		"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
 		"last_block", currEpoch.LastBlock,
 	)
 	txHash := currEvent.Raw.TxHash
-	err = s.repository.UpdateEpochWithAcceptedClaim(ctx, currEpoch.ApplicationID, currEpoch.Index, &txHash)
+	err := s.repository.UpdateEpochWithAcceptedClaim(ctx, currEpoch.ApplicationID, currEpoch.Index, &txHash)
 	if err != nil {
 		return claimDropped(err)
 	}
+	s.reportAcceptedIOR(app, currEpoch, "claim_accepted_event", defaultBlockNumber.Uint64(),
+		"event_block", currEvent.Raw.BlockNumber, "event_transaction", txHash)
 	s.Logger.Info("Claim accepted",
 		"app", currEvent.AppContract,
 		"event_block_number", currEvent.Raw.BlockNumber,
@@ -129,10 +156,15 @@ func (s *Service) processStagedClaim(
 
 	// Read the claim state before sending acceptClaim. Use the same block
 	// number for all reads in this tick.
-	claim, err := s.blockchain.getClaimStatus(ctx, app, currEpoch, defaultBlockNumber)
+	claim, err := s.observedStagedClaimStatus(ctx, work, defaultBlockNumber)
 	if err != nil {
 		return claimRetryLater(fmt.Errorf("getClaim before acceptClaim (app=%v, epoch=%d): %w",
 			app.IApplicationAddress, currEpoch.Index, err))
+	}
+	if work.ior != nil {
+		if err := s.validateIORPointReference(ctx, work); err != nil {
+			return claimRetryLater(err)
+		}
 	}
 	// A foreclosed application has no remaining on-chain path for a claim that
 	// is not already ACCEPTED, so terminalize it to CLAIM_FORECLOSED instead of
@@ -141,6 +173,13 @@ func (s *Service) processStagedClaim(
 	// re-enable loop).
 	if app.ForecloseBlock != 0 && claim.Status != claimStatusAccepted {
 		return s.terminalizeForeclosedStagedClaim(ctx, app, currEpoch, currentBlock)
+	}
+	if work.scanCovered() && claim.Status == claimStatusStaged {
+		if claim.StagingBlockNumber == nil || !claim.StagingBlockNumber.IsUint64() ||
+			currEpoch.StagedAtBlock == nil || claim.StagingBlockNumber.Uint64() != *currEpoch.StagedAtBlock {
+			return claimRetryLater(txsender.ErrInconclusive)
+		}
+		return claimRetryLater(s.verifyClaimOutputsMatch(ctx, app, currEpoch, claim, "observeStagedClaims"))
 	}
 	if result, done := s.handlePreAcceptClaimStatus(ctx, app, currEpoch, claim, currentBlock); done {
 		return result
@@ -171,6 +210,7 @@ func (s *Service) stagedClaimReadyForAccept(
 	if err := requireObservedStaging(currEpoch, currentBlock); err != nil {
 		return currentBlock, claimRetryLater(err), true
 	}
+	s.reportStagedIOR(app, currEpoch, *currEpoch.StagedAtBlock, "stored", currentBlock)
 	if app.ForecloseBlock != 0 {
 		return currentBlock, claimNoProgress(), false
 	}
@@ -203,7 +243,7 @@ func (s *Service) handlePreAcceptClaimStatus(
 				return claimRetryLater(err), true
 			}
 		}
-		err := s.updateEpochAcceptedFromClaimStatus(ctx, app, currEpoch, claim, "observeStagedClaims")
+		err := s.updateEpochAcceptedFromClaimStatus(ctx, app, currEpoch, claim, "observeStagedClaims", currentBlock)
 		if err != nil {
 			return claimRetryLater(err), true
 		}

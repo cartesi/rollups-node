@@ -68,7 +68,7 @@ func TestInvalidOutputsRootOutputObservation(t *testing.T) {
 			require.Equal(t, "epoch 12: root rule failed", *app.Reason)
 			if tc.mismatched {
 				require.Nil(t, output.ExecutionTransactionHash)
-				require.Contains(t, logs.String(), "Output mismatch; preserving terminal application status")
+				require.Contains(t, logs.String(), "OutputExecuted bytes differ from local output; accepted-root provenance is unavailable")
 				require.Contains(t, logs.String(), "application=invalid-root")
 				require.Contains(t, logs.String(), "index=0")
 				require.Contains(t, logs.String(), "status=INVALID_OUTPUTS_ROOT")

@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 )
 
 // stageClaimsAndUpdateDatabase looks for ClaimStaged events on chain and moves
@@ -30,7 +31,7 @@ func (s *Service) processSubmittedClaim(
 	ctx context.Context,
 	work claimWork,
 	defaultBlockNumber *big.Int,
-) claimStepResult {
+) (out claimStepResult) {
 	app := work.app
 	currEpoch := work.epoch
 	if err := requireObservedStaging(currEpoch, defaultBlockNumber.Uint64()); err != nil {
@@ -41,13 +42,25 @@ func (s *Service) processSubmittedClaim(
 		return claimDropped(err)
 	}
 
-	fromBlock := currEpoch.LastBlock + 1
-
-	_, currEvent, _, err := s.blockchain.findClaimStagedEventAndSucc(
-		ctx, app, currEpoch, fromBlock, defaultBlockNumber.Uint64(),
-	)
-	if err != nil {
-		return claimDropped(err)
+	if currEpoch.HasInvalidOutputsRoot() {
+		var err error
+		work, err = s.prepareIORObservation(ctx, work, claimStagePage, defaultBlockNumber.Uint64())
+		if work.ior != nil {
+			defer func() { out = s.completeIORObservation(ctx, work, out) }()
+		}
+		if err != nil {
+			return s.fallbackIORObservation(ctx, work, defaultBlockNumber, err)
+		}
+	}
+	var currEvent *iconsensus.IConsensusClaimStaged
+	if !work.scanCovered() {
+		var err error
+		_, currEvent, _, err = s.blockchain.findClaimStagedEventAndSucc(
+			ctx, app, currEpoch, work.scanFromBlock(), defaultBlockNumber.Uint64(),
+		)
+		if err != nil {
+			return s.fallbackIORObservation(ctx, work, defaultBlockNumber, err)
+		}
 	}
 
 	if currEvent != nil && !claimStagedEventMatchesEpoch(app, currEpoch, currEvent) {
@@ -68,7 +81,8 @@ func (s *Service) processSubmittedClaim(
 			return claimDropped(s.markStagingDivergence(ctx, app, currEpoch, currEvent, "stageClaimsAndUpdateDatabase"))
 		}
 		if s.defaultBlock.Provisional() {
-			hash, err := s.stagedClaimAuditHash(ctx, app, currEpoch, currEvent.Raw.TxHash, defaultBlockNumber.Uint64())
+			hash, err := s.stagedClaimAuditHash(
+				ctx, app, currEpoch, currEvent.Raw.TxHash, defaultBlockNumber.Uint64())
 			if err != nil {
 				return claimRetryLater(err)
 			}
@@ -76,12 +90,13 @@ func (s *Service) processSubmittedClaim(
 				return claimRetryLater(err)
 			}
 		}
-		err = s.repository.UpdateEpochToStaged(
+		err := s.repository.UpdateEpochToStaged(
 			ctx, currEpoch.ApplicationID, currEpoch.Index,
 			currEvent.Raw.BlockNumber)
 		if err != nil {
 			return claimDropped(err)
 		}
+		s.reportStagedIOR(app, currEpoch, currEvent.Raw.BlockNumber, "claim_staged_event", defaultBlockNumber.Uint64())
 		s.Logger.Info("Claim staged",
 			"app", app.IApplicationAddress,
 			"outputs_merkle_root", hashToHex(currEpoch.TxBufferDataBlock),
@@ -89,6 +104,12 @@ func (s *Service) processSubmittedClaim(
 			"staged_at_block", currEvent.Raw.BlockNumber,
 		)
 		return claimWorkCompleted(1)
+	}
+
+	if work.ior != nil {
+		if result, done := s.projectIORObservation(ctx, work, defaultBlockNumber); done {
+			return result
+		}
 	}
 
 	// Foreclosed apps cannot stage new claims. If no matching ClaimStaged event

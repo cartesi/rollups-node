@@ -93,10 +93,28 @@ func (s *delivery) checkDeploymentAction(ctx context.Context, app *model.Applica
 	if !allowed || eligibilityErr != nil || deploymentBlocksAction(state, kind) {
 		return nil, txsender.ErrIneligible
 	}
+	if err := checkEpochOutputsRoot(completion.Epoch, kind); err != nil {
+		return completion, err
+	}
 	if state == deploymentNone || state == deploymentPending {
 		return completion, txsender.ErrInconclusive
 	}
 	return completion, nil
+}
+
+// A complete local root permits joining the execution. Settlement also needs
+// the declared root to match the locally calculated outputs.
+func checkEpochOutputsRoot(epoch *model.Epoch, kind actionKind) error {
+	if kind != joinTournament && kind != stageTournament && kind != acceptTournament {
+		return nil
+	}
+	if epoch.CalculatedOutputsRoot == nil || epoch.TxBufferDataBlock == nil {
+		return txsender.ErrInconclusive
+	}
+	if kind != joinTournament && !epoch.HasMatchingOutputsRoot() {
+		return txsender.ErrIneligible
+	}
+	return nil
 }
 
 func (s *Service) deploymentVerdictState(ctx context.Context, app *model.Application) (deploymentState, int64, error) {

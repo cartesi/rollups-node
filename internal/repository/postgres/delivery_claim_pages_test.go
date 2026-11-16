@@ -366,10 +366,7 @@ func TestClaimPublisherPagesSelectOnlyTerminalPrefix(t *testing.T) {
 				seedClaimPageEpochs(t, r, app, status, status, status, status, status)
 				// Source production/rollback has separate real-writer tests.
 				// Keep suffix rows here to check both SQL pagination gates.
-				var input *uint64
-				if kind.IsExecutionTerminal() {
-					input = new(uint64(99))
-				}
+				input := new(uint64(99))
 				_, err := r.db.Exec(t.Context(), `UPDATE application SET status=$2, reason='prefix pagination fixture',
                     problem_epoch_index=2,
                     problem_kind=$2, problem_input_index=$3 WHERE id=$1`, app.ID, kind, input)

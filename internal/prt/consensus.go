@@ -96,6 +96,7 @@ func (s *Service) recordTournamentResult(
 	app *model.Application,
 	epoch *model.Epoch,
 	snapshot daveConsensusSnapshot,
+	observed txsender.BlockRef,
 ) error {
 	if epoch.InputIndexLowerBound != snapshot.sealed.InputIndexLowerBound ||
 		epoch.InputIndexUpperBound != snapshot.sealed.InputIndexUpperBound {
@@ -121,8 +122,10 @@ func (s *Service) recordTournamentResult(
 		return nil
 	}
 	if !snapshot.sealed.IsTournamentResultStaged {
+		s.reportUnstagedIORWinner(app, epoch, snapshot, observed)
 		return nil
 	}
+	delete(s.iorWinners, app.ID)
 	if epoch.Status == model.EpochStatus_ClaimStaged {
 		if epoch.StagedAtBlock == nil {
 			return s.setApplicationCorrupted(ctx, app, "staged epoch %d has no staging block", epoch.Index)
@@ -138,6 +141,7 @@ func (s *Service) recordTournamentResult(
 			}
 			epoch.StagedAtBlock = new(snapshot.sealed.StagingBlockNumber)
 		}
+		s.reportStagedIOR(app, epoch, snapshot, observed)
 		return nil
 	}
 	if err := s.repository.UpdateEpochReconciledStaged(ctx, app.ID, epoch.Index, snapshot.sealed.StagingBlockNumber); err != nil {
@@ -145,6 +149,7 @@ func (s *Service) recordTournamentResult(
 	}
 	epoch.Status = model.EpochStatus_ClaimStaged
 	epoch.StagedAtBlock = new(snapshot.sealed.StagingBlockNumber)
+	s.reportStagedIOR(app, epoch, snapshot, observed)
 	s.Logger.Info("Recorded staged tournament result",
 		"application", app.Name, "epoch_index", epoch.Index, "staging_block", snapshot.sealed.StagingBlockNumber)
 	return nil

@@ -46,7 +46,9 @@ type Service struct {
 	submissionEnabled   bool
 	publicationReady    atomic.Bool
 	defaultBlock        DefaultBlock
-	txOptsFactory       ethutil.TransactOptsFactory // Set by Create whenever submission is enabled.
+	txOptsFactory       ethutil.TransactOptsFactory      // Set by Create whenever submission is enabled.
+	iorStages           map[iorStageKey]iorStageIdentity // Owned by the observer.
+	iorWinners          map[int64]iorWinnerIdentity      // Only the current sealed epoch of each observed application.
 	disputeWarnings     map[common.Address]struct{}
 	zeroStagingWarnings map[int64]struct{}
 	observationFailures map[int64]tournamentObservationFailure // Owned only by the observer; Ready does not read it.

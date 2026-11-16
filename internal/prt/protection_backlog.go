@@ -13,7 +13,8 @@ import (
 )
 
 func protectionLocallyReady(epoch *model.Epoch) bool {
-	if epoch == nil || epoch.Commitment == nil || epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil {
+	if epoch == nil || epoch.Commitment == nil || epoch.MachineHash == nil || epoch.TxBufferDataBlock == nil ||
+		epoch.CalculatedOutputsRoot == nil {
 		return false
 	}
 	if epoch.Status == model.EpochStatus_ClaimStaged {
@@ -76,5 +77,5 @@ func (s *Service) reportSealBacklog(app *model.Application, target protectionTar
 			args = append(args, "execution_budget_ns", "unbounded")
 		}
 	}
-	s.Logger.Warn("PRT sealed epoch is not locally ready for publication", args...)
+	s.Logger.Warn("PRT sealed epoch is not locally ready for a root join", args...)
 }

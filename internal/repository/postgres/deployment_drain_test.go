@@ -47,6 +47,7 @@ func completeDeploymentDrainProofs(t *testing.T, r *PostgresRepository, app *mod
 	t.Helper()
 	current, err := r.GetEpoch(t.Context(), app.Name, epoch.Index)
 	require.NoError(t, err)
+	current.CalculatedOutputsRoot = current.TxBufferDataBlock
 	current.Commitment = new(repotest.UniqueHash())
 	current.CommitmentProof = make([]common.Hash, model.Log2EpochComputationHashLeafCount)
 	output, err := r.GetOutput(t.Context(), app.Name, 0)
@@ -131,15 +132,7 @@ func TestDeploymentDrainRequiresActualCurrentGenerationTierAndIdentity(t *testin
 	}
 }
 
-func TestDeploymentDrainRetainsOrdinaryTypedSuffixAndAcceptedExclusion(t *testing.T) {
-	t.Run("typed suffix", func(t *testing.T) {
-		r, app, epoch, request := deploymentDrainFixture(t, false)
-		require.NoError(t, r.StoreInvalidOutputsRoot(t.Context(), app.ID, epoch.Index, "cut makes this prefix invalid"))
-		require.NoError(t, r.ForecloseDeploymentEpoch(t.Context(), request))
-		current, err := r.GetEpoch(t.Context(), app.Name, epoch.Index)
-		require.NoError(t, err)
-		require.Equal(t, model.EpochStatus_ClaimForeclosed, current.Status)
-	})
+func TestDeploymentDrainRetainsAcceptedExclusion(t *testing.T) {
 	t.Run("accepted is terminal", func(t *testing.T) {
 		r, app, epoch, request := deploymentDrainFixture(t, true)
 		require.NoError(t, r.UpdateEpochWithAcceptedClaim(t.Context(), app.ID, epoch.Index, new(repotest.UniqueHash())))

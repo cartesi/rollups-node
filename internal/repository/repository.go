@@ -79,10 +79,12 @@ func ExecutableApplicationsFilter() ApplicationFilter {
 }
 
 type EpochFilter struct {
-	Status        []EpochStatus
-	BeforeBlock   *uint64
-	IndexRange    *Range
-	HasTournament *bool
+	// InvalidOutputsRoot restricts results to present, unequal output roots.
+	InvalidOutputsRoot bool
+	Status             []EpochStatus
+	BeforeBlock        *uint64
+	IndexRange         *Range
+	HasTournament      *bool
 }
 
 type InputFilter struct {
@@ -213,7 +215,6 @@ type EpochRepository interface {
 
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	GetEpochCompletionState(ctx context.Context, nameOrAddress string, index uint64) (*EpochCompletionState, error)
-	StoreInvalidOutputsRoot(ctx context.Context, appID int64, epochIndex uint64, reason string) error
 	GetLastAcceptedEpochIndex(ctx context.Context, nameOrAddress string) (uint64, error)
 	GetLastNonOpenEpoch(ctx context.Context, nameOrAddress string) (*Epoch, error)
 	GetLastNonOpenEpochIndex(ctx context.Context, nameOrAddress string) (*uint64, error)

@@ -396,7 +396,9 @@ mcycle-overflow-dapp: applications/mcycle-overflow-dapp ## MCYCLE overflow dapp
 
 unexpected-yield-dapp: applications/unexpected-yield-dapp ## Unexpected-yield dapp
 
-invalid-outputs-root-dapps: applications/invalid-outputs-root-dapp applications/invalid-outputs-root-length-dapp applications/invalid-template-outputs-root-dapp ## Invalid outputs-root test dapps
+invalid-outputs-root-dapps: ## Invalid outputs-root test dapps
+invalid-outputs-root-dapps: applications/invalid-outputs-root-dapp applications/invalid-outputs-root-length-dapp \
+	applications/invalid-template-outputs-root-dapp applications/invalid-outputs-root-recovery-dapp
 
 erc20-withdrawal-dapp: applications/erc20-withdrawal-dapp ## ERC-20 withdrawal test dapp
 
@@ -433,6 +435,9 @@ applications/invalid-outputs-root-length-dapp: ## Create an accepted guest with 
 
 applications/invalid-template-outputs-root-dapp: ## Create a template with a zero outputs root
 	@go run $(GO_BUILD_PARAMS) ./test/tooling/terminalmachine invalid-outputs-root --kind=template --output=$@
+
+applications/invalid-outputs-root-recovery-dapp: ## Create an invalid then corrected outputs-root guest
+	@go run $(GO_BUILD_PARAMS) ./test/tooling/terminalmachine invalid-outputs-root --kind=recovery --output=$@
 
 applications/erc20-withdrawal-dapp: test/dapps/erc20-withdrawal/install.sh ## Create ERC-20 withdrawal test application
 	@echo "Creating ERC-20 withdrawal test application"
@@ -875,6 +880,7 @@ _local-topology-%:
 		export CARTESI_TEST_INVALID_OUTPUTS_ROOT_DAPP_PATH=$(CURDIR)/applications/invalid-outputs-root-dapp; \
 		export CARTESI_TEST_INVALID_OUTPUTS_ROOT_LENGTH_DAPP_PATH=$(CURDIR)/applications/invalid-outputs-root-length-dapp; \
 		export CARTESI_TEST_INVALID_TEMPLATE_OUTPUTS_ROOT_DAPP_PATH=$(CURDIR)/applications/invalid-template-outputs-root-dapp; \
+		export CARTESI_TEST_INVALID_OUTPUTS_ROOT_RECOVERY_DAPP_PATH=$(CURDIR)/applications/invalid-outputs-root-recovery-dapp; \
 		export CARTESI_TEST_ERC20_WITHDRAWAL_DAPP_PATH=$(CURDIR)/applications/erc20-withdrawal-dapp; \
 		export CARTESI_TEST_ERC20_WITHDRAWAL_NVRAM_DAPP_PATH=$(CURDIR)/applications/erc20-withdrawal-nvram-dapp; \
 		NODE_TOPOLOGY='$*' TEST_PATTERN="$$pattern" $(MAKE) integration-test

@@ -73,7 +73,7 @@ func TestFinalizedStagingClockContradictionPreservesSavedStage(t *testing.T) {
 				})).Return(nil).Once()
 
 			expectStoredProtection(t, f.repo.prtRepositoryMock, f.app, f.epoch)
-			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view)
+			err := f.d.recordTournamentResult(t.Context(), f.app, f.epoch, view, resultTestObservation(f.epoch, view))
 			require.ErrorContains(t, err, "staging block inconsistent with DaveConsensus")
 			require.Equal(t, model.ApplicationStatus_Corrupted, f.app.Status)
 			require.Equal(t, uint64(10), *f.epoch.StagedAtBlock)

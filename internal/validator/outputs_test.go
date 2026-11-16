@@ -185,7 +185,8 @@ func newOutputsFixture(t *testing.T, begin, count uint64) (*Service, *outputsRep
 		pre = merkle.CreatePreContextFromProof(previous.Index, hash, siblings)
 		previousRoot = merkletest.ComputeRootHashFromProof(previous.Index, hash, siblings)
 	}
-	previous := &model.Epoch{ApplicationID: app.ID, Index: 3, VirtualIndex: 1, TxBufferDataBlock: &previousRoot}
+	previous := &model.Epoch{ApplicationID: app.ID, Index: 3, VirtualIndex: 1,
+		TxBufferDataBlock: &previousRoot, CalculatedOutputsRoot: &previousRoot}
 	repo.On("GetEpochByVirtualIndex", mock.Anything, app.IApplicationAddress.String(), uint64(1)).Return(previous, nil).Once()
 	service := &Service{repository: repo, pristinePostContext: post, pristineRootHash: post[merkle.TREE_DEPTH]}
 	service.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))

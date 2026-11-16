@@ -28,6 +28,7 @@ func (s *BulkOperationsSuite) TestClaimProofWriterTransaction() {
 			StoreAdvanceResult(s.Ctx, s.T(), s.Repo, seed.App.ID, seed.Epoch.Index, seed.Input.Index,
 				model.InputCompletionStatus_Accepted, raw, nil)
 			AdvanceEpochStatus(s.Ctx, s.T(), s.Repo, seed.App.Name, seed.Epoch, model.EpochStatus_InputsProcessed)
+			seed.Epoch.CalculatedOutputsRoot = seed.Epoch.TxBufferDataBlock
 			hash := UniqueHash()
 			proofs := []repository.OutputProof{{Index: 0, Hash: hash, Siblings: []common.Hash{UniqueHash()}},
 				{Index: 1, Hash: hash, Siblings: []common.Hash{UniqueHash()}}}
