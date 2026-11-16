@@ -83,11 +83,20 @@ type StateProof struct {
 	TxBufferProof   LeafProof
 }
 
+// IgnoredAutomaticYield counts an unknown automatic yield reason in one request.
+// Diagnostics keep first-occurrence order and contain at most 65,533 entries:
+// the 16-bit reason domain excludes the three known automatic reasons.
+type IgnoredAutomaticYield struct {
+	Reason uint16
+	Count  uint64
+}
+
 // AdvanceResponse contains the result of a completed advance operation.
 type AdvanceResponse struct {
-	Status  CompletionStatus
-	Outputs []Output
-	Reports []Report
+	IgnoredAutomaticYields []IgnoredAutomaticYield
+	Status                 CompletionStatus
+	Outputs                []Output
+	Reports                []Report
 	// ExceptionData is the raw CMIO payload supplied by the guest when Status
 	// is CompletionStatusException. It is nil for every other status; an
 	// exception with an empty payload is represented by a non-nil empty slice.
@@ -100,10 +109,12 @@ type AdvanceResponse struct {
 }
 
 // InspectResponse contains the result of an inspect operation. On incomplete
-// execution, Reports contains any reports emitted before the failure, Status
-// is CompletionStatusUnknown, and Inspect returns a non-nil error.
+// execution, Reports and IgnoredAutomaticYields contain the diagnostics collected
+// before the failure, Status is CompletionStatusUnknown, and Inspect returns a
+// non-nil error.
 type InspectResponse struct {
-	Status CompletionStatus
+	IgnoredAutomaticYields []IgnoredAutomaticYield
+	Status                 CompletionStatus
 	// ExceptionData has the same status-dependent meaning as
 	// AdvanceResponse.ExceptionData.
 	ExceptionData []byte
@@ -168,8 +179,9 @@ type Machine interface {
 
 	// Inspect sends a query to the machine. A nil error means the guest completed
 	// with one of the six non-unknown CompletionStatus values. On incomplete
-	// execution, the response preserves reports emitted before the failure and
-	// the error identifies why inspection could not complete.
+	// execution, the response preserves reports and ignored-yield diagnostics
+	// collected before the failure. The error identifies why inspection could
+	// not complete.
 	Inspect(ctx context.Context, query []byte) (*InspectResponse, error)
 
 	// Store saves the machine state to the specified path.

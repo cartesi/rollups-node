@@ -8,6 +8,8 @@ import (
 	"encoding/binary"
 	"time"
 
+	"github.com/cartesi/rollups-node/pkg/emulator"
+
 	"github.com/stretchr/testify/mock"
 )
 
@@ -199,6 +201,24 @@ func (m *MockBackend) SetupManualYield(reason manualYieldReason, length uint32) 
 		uint64(reason)<<htifReasonShift | uint64(length)
 	data := binary.LittleEndian.AppendUint64(nil, tohost)
 	m.On("ReadMemory", htifTohostAddress, uint64(8), mock.AnythingOfType("time.Duration")).Return(data, nil)
+}
+
+// SetupAutomaticYield scripts the HTIF observation and supported payload read.
+func (m *MockBackend) SetupAutomaticYield(reason uint16, data []byte) {
+	value := uint64(len(data))
+	if automaticYieldReason(reason) == AutomaticYieldReasonProgress {
+		var inline [4]byte
+		copy(inline[:], data)
+		value = uint64(binary.LittleEndian.Uint32(inline[:]))
+	}
+	tohost := emulator.HtifDeviceYield<<emulator.HtifDeviceShift |
+		uint64(emulator.YieldAutomatic)<<emulator.HtifCommandShift | uint64(reason)<<emulator.HtifReasonShift | uint64(value)
+	m.On("ReadMemory", htifTohostAddress, uint64(8), mock.AnythingOfType("time.Duration")).
+		Return(binary.LittleEndian.AppendUint64(nil, tohost), nil).Once()
+	if len(data) != 0 && (automaticYieldReason(reason) == AutomaticYieldReasonOutput ||
+		automaticYieldReason(reason) == AutomaticYieldReasonReport) {
+		m.On("ReadMemory", TxBufferAddress, uint64(len(data)), mock.AnythingOfType("time.Duration")).Return(data, nil).Once()
+	}
 }
 
 // SetupForLoad configures the mock for successful machine loading

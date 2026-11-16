@@ -17,6 +17,16 @@
 // guest outcomes travel as values; incomplete execution travels as an error.
 // Callers decide how a completed outcome affects canonical application state.
 //
+// Unknown automatic yield reasons do not stop execution. The node reads their
+// reason from HTIF and does not receive their payload. Advance and Inspect expose
+// counts per reason in IgnoredAutomaticYields. Inspect retains these diagnostics
+// on incomplete execution; Advance returns no response on error.
+// Known output and report payloads must fit the TX buffer and be readable.
+// A length above that capacity or an error while reading the header or a known
+// payload returns an error for incomplete execution. Automatic reception
+// preserves backend I/O error chains. An invalid HTIF word size is an internal
+// error. Callers select application status and replay policy from these errors.
+//
 // PRT advances return canonical collections, as defined in model/input_hash_collection.go.
 // PaddingRepetitions counts entries. Machine is the sole canonicalizer;
 // downstream layers preserve this representation without repair.

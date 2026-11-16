@@ -5,7 +5,9 @@ package machine
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -78,11 +80,15 @@ func (b *progressRunBackend) RunAndCollectRootHashes(end uint64, state *HashColl
 	return reason, nil
 }
 
-func (b *progressRunBackend) ReceiveCmioRequest(time.Duration) (uint8, uint16, []byte, error) {
+func (b *progressRunBackend) ReadMemory(address, length uint64, _ time.Duration) ([]byte, error) {
+	if address != htifTohostAddress || length != 8 {
+		return nil, fmt.Errorf("unexpected progress memory read at %d with length %d", address, length)
+	}
 	if b.dropBeforeCall {
 		b.state.PartialBundle = nil
 	}
-	return 0, uint16(AutomaticYieldReasonProgress), nil, nil
+	tohost := htifDeviceYield<<htifDeviceShift | uint64(AutomaticYieldReasonProgress)<<htifReasonShift
+	return binary.LittleEndian.AppendUint64(nil, tohost), nil
 }
 
 func newProgressRunMachine(backend Backend) *machineImpl {
