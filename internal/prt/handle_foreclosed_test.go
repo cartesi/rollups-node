@@ -84,7 +84,7 @@ func TestForeclosureDrainDefersNewerSavedForeclosure(t *testing.T) {
 	err := f.d.observeApplication(t.Context(), f.app, observerFacts(100))
 	require.ErrorIs(t, err, txsender.ErrInconclusive)
 	f.repo.AssertNotCalled(t, "HasUndrainedEpochsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
-	f.repo.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, mock.Anything, mock.Anything)
+	f.repo.AssertNotCalled(t, "ForeclosePRTEpoch", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	f.repo.AssertExpectations(t)
 }
 
@@ -183,7 +183,7 @@ func TestHandleForeclosedApp_DefersWhenStillBackfilling(t *testing.T) {
 			require.Contains(t, output.String(), "foreclose_block=100")
 			r.AssertNotCalled(t, "HasUndrainedEpochsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
 			r.AssertNotCalled(t, "HasUnreconciledClaimsBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
-			r.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, mock.Anything, mock.Anything)
+			r.AssertNotCalled(t, "ForeclosePRTEpoch", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			r.AssertExpectations(t)
 		})
 	}
@@ -226,14 +226,14 @@ func TestHandleForeclosedApp_LeavesClaimedEpochForNextReconciliationPass(t *test
 		repository.EpochFilter{Status: model.NonTerminalEpochStatuses()}, repository.Pagination{}, false).
 		Return([]*model.Epoch{{Index: 1, ClaimTransactionHash: &claimTx}}, uint64(1), nil).Once()
 	require.NoError(t, s.drainForeclosedClaims(t.Context(), app, nil, nil, 120))
-	r.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(1))
+	r.AssertNotCalled(t, "ForeclosePRTEpoch", mock.Anything, app.ID, uint64(1), mock.Anything)
 	r.AssertExpectations(t)
 }
 
 // Foreclosure terminalizes only epochs whose claim path is finished; earlier
 // INPUTS_PROCESSED epochs still require validation, and sealed observations stay
 // available for acceptance reconciliation.
-func TestForeclosePendingClaimEpochsPreservesValidationAndSealedClaims(t *testing.T) {
+func TestForeclosePendingClaimEpochsPreservesFinalizationAndValidation(t *testing.T) {
 	s, r := newPRTServiceMock()
 	defer r.AssertExpectations(t)
 
@@ -249,24 +249,24 @@ func TestForeclosePendingClaimEpochsPreservesValidationAndSealedClaims(t *testin
 		repository.Pagination{}, false,
 	).Return([]*model.Epoch{
 		{Index: 0, Status: model.EpochStatus_Open, FirstBlock: 100, LastBlock: 150},
-		{Index: 1, Status: model.EpochStatus_Closed},
-		{Index: 2, Status: model.EpochStatus_InputsProcessed},
+		{Index: 1, Status: model.EpochStatus_Closed, TournamentAddress: new(common.HexToAddress("0x100"))},
+		{Index: 2, Status: model.EpochStatus_InputsProcessed, TournamentAddress: new(common.HexToAddress("0x200"))},
 		{Index: 3},
 		{Index: 4, Status: model.EpochStatus_ClaimStaged},
 		{Index: 5, ClaimTransactionHash: &claimTx},
 		{Index: 6, Status: model.EpochStatus_ClaimSubmitted},
 		{Index: 7, Status: model.EpochStatus_Open, FirstBlock: 101},
 	}, uint64(8), nil).Once()
-	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(0)).Return(nil).Once()
-	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(1)).Return(nil).Once()
-	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(3)).Return(nil).Once()
-	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(4)).Return(nil).Once()
-	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(6)).Return(nil).Once()
+	r.On("ForeclosePRTEpoch", mock.Anything, app.ID, uint64(0), mock.Anything).Return(nil).Once()
+	r.On("ForeclosePRTEpoch", mock.Anything, app.ID, uint64(3), mock.Anything).Return(nil).Once()
+	r.On("ForeclosePRTEpoch", mock.Anything, app.ID, uint64(4), mock.Anything).Return(nil).Once()
+	r.On("ForeclosePRTEpoch", mock.Anything, app.ID, uint64(6), mock.Anything).Return(nil).Once()
 
-	require.NoError(t, s.foreclosePendingClaimEpochs(context.Background(), app))
-	r.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(2))
-	r.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(5))
-	r.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(7))
+	require.NoError(t, s.foreclosePendingClaimEpochs(context.Background(), app, app.ForecloseBlock))
+	r.AssertNotCalled(t, "ForeclosePRTEpoch", mock.Anything, app.ID, uint64(1), mock.Anything)
+	r.AssertNotCalled(t, "ForeclosePRTEpoch", mock.Anything, app.ID, uint64(2), mock.Anything)
+	r.AssertNotCalled(t, "ForeclosePRTEpoch", mock.Anything, app.ID, uint64(5), mock.Anything)
+	r.AssertNotCalled(t, "ForeclosePRTEpoch", mock.Anything, app.ID, uint64(7), mock.Anything)
 }
 
 // TestForeclosePendingClaimEpochs_PropagatesUpdateError verifies a failed
@@ -281,9 +281,9 @@ func TestForeclosePendingClaimEpochs_PropagatesUpdateError(t *testing.T) {
 	dbErr := errors.New("write failed")
 	r.On("ListEpochs", mock.Anything, app.Name, mock.Anything, repository.Pagination{}, false).
 		Return([]*model.Epoch{{Index: 7}}, uint64(1), nil).Once()
-	r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, uint64(7)).Return(dbErr).Once()
+	r.On("ForeclosePRTEpoch", mock.Anything, app.ID, uint64(7), mock.Anything).Return(dbErr).Once()
 
-	err := s.foreclosePendingClaimEpochs(context.Background(), app)
+	err := s.foreclosePendingClaimEpochs(context.Background(), app, app.ForecloseBlock)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, dbErr)
 }

@@ -427,8 +427,9 @@ func (r *PostgresRepository) HasUndrainedEpochsBeforeBlock(
 	return rows.Next(), rows.Err()
 }
 
-// HasUnpublishedEpochBeforeBlock is the A/Q machine-lifetime gate after input
-// drain. A CLOSED epoch still needs prepareEpochPublication's resident machine;
+// HasUnpublishedEpochBeforeBlock keeps the runtime for healthy finalization
+// after input drain, including positively sealed PRT epochs. A CLOSED epoch
+// still needs prepareEpochPublication's resident machine;
 // IP and later stages only need the durable proof and may finish without it.
 func (r *PostgresRepository) HasUnpublishedEpochBeforeBlock(
 	ctx context.Context,
@@ -448,18 +449,24 @@ func (r *PostgresRepository) HasUnpublishedEpochBeforeBlock(
 }
 
 func unpublishedEpochBeforeBlockSQL(appID int64, blockBound uint64) (string, []any) {
-	stmt := table.Epoch.SELECT(table.Epoch.Index).
-		FROM(table.Epoch.INNER_JOIN(table.Application, table.Epoch.ApplicationID.EQ(table.Application.ID))).
-		WHERE(table.Epoch.ApplicationID.EQ(postgres.Int64(appID)).
-			AND(table.Epoch.Status.EQ(enum.EpochStatus.Closed)).
-			AND(table.Epoch.LastBlock.LT(uint64Expr(blockBound))).
-			AND(table.Epoch.LastBlock.LT(table.Application.ForecloseBlock)).
-			AND(table.Application.Enabled.EQ(postgres.Bool(true))).
-			AND(table.Application.Status.EQ(enum.ApplicationStatus.Ok)).
-			AND(table.Application.ConsensusType.IN(enum.Consensus.Authority, enum.Consensus.Quorum)).
-			AND(table.Application.ForecloseBlock.GT(uint64Expr(0))).
-			AND(table.Application.ProblemEpochIndex.IS_NULL().OR(table.Epoch.Index.LT(table.Application.ProblemEpochIndex)))).
-		ORDER_BY(table.Epoch.FirstBlock).
+	app, epoch := table.Application, table.Epoch
+	deterministic := app.ConsensusType.IN(enum.Consensus.Authority, enum.Consensus.Quorum).
+		AND(epoch.LastBlock.LT(uint64Expr(blockBound))).
+		AND(epoch.LastBlock.LT(app.ForecloseBlock))
+	sealedPRT := app.ConsensusType.EQ(enum.Consensus.Prt).
+		AND(epoch.TournamentAddress.IS_NOT_NULL()).
+		AND(epoch.FirstBlock.LT_EQ(uint64Expr(blockBound))).
+		AND(epoch.FirstBlock.LT_EQ(app.ForecloseBlock))
+	stmt := epoch.SELECT(epoch.Index).
+		FROM(epoch.INNER_JOIN(app, epoch.ApplicationID.EQ(app.ID))).
+		WHERE(epoch.ApplicationID.EQ(postgres.Int64(appID)).
+			AND(epoch.Status.EQ(enum.EpochStatus.Closed)).
+			AND(app.Enabled.EQ(postgres.Bool(true))).
+			AND(app.Status.EQ(enum.ApplicationStatus.Ok)).
+			AND(app.ForecloseBlock.GT(uint64Expr(0))).
+			AND(app.ProblemEpochIndex.IS_NULL().OR(epoch.Index.LT(app.ProblemEpochIndex))).
+			AND(deterministic.OR(sealedPRT))).
+		ORDER_BY(epoch.FirstBlock).
 		LIMIT(1)
 	return stmt.Sql()
 }

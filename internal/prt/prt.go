@@ -32,7 +32,7 @@ type prtRepository interface {
 	UpdateApplicationStatus(ctx context.Context, appID int64, status ApplicationStatus, reason *string) error
 	HasUndrainedEpochsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
 	HasUnreconciledClaimsBeforeBlock(ctx context.Context, appID int64, blockBound uint64) (bool, error)
-	UpdateEpochWithForeclosedClaim(ctx context.Context, applicationID int64, index uint64) error
+	ForeclosePRTEpoch(ctx context.Context, applicationID int64, index, observedHead uint64) error
 
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter,
 		p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
@@ -402,7 +402,9 @@ func (s *Service) updateTournamentStanding(
 	return nil
 }
 
-// A failed RPC read or database write leaves the shared cursor unchanged.
+// Compare pending results in epoch order. After foreclosure, incomplete evidence
+// stops these comparisons while independent foreclosure exits can still run.
+// A true result stops further result processing in this pass.
 func (s *Service) reconcileAcceptedEpochs(
 	ctx context.Context, app *Application, epochs []*Epoch, consensus DaveConsensusAdapter, mostRecentBlock uint64,
 ) (bool, error) {
@@ -431,16 +433,17 @@ func (s *Service) reconcileAcceptedEpochs(
 				"epoch %d has missing required fields for pending claim processing", epoch.Index)
 		}
 
-		// Compare only after the complete root and descendant window is durable.
-		// A losing local claim must not hide the on-chain winner from clients.
 		tournament, err := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex())
 		if err != nil {
 			return true, fmt.Errorf("loading epoch %d observed tournament: %w", epoch.Index, err)
 		}
-		if app.IsForeclosed() && epoch.LastBlock < app.ForecloseBlock && !s.rootObservationCovers(tournament, mostRecentBlock) {
-			return true, nil
-		}
-		if tournament == nil || tournament.Snapshot.FinishedAtBlock == 0 ||
+		if app.IsForeclosed() {
+			if !foreclosedRootResultCovers(app, epoch, tournament, mostRecentBlock) {
+				s.reportForeclosureRootWait(app, epoch, tournament, mostRecentBlock)
+				return false, nil
+			}
+			delete(s.protectionNotices[app.ID], protectionNoticeKey{root: *epoch.TournamentAddress, kind: protectionForeclosureWait})
+		} else if tournament == nil || tournament.Snapshot.FinishedAtBlock == 0 ||
 			tournament.Snapshot.FinishedAtBlock > tournament.Snapshot.AsOfBlock ||
 			tournament.Snapshot.AsOfBlock > mostRecentBlock {
 			return false, nil
@@ -450,17 +453,20 @@ func (s *Service) reconcileAcceptedEpochs(
 				"Epoch %d has inconsistent machine hash between off-chain (%s) and on-chain (%s)",
 				epoch.Index, epoch.MachineHash, tournament.Snapshot.FinalStateHash)
 		}
-		if epoch.ClaimTransactionHash == nil { // no accepting EpochSealed event observed yet
+		if epoch.ClaimTransactionHash == nil {
 			break
 		}
 
 		observedBlock := min(mostRecentBlock, tournament.Snapshot.AsOfBlock)
-		if s.tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, mostRecentBlock) {
+		if app.IsForeclosed() || s.tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, mostRecentBlock) {
 			observedBlock = mostRecentBlock
 		}
 		event, err := s.readEpochAcceptance(ctx, app, epoch, consensus, observedBlock)
-		if err != nil || event == nil {
+		if err != nil {
 			return true, err
+		}
+		if event == nil {
+			return !app.IsForeclosed(), nil
 		}
 
 		state, _, gateErr = s.deploymentVerdictState(ctx, app)
@@ -482,22 +488,31 @@ func (s *Service) reconcileAcceptedEpochs(
 		}
 
 		s.Logger.Info("Observed accepted epoch at selected block policy; outputs root matched",
-			"application", app.Name,
-			"epoch", epoch.Index,
-			"event_block_number", event.Raw.BlockNumber,
-			"outputs_merkle_root", fmt.Sprintf("%x", event.OutputsMerkleRoot),
-			"tx", epoch.ClaimTransactionHash,
-		)
-
-		err = s.repository.UpdateEpochWithAcceptedClaim(ctx, app.ID, epoch.Index, epoch.ClaimTransactionHash)
-		if err != nil {
+			"application", app.Name, "epoch", epoch.Index, "event_block_number", event.Raw.BlockNumber,
+			"outputs_merkle_root", fmt.Sprintf("%x", event.OutputsMerkleRoot), "tx", epoch.ClaimTransactionHash)
+		if err := s.repository.UpdateEpochWithAcceptedClaim(ctx, app.ID, epoch.Index, epoch.ClaimTransactionHash); err != nil {
 			s.logErrorUnlessShutdown(ctx, "failed to update epoch status to claim accepted", err,
 				"application", app.Name, "epoch", epoch.Index)
 			return true, err
 		}
 		s.reportAcceptedIOR(app, epoch, &event.Raw)
+		s.clearForeclosureEpochNotices(app.ID, epoch.Index)
 	}
 	return false, nil
+}
+
+// A terminal root result is independent of the remaining bond-recovery duty.
+func foreclosedRootResultCovers(app *Application, epoch *Epoch, root *Tournament, head uint64) bool {
+	if root == nil || epoch.TournamentAddress == nil || root.ApplicationID != app.ID ||
+		epoch.ApplicationID != app.ID || root.EpochIndex != epoch.Index || root.Address != *epoch.TournamentAddress || root.Level != 0 {
+		return false
+	}
+	snapshot := root.Snapshot
+	if snapshot.FinishedAtBlock == 0 || snapshot.FinishedAtBlock > snapshot.AsOfBlock || snapshot.AsOfBlock > head {
+		return false
+	}
+	return snapshot.Standing == TournamentStandingRootFailed ||
+		snapshot.Standing == TournamentStandingRootWinner && snapshot.FinalStateHash != nil
 }
 
 // gatherTournamentData reads one tournament and only newly discovered

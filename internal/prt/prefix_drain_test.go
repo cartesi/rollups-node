@@ -33,7 +33,7 @@ func TestPRTForeclosurePreservesPrefixAwaitingValidator(t *testing.T) {
 				repository.Pagination{}, false).Return([]*model.Epoch{epoch}, uint64(1), nil).Once()
 
 			require.NoError(t, s.drainForeclosedClaims(t.Context(), app, []*model.Epoch{epoch}, nil, 100))
-			repo.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, mock.Anything, mock.Anything)
+			repo.AssertNotCalled(t, "ForeclosePRTEpoch", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			repo.AssertExpectations(t)
 		})
 	}
@@ -50,7 +50,8 @@ func TestPRTTerminalPrefixAcceptancePrecedesForeclosureDrain(t *testing.T) {
 	f.repo.On("GetEpochCompletionState", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).
 		Return(&repository.EpochCompletionState{Application: f.app, Epoch: epoch, Problem: problem}, nil).Once()
 	tournament := &model.Tournament{ApplicationID: f.app.ID, EpochIndex: epoch.Index, Address: *epoch.TournamentAddress,
-		Snapshot: model.TournamentSnapshot{FinishedAtBlock: 90, AsOfBlock: 100, WinnerCommitment: epoch.Commitment}}
+		Snapshot: model.TournamentSnapshot{Standing: model.TournamentStandingRootWinner, FinishedAtBlock: 90,
+			AsOfBlock: 100, WinnerCommitment: epoch.Commitment, FinalStateHash: epoch.MachineHash}}
 	f.acceptance(epoch, tournament, nil)
 	var order []string
 	for _, call := range f.repo.ExpectedCalls {
@@ -63,13 +64,13 @@ func TestPRTTerminalPrefixAcceptancePrecedesForeclosureDrain(t *testing.T) {
 	f.repo.On("HasUnreconciledClaimsBeforeBlock", mock.Anything, f.app.ID, uint64(100)).Return(true, nil).Once()
 	f.repo.On("ListEpochs", mock.Anything, f.app.Name, repository.EpochFilter{Status: model.NonTerminalEpochStatuses()},
 		repository.Pagination{}, false).Return([]*model.Epoch{epoch, suffix}, uint64(2), nil).Once()
-	f.repo.On("UpdateEpochWithForeclosedClaim", mock.Anything, f.app.ID, suffix.Index).
+	f.repo.On("ForeclosePRTEpoch", mock.Anything, f.app.ID, suffix.Index, mock.Anything).
 		Run(func(mock.Arguments) { order = append(order, "foreclosed stopped suffix") }).Return(nil).Once()
 
 	require.NoError(t, f.s.drainForeclosedClaims(t.Context(), f.app, []*model.Epoch{epoch, suffix}, f.consensus, 100))
 
 	require.Equal(t, []string{"accepted earlier epoch", "foreclosed stopped suffix"}, order)
-	f.repo.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, f.app.ID, epoch.Index)
+	f.repo.AssertNotCalled(t, "ForeclosePRTEpoch", mock.Anything, f.app.ID, epoch.Index, mock.Anything)
 	require.Equal(t, model.ApplicationStatus_MachineHalted, f.app.Status)
 }
 
@@ -91,11 +92,12 @@ func TestPRTTerminalPrefixDrainWaitsForOwningRootObservation(t *testing.T) {
 			repo.On("GetTournament", mock.Anything, app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).Return(root, nil).Once()
 			repo.On("HasUndrainedEpochsBeforeBlock", mock.Anything, app.ID, uint64(100)).Return(false, nil).Once()
 			repo.On("HasUnreconciledClaimsBeforeBlock", mock.Anything, app.ID, uint64(100)).Return(true, nil).Once()
+			repo.On("ListEpochs", mock.Anything, app.Name, mock.Anything, repository.Pagination{}, false).
+				Return([]*model.Epoch{epoch}, uint64(1), nil).Once()
+			repo.On("ForeclosePRTEpoch", mock.Anything, app.ID, epoch.Index, uint64(100)).Return(repository.ErrNoUpdate).Once()
 
 			require.NoError(t, s.drainForeclosedClaims(t.Context(), app, []*model.Epoch{epoch}, nil, 100))
 
-			repo.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, mock.Anything, mock.Anything)
-			repo.AssertNotCalled(t, "ListEpochs", mock.Anything, mock.Anything, mock.Anything, mock.Anything, false)
 			repo.AssertExpectations(t)
 		})
 	}
@@ -129,9 +131,9 @@ func TestPRTForeclosureDoesNotTreatGlobalStopAsCutoffEvidence(t *testing.T) {
 				repository.Pagination{}, false).Return([]*model.Epoch{epoch}, uint64(1), nil).Once()
 			repo.On("GetEpochCompletionState", mock.Anything, app.IApplicationAddress.Hex(), epoch.Index).Return(state, nil).Once()
 
-			require.ErrorIs(t, s.foreclosePendingClaimEpochs(t.Context(), app), txsender.ErrIneligible)
+			require.ErrorIs(t, s.foreclosePendingClaimEpochs(t.Context(), app, app.ForecloseBlock), txsender.ErrIneligible)
 
-			repo.AssertNotCalled(t, "UpdateEpochWithForeclosedClaim", mock.Anything, mock.Anything, mock.Anything)
+			repo.AssertNotCalled(t, "ForeclosePRTEpoch", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			repo.AssertExpectations(t)
 		})
 	}

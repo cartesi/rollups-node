@@ -542,6 +542,63 @@ A zero staging period, node downtime or unavailable evidence can remove that
 opportunity. The node reports pending verification; it does not declare a false
 claim without validated evidence or promise a guardian response deadline.
 
+## PRT evidence after foreclosure
+
+Recorded foreclosure stops new PRT participation and retains evidence for
+eligible sealed epochs, including empty epochs and seals in the foreclosure
+block. The manager retains the machine through execution and healthy `CLOSED`
+finalization; validation then uses stored data.
+
+After historical scans and the bounded input drain complete, PRT compares
+pending results in epoch order. Missing root evidence, acceptance evidence not
+yet covered by observation, or a row with no accepting transaction ends those
+comparisons. Independent unsealed and input-stop exits can still run; a receipt,
+RPC or database error during reconciliation instead stops the drain pass.
+While an earlier comparison waits, the node does not name a later false winner
+in a detailed mismatch alert.
+
+A computed epoch requires its exact level-zero terminal root, observed no later
+than the selected head and at or after root completion. A matching `ROOT_WINNER`
+or `ROOT_FAILED` permits `CLAIM_FORECLOSED` with artifacts retained, independently
+of bond recovery. A different final-state hash causes `DIVERGED` when comparison
+reaches that epoch; commitment identity alone does not prove divergence.
+The existing SQL admission also permits a `CLAIM_STAGED` row to close without a
+new root comparison, even with a conflicting retained root. This limit includes
+retained state under provisional history and does not guarantee a later mismatch
+diagnosis. The ordinary drain retains rows with known accepting transactions.
+
+An unsealed epoch uses its existing bounded drain, without a seal or claim.
+An [input stop](#execution-stops-and-integrity-findings) with its typed input
+boundary permits the applicable target and suffix to close without comparing a
+normal result. The message
+`Terminalized unaccepted epoch of foreclosed application` confirms closure,
+without establishing that no winner exists or that its result was compared.
+
+A confirmed incompatible deployment retains eligible claim and output-proof
+production before its generation exit. The database checks deployment identity,
+reset generation, confirmed generation tier, application eligibility and scan
+coverage. This exit can retain the accepting hash observed in `EpochSealed`
+even when the generation prevents local comparison.
+
+Root completion has no finite deadline and needs no runtime while waiting.
+Active roots and mutable children can require continued RPC work; complete
+immutable descriptors can be reused under the
+[observation rules](#size-observation-and-deadline-capacity).
+Limited notices do not limit requests or total cost.
+
+Completion requires complete trusted history, matching machine rules and
+compatible contracts visible at the observation bound. It assumes
+`DaveAppFactory` deployment or a verified application-to-consensus relationship;
+passive completion does not verify the reverse link. A consensus deployed after
+foreclosure outside the factory can remain invisible to the bounded historical
+scan. The selected policy and the `safe`/`latest` reorg limits remain those in
+[Prepare a deployment](#prepare-a-deployment).
+A machine snapshot restores runtime state, not missing historical evidence.
+
+Result observation for applications without foreclosure keeps the existing
+policy. In that path, a later `DIVERGED` finding can still prevent comparison
+of earlier accepted epochs.
+
 ## Execution stops and integrity findings
 
 An execution stop (`GUEST_EXCEPTION`, `MACHINE_HALTED`, `MCYCLE_OVERFLOW` or
@@ -552,6 +609,13 @@ An invalid root found in an earlier epoch moves P back, including after restart.
 The earlier work still needs valid proofs, signer authorization, time for
 inclusion, and all foreclosure and protocol checks. This does not provide active
 dispute defense or discovery of every other party's claim.
+
+A failed runtime closes. During epoch finalization, a snapshot failure that
+closes the runtime requires `FAILED`, unless shutdown cancellation was observed. These Advancer rules apply to Authority, Quorum and PRT.
+`FAILED` retains unfinished work but stops normal execution, finalization and
+claim production; restarting does not clear it. Repair the runtime or storage
+cause before using `cartesi-rollups-cli app status <application> enabled` to
+permit reconstruction and replay.
 
 Unknown automatic yield reasons do not stop execution. With a later run target,
 the emulator interpreter clears the automatic yield flag and resumes execution.
@@ -651,8 +715,9 @@ Known limitations:
   integrity verdict. The local output stays unexecuted; the chain can have consumed
   its index. See [invalid outputs root handling](invalid-outputs-root.md) for the
   comparison, stored-proof and scan limits.
-- A machine can be released before a closed epoch of a foreclosed application
-  has been finalized.
+- With `EVERY_EPOCH`, finalization after foreclosure can replace the last accepted
+  boundary snapshot with a newer unaccepted snapshot. Database proofs do not
+  restore machine memory.
 - The output reader can stall on an executed output index that is absent locally.
 
 ## Disable and remove an application

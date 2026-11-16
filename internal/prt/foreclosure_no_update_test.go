@@ -18,40 +18,33 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 )
 
-func TestForeclosePendingClaimEpochs_NoUpdateContinuesAndFreshPrefixIsPreserved(t *testing.T) {
+func TestForeclosePendingClaimEpochs_NoUpdateContinuesAndRereadsNextPass(t *testing.T) {
 	s, r := newPRTServiceMock()
 	defer r.AssertExpectations(t)
 	var logs bytes.Buffer
 	s.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	app := prtForeclosedApp(1, 100)
-	stale := &model.Epoch{
-		ApplicationID: app.ID, Index: 2, Status: model.EpochStatus_Closed, FirstBlock: 80, LastBlock: 90,
-	}
-	suffix := &model.Epoch{
-		ApplicationID: app.ID, Index: 3, Status: model.EpochStatus_Closed, FirstBlock: 90, LastBlock: 110,
-	}
-	fresh := *stale
-	fresh.Status = model.EpochStatus_InputsProcessed
+	pending := checkpointEpoch(2, "0x200")
+	pending.ApplicationID = app.ID
+	open := &model.Epoch{ApplicationID: app.ID, Index: 3, Status: model.EpochStatus_Open, FirstBlock: 90}
 	filter := repository.EpochFilter{Status: model.NonTerminalEpochStatuses()}
 	firstRead := r.On("ListEpochs", mock.Anything, app.Name, filter, repository.Pagination{}, false).
-		Return([]*model.Epoch{stale, suffix}, uint64(2), nil).Once()
-	noUpdate := r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, stale.Index).
+		Return([]*model.Epoch{pending, open}, uint64(2), nil).Once()
+	noUpdate := r.On("ForeclosePRTEpoch", mock.Anything, app.ID, pending.Index, uint64(100)).
 		Return(repository.ErrNoUpdate).Once()
-	success := r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, suffix.Index).Return(nil).Once()
+	success := r.On("ForeclosePRTEpoch", mock.Anything, app.ID, open.Index, uint64(100)).Return(nil).Once()
 	secondRead := r.On("ListEpochs", mock.Anything, app.Name, filter, repository.Pagination{}, false).
-		Return([]*model.Epoch{&fresh}, uint64(1), nil).Once()
-	mock.InOrder(firstRead, noUpdate, success, secondRead)
+		Return([]*model.Epoch{pending}, uint64(1), nil).Once()
+	ready := r.On("ForeclosePRTEpoch", mock.Anything, app.ID, pending.Index, uint64(101)).Return(nil).Once()
+	mock.InOrder(firstRead, noUpdate, success, secondRead, ready)
 
-	// The conditional update saw a newer row than the CLOSED snapshot. Another
-	// eligible epoch must still progress, without claiming the no-op succeeded.
-	require.NoError(t, s.foreclosePendingClaimEpochs(t.Context(), app))
-	assert.Equal(t, []uint64{suffix.Index}, loggedForeclosedEpochs(t, &logs))
-
-	// On the next observation the healthy, fully pre-foreclosure IP epoch is
-	// visible and must retain its validator path without another update or log.
-	require.NoError(t, s.foreclosePendingClaimEpochs(t.Context(), app))
-	assert.Equal(t, []uint64{suffix.Index}, loggedForeclosedEpochs(t, &logs))
-	r.AssertNumberOfCalls(t, "UpdateEpochWithForeclosedClaim", 2)
+	// A refused target must not stop an independent unsealed exit or claim
+	// success. A later pass obtains a new page and supplies its actual head.
+	require.NoError(t, s.foreclosePendingClaimEpochs(t.Context(), app, 100))
+	assert.Equal(t, []uint64{open.Index}, loggedForeclosedEpochs(t, &logs))
+	require.NoError(t, s.foreclosePendingClaimEpochs(t.Context(), app, 101))
+	assert.Equal(t, []uint64{open.Index, pending.Index}, loggedForeclosedEpochs(t, &logs))
+	r.AssertNumberOfCalls(t, "ForeclosePRTEpoch", 3)
 }
 
 func TestForeclosePendingClaimEpochs_NoUpdateDoesNotHideLaterWriteError(t *testing.T) {
@@ -69,12 +62,12 @@ func TestForeclosePendingClaimEpochs_NoUpdateDoesNotHideLaterWriteError(t *testi
 	}
 	r.On("ListEpochs", mock.Anything, app.Name, mock.Anything, repository.Pagination{}, false).
 		Return([]*model.Epoch{stale, next}, uint64(2), nil).Once()
-	noUpdate := r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, stale.Index).
+	noUpdate := r.On("ForeclosePRTEpoch", mock.Anything, app.ID, stale.Index, mock.Anything).
 		Return(repository.ErrNoUpdate).Once()
-	writeFailure := r.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, next.Index).Return(dbErr).Once()
+	writeFailure := r.On("ForeclosePRTEpoch", mock.Anything, app.ID, next.Index, mock.Anything).Return(dbErr).Once()
 	mock.InOrder(noUpdate, writeFailure)
 
-	err := s.foreclosePendingClaimEpochs(t.Context(), app)
+	err := s.foreclosePendingClaimEpochs(t.Context(), app, app.ForecloseBlock)
 	assert.ErrorIs(t, err, dbErr)
 	assert.Empty(t, loggedForeclosedEpochs(t, &logs))
 }

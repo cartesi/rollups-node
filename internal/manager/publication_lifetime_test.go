@@ -4,7 +4,6 @@
 package manager
 
 import (
-	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -37,7 +36,7 @@ func foreclosedPublicationManager(t *testing.T, consensus model.Consensus, undra
 }
 
 func TestForeclosedMachineWaitsForProofPublication(t *testing.T) {
-	for _, consensus := range []model.Consensus{model.Consensus_Authority, model.Consensus_Quorum} {
+	for _, consensus := range model.ConsensusAllValues {
 		t.Run(string(consensus), func(t *testing.T) {
 			m, repo, instance := foreclosedPublicationManager(t, consensus, false)
 			app := instance.Application()
@@ -59,7 +58,7 @@ func TestForeclosedMachineWaitsForProofPublication(t *testing.T) {
 }
 
 func TestForeclosedMachinePublicationReadErrorKeepsRuntime(t *testing.T) {
-	m, repo, instance := foreclosedPublicationManager(t, model.Consensus_Authority, false)
+	m, repo, instance := foreclosedPublicationManager(t, model.Consensus_PRT, false)
 	app := instance.Application()
 	failure := errors.New("publication progress unavailable")
 	repo.On("HasUnpublishedEpochBeforeBlock", mock.Anything, app.ID, app.ForecloseBlock).Return(false, failure).Once()
@@ -72,19 +71,13 @@ func TestForeclosedMachinePublicationReadErrorKeepsRuntime(t *testing.T) {
 	repo.AssertExpectations(t)
 }
 
-func TestForeclosedMachinePublicationDoesNotExpandPRTOrUndrainedPath(t *testing.T) {
-	for _, test := range []struct {
-		name      string
-		consensus model.Consensus
-		undrained bool
-	}{
-		{"PRT remains input-drain only", model.Consensus_PRT, false},
-		{"pending A/Q inputs already retain runtime", model.Consensus_Authority, true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			m, repo, instance := foreclosedPublicationManager(t, test.consensus, test.undrained)
-			require.NoError(t, m.UpdateMachines(context.Background()))
-			require.Equal(t, test.undrained, m.HasMachine(instance.Application().ID))
+func TestForeclosedPendingInputsRetainRuntimeBeforePublicationQuery(t *testing.T) {
+	for _, consensus := range model.ConsensusAllValues {
+		t.Run(consensus.String(), func(t *testing.T) {
+			m, repo, instance := foreclosedPublicationManager(t, consensus, true)
+			require.NoError(t, m.UpdateMachines(t.Context()))
+			require.True(t, m.HasMachine(instance.Application().ID))
+			require.Zero(t, instance.closeCalls)
 			repo.AssertNotCalled(t, "HasUnpublishedEpochBeforeBlock", mock.Anything, mock.Anything, mock.Anything)
 			repo.AssertExpectations(t)
 		})

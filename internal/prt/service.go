@@ -317,11 +317,12 @@ func (s *Service) drainForeclosedClaims(
 		return nil
 	}
 	if state == deploymentGeneration {
-		return s.forecloseGenerationClaims(ctx, app, generation)
+		return s.forecloseGenerationClaims(ctx, app, generation, mostRecentBlock)
 	}
 
-	// Read-only reconciliation: accept epochs whose root result has
-	// our commitment, and surface any divergence. This sends no transactions.
+	// Reconcile accepted results and compare final-state evidence without
+	// sending transactions. Incomplete evidence stops these comparisons,
+	// but does not stop independent foreclosure exits below.
 	deferActions, err := s.reconcileAcceptedEpochs(ctx, app, epochs, consensus, mostRecentBlock)
 	if err != nil {
 		// A divergence detected here marks the app DIVERGED and returns the
@@ -331,26 +332,29 @@ func (s *Service) drainForeclosedClaims(
 	if deferActions {
 		return nil
 	}
-
-	// Pending claim epochs without an acceptance transaction can never be
-	// accepted now that the app is foreclosed. Make them CLAIM_FORECLOSED.
-	return s.foreclosePendingClaimEpochs(ctx, app)
+	// The repository checks each current row and its durable root evidence.
+	// Discovery and reconciliation of an older page do not grant permission.
+	return s.foreclosePendingClaimEpochs(ctx, app, mostRecentBlock)
 }
 
-func (s *Service) foreclosePendingClaimEpochs(ctx context.Context, app *Application) error {
+func (s *Service) foreclosePendingClaimEpochs(ctx context.Context, app *Application, observedHead uint64) error {
 	filter := repository.EpochFilter{Status: NonTerminalEpochStatuses()}
 	epochs, _, err := s.repository.ListEpochs(ctx, app.Name, filter, repository.Pagination{}, false)
 	if err != nil {
 		return fmt.Errorf("listing pending claim epochs for foreclosed app %s: %w",
 			app.IApplicationAddress, err)
 	}
+	s.pruneForeclosureWaitNotices(app.ID, epochs)
 	for _, epoch := range epochs {
 		if epoch.FirstBlock > app.ForecloseBlock {
 			continue
 		}
-		// A complete valid prefix epoch still needs the validator before its
-		// accepted result can be reconciled. Foreclosure must not erase it.
-		if epoch.Status == EpochStatus_InputsProcessed && epoch.LastBlock < app.ForecloseBlock {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Preserve both runtime finalization and validation for a real seal,
+		// including a seal in the foreclosure block. Typed ET exits are separate.
+		if (epoch.Status == EpochStatus_Closed || epoch.Status == EpochStatus_InputsProcessed) && epoch.TournamentAddress != nil {
 			pending, err := s.observerCompletionEpoch(ctx, app, epoch)
 			if err != nil {
 				return err
@@ -368,15 +372,17 @@ func (s *Service) foreclosePendingClaimEpochs(ctx context.Context, app *Applicat
 			)
 			continue
 		}
-		if err := s.repository.UpdateEpochWithForeclosedClaim(ctx, app.ID, epoch.Index); err != nil {
+		if err := s.repository.ForeclosePRTEpoch(ctx, app.ID, epoch.Index, observedHead); err != nil {
 			// The guarded transition can lose eligibility after selection. Defer
 			// the no-write result; dependency errors stay visible.
 			if errors.Is(err, repository.ErrNoUpdate) {
+				s.reportForeclosureRefusal(app, epoch, observedHead, 0)
 				continue
 			}
 			return fmt.Errorf("foreclosing epoch %d of app %s: %w",
 				epoch.Index, app.IApplicationAddress, err)
 		}
+		s.clearForeclosureEpochNotices(app.ID, epoch.Index)
 		s.Logger.Info("Terminalized unaccepted epoch of foreclosed application",
 			"application", app.Name,
 			"address", app.IApplicationAddress,

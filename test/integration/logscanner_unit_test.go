@@ -81,6 +81,7 @@ func testPrtProtectionStopReporter(t *testing.T) {
 		}{
 			{name: "pinned", source: prtPinnedClockSource, available: true},
 			{name: "stored", source: prtStoredClockSource, available: true},
+			{name: "committed", source: prtCommittedClockSource, available: true},
 			{name: "stored before projection", source: prtStoredClockSource},
 		} {
 			t.Run(fmt.Sprintf("%s/color=%t", tc.name, color), func(t *testing.T) {
@@ -88,8 +89,11 @@ func testPrtProtectionStopReporter(t *testing.T) {
 				logger := slog.New(tint.NewTextHandler(&output, &tint.Options{NoColor: !color, TimeFormat: nodeLogTimeFmt})).
 					With("service", "prt")
 				clock := prtprotection.Clock{EpochIndex: 2, Root: root, Source: tc.source}
-				if tc.source == prtPinnedClockSource {
+				switch tc.source {
+				case prtPinnedClockSource:
 					clock.Source += " at block 90 (" + common.Hash{}.Hex() + ")"
+				case prtCommittedClockSource:
+					clock.Source += " at block 90"
 				}
 				if tc.available {
 					clock.ClosingBlock = new(uint64(123))
@@ -121,6 +125,7 @@ func testPrtProtectionStopLogs(t *testing.T) {
 		application, address.Hex(), root.Hex(), cause)
 	pinned := ` clock_source="pinned root descriptor at block 90 (` + common.Hash{}.Hex() + `)"`
 	stored := ` clock_source="stored root descriptor"`
+	committed := ` clock_source="committed root descriptor at block 90"`
 	available := ` clock_available=true join_close_block=123`
 	missing := ` clock_available=false clock_error="root descriptor is not stored"`
 	for _, tc := range []struct {
@@ -131,6 +136,12 @@ func testPrtProtectionStopLogs(t *testing.T) {
 	}{
 		{name: "pinned exact end", line: line + pinned + available, valid: true},
 		{name: "stored exact end", source: prtStoredClockSource, line: line + stored + available, valid: true},
+		{name: "committed exact end", source: prtCommittedClockSource, line: line + committed + available, valid: true},
+		{name: "committed missing block", source: prtCommittedClockSource,
+			line: line + ` clock_source="committed root descriptor"` + available},
+		{name: "committed wrong close", source: prtCommittedClockSource, line: line + committed +
+			strings.Replace(available, "123", "124", 1)},
+		{name: "committed missing clock", source: prtCommittedClockSource, line: line + committed + missing},
 		{name: "stored before projection", source: prtStoredClockSource, line: line + stored + missing, valid: true},
 		{name: "wrong application", line: strings.Replace(line, "application="+application, "application="+application+"-other", 1) +
 			pinned + available},

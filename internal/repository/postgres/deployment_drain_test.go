@@ -28,6 +28,10 @@ func deploymentDrainFixture(t *testing.T, computed bool) (
 	t.Helper()
 	r := newEpochPublicationRepository(t).(*PostgresRepository)
 	app, epoch := seedEpochPublication(t, r)
+	address := repotest.UniqueAddress()
+	_, sealErr := r.db.Exec(t.Context(), `UPDATE epoch SET tournament_address=$3 WHERE application_id=$1 AND index=$2`,
+		app.ID, epoch.Index, address[:])
+	require.NoError(t, sealErr)
 	require.NoError(t, r.UpdateEpochInputsProcessed(t.Context(), app.Name, epoch.Index, repotest.DummyStateProof()))
 	require.NoError(t, r.UpdateApplicationForeclosure(t.Context(), app.ID, 20, repotest.UniqueHash(), 20))
 	_, err := r.db.Exec(t.Context(), `UPDATE application SET last_epoch_check_block=20,last_input_check_block=20 WHERE id=$1`, app.ID)
@@ -143,7 +147,7 @@ func TestDeploymentDrainRetainsAcceptedExclusion(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, before, after)
 	})
-	t.Run("known transaction remains reconcilable", func(t *testing.T) {
+	t.Run("known transaction hash is retained", func(t *testing.T) {
 		r, app, epoch, request := deploymentDrainFixture(t, true)
 		require.NoError(t, r.UpdateEpochWithSubmittedClaim(t.Context(), app.ID, epoch.Index, repotest.UniqueHash()))
 		require.NoError(t, r.ForecloseDeploymentEpoch(t.Context(), request))

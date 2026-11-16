@@ -14,7 +14,7 @@ import (
 )
 
 func (s *Service) forecloseGenerationClaims(ctx context.Context, app *model.Application,
-	generation int64,
+	generation int64, observedHead uint64,
 ) error {
 	if !app.Enabled || !completionStatusAllowed(app.Status) {
 		return nil
@@ -24,19 +24,21 @@ func (s *Service) forecloseGenerationClaims(ctx context.Context, app *model.Appl
 	if err != nil {
 		return err
 	}
+	s.pruneForeclosureWaitNotices(app.ID, epochs)
 	var errs []error
 	for _, epoch := range epochs {
 		if epoch.FirstBlock > app.ForecloseBlock || !slices.Contains(model.NonTerminalEpochStatuses(), epoch.Status) {
 			continue
 		}
-		if epoch.Status == model.EpochStatus_InputsProcessed && epoch.LastBlock < app.ForecloseBlock {
+		if (epoch.Status == model.EpochStatus_Closed || epoch.Status == model.EpochStatus_InputsProcessed) &&
+			epoch.TournamentAddress != nil {
 			pending, eligibilityErr := s.observerCompletionEpoch(ctx, app, epoch)
 			if eligibilityErr != nil {
 				return errors.Join(append(errs, eligibilityErr)...)
 			}
 			if pending != nil {
 				// The normal validator must atomically publish its claim and every
-				// output proof. A permanent producer failure can leave this pending.
+				// output proof. FAILED instead preserves an operator-recovery wait.
 				s.Logger.Info("PRT deployment drain awaits normal claim and output proofs", "application", app.Name,
 					"address", app.IApplicationAddress, "epoch", epoch.Index, "reset_generation", generation)
 				continue
@@ -56,11 +58,13 @@ func (s *Service) forecloseGenerationClaims(ctx context.Context, app *model.Appl
 			EpochIndex: epoch.Index, ResetGeneration: generation}
 		if writeErr := s.repository.ForecloseDeploymentEpoch(ctx, request); writeErr != nil {
 			if errors.Is(writeErr, repository.ErrNoUpdate) {
+				s.reportForeclosureRefusal(app, epoch, observedHead, generation)
 				continue
 			}
 			return errors.Join(append(errs, fmt.Errorf("deployment drain application %s epoch %d: %w",
 				app.IApplicationAddress, epoch.Index, writeErr))...)
 		}
+		s.clearForeclosureEpochNotices(app.ID, epoch.Index)
 		s.Logger.Info("Terminalized epoch under confirmed incompatible deployment", "application", app.Name,
 			"address", app.IApplicationAddress, "epoch", epoch.Index, "reset_generation", generation)
 	}

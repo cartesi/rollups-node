@@ -51,11 +51,13 @@ var multiNodeServices = []multiService{
 		extraEnv: []string{"CARTESI_PRT_TELEMETRY_ADDRESS=:10006"}},
 }
 
-var multiNodeListenAddrs = []string{
-	":10000", // stale standalone node telemetry
-	":10001", ":10002", ":10003", ":10004", ":10005", ":10006",
-	":10011", // jsonrpc API
-	":10012", // inspect API
+func multiNodeListenAddresses() []string {
+	return []string{
+		nodeTelemetryAddress(), // stale standalone node telemetry
+		"localhost:10001", "localhost:10002", "localhost:10003", "localhost:10004", "localhost:10005", "localhost:10006",
+		"localhost:10011", // jsonrpc API
+		"localhost:10012", // inspect API
+	}
 }
 
 // multiNode is a running host multiprocess deployment.
@@ -143,11 +145,11 @@ func startMultiNode(logPath string, extraEnv ...string) (*multiNode, error) {
 }
 
 func preflightMultiNodePorts() error {
-	for _, addr := range multiNodeListenAddrs {
-		conn, err := net.DialTimeout("tcp", "localhost"+addr, time.Second)
+	for _, addr := range multiNodeListenAddresses() {
+		conn, err := net.DialTimeout("tcp", addr, time.Second)
 		if err == nil {
 			conn.Close()
-			return fmt.Errorf("cannot start multiprocess node: localhost%s is already in use", addr)
+			return fmt.Errorf("cannot start multiprocess node: %s is already in use", addr)
 		}
 	}
 	return nil
