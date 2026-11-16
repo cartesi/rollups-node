@@ -118,7 +118,6 @@ func (s *Service) recordTournamentResult(
 		return s.setApplicationDiverged(ctx, app, "%v", err)
 	}
 	if snapshot.stage.IsTournamentFailed {
-		s.logFailedRootTournament(app, epoch.Index, snapshot.sealed.Tournament)
 		return nil
 	}
 	if !snapshot.sealed.IsTournamentResultStaged {

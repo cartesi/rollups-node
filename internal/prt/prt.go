@@ -218,10 +218,18 @@ func (s *Service) readTournament(
 	return t, nil
 }
 
-func (s *Service) logFailedRootTournament(app *Application, epochIndex uint64, tournament common.Address) {
-	s.Logger.Warn("Root tournament finished without a winner; this consensus cannot advance. "+
-		"Ask the application guardian to consider foreclosure",
-		"application", app.Name, "epoch_index", epochIndex, "tournament", tournament)
+func (s *Service) logFailedRootTournament(app *Application, tournament *Tournament, head uint64) {
+	if !app.Enabled || app.IsForeclosed() || !isRootTournament(tournament) ||
+		tournament.Snapshot.Standing != TournamentStandingRootFailed ||
+		!s.tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, head) {
+		return
+	}
+	s.Logger.Error("Root tournament finished without a winner; consensus cannot advance. "+
+		"If a guardian is configured, ask the guardian now to confirm the failure and call IApplication.foreclose(). "+
+		"New inputs and portal deposits can still be accepted until foreclosure. "+
+		"No protocol deadline applies to this call.",
+		"application", app.Name, "address", app.IApplicationAddress,
+		"epoch_index", tournament.EpochIndex, "tournament", tournament.Address)
 }
 
 func validateTournamentDescriptor(descriptor TournamentDescriptor, expectedLevel TournamentLevel, levelCount uint64) error {
@@ -338,9 +346,6 @@ func (s *Service) updateTournamentStanding(
 	}
 	if standing.State == TournamentStandingMatchesActive {
 		s.warnUnsupportedDispute(app, epoch.Index, t.Address)
-	}
-	if level == RootLevel && standing.State == TournamentStandingRootFailed {
-		s.logFailedRootTournament(app, epoch.Index, t.Address)
 	}
 	snapshot := TournamentSnapshot{
 		AsOfBlock: mostRecentBlock, Standing: standing.State, AcceptsJoins: standing.AcceptsJoins,
