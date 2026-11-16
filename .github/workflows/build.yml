@@ -106,7 +106,7 @@ jobs:
         uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1
 
       - name: Build rollups-node image (amd64)
-        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
+        uses: depot/build-push-action@0f27be7c41d76663a98518dfe68f1c46582242c4 # v1
         with:
           file: Dockerfile
           context: .
@@ -117,7 +117,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build rollups-node image (arm64)
-        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
+        uses: depot/build-push-action@0f27be7c41d76663a98518dfe68f1c46582242c4 # v1
         with:
           file: Dockerfile
           context: .
@@ -128,7 +128,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build tester image
-        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
+        uses: depot/build-push-action@0f27be7c41d76663a98518dfe68f1c46582242c4 # v1
         with:
           file: Dockerfile
           context: .
@@ -140,7 +140,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build devnet image
-        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
+        uses: depot/build-push-action@0f27be7c41d76663a98518dfe68f1c46582242c4 # v1
         with:
           file: test/devnet/Dockerfile
           context: .
@@ -151,7 +151,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Build debian package (amd64)
-        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
+        uses: depot/build-push-action@0f27be7c41d76663a98518dfe68f1c46582242c4 # v1
         with:
           file: Dockerfile
           context: .
@@ -167,7 +167,7 @@ jobs:
         run: make copy-debian-package BUILD_PLATFORM=linux/amd64 DEB_ARCH=amd64 DEB_PACKAGER_IMG=${{ github.repository_owner }}/rollups-node:debian-packager-amd64
 
       - name: Build debian package (arm64)
-        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
+        uses: depot/build-push-action@0f27be7c41d76663a98518dfe68f1c46582242c4 # v1
         with:
           file: Dockerfile
           context: .
