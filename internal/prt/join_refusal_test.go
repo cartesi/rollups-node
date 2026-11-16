@@ -5,6 +5,7 @@ package prt
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/stretchr/testify/mock"
@@ -13,26 +14,7 @@ import (
 	"math/big"
 	"strings"
 	"testing"
-	"time"
 )
-
-func TestJoinRefusalWarningStateExpiresAndDoesNotSuppressANewEpoch(t *testing.T) {
-	f := newDeliveryFixture(t)
-	var logs bytes.Buffer
-	f.d.Logger = slog.New(slog.NewTextHandler(&logs, nil))
-	err := &joinRefusal{epoch: 3, tournament: *f.epoch.TournamentAddress, reason: "unsupported root geometry"}
-	f.d.warnJoinPlanningRefusal(f.app, f.block, err)
-	err.epoch++
-	f.d.warnJoinPlanningRefusal(f.app, f.block, err)
-	require.Equal(t, 2, strings.Count(logs.String(), "PRT cannot join tournament"))
-	f.d.diagnostics.joinRefusals[99] = joinRefusalWarning{warnedAt: time.Now().Add(-2 * publicationWarningInterval)}
-	f.d.warnJoinPlanningRefusal(f.app, f.block, err)
-	require.NotContains(t, f.d.diagnostics.joinRefusals, int64(99))
-	require.Len(t, f.d.diagnostics.joinRefusals, 1)
-	// Ordinary no-work and changed eligibility do not become missed-protection alarms.
-	f.d.warnJoinPlanningRefusal(f.app, f.block, txsender.ErrIneligible)
-	require.Equal(t, 2, strings.Count(logs.String(), "PRT cannot join tournament"))
-}
 
 func TestJoinPlanningRefusalsWarnWithApplicationAndTournamentContext(t *testing.T) {
 	for _, test := range []struct{ name, reason string }{
@@ -77,7 +59,7 @@ func TestJoinPlanningRefusalsWarnWithApplicationAndTournamentContext(t *testing.
 				require.Empty(t, candidates)
 			}
 			message := logs.String()
-			require.Equal(t, 1, strings.Count(message, "PRT cannot join tournament"))
+			require.Equal(t, 3, strings.Count(message, "PRT cannot join tournament"))
 			for _, context := range []string{f.app.Name, strings.ToLower(f.app.IApplicationAddress.Hex()),
 				strings.ToLower(f.epoch.TournamentAddress.Hex()), "epoch=3", "block=110", "deadline="} {
 				require.Contains(t, strings.ToLower(message), strings.ToLower(context))
@@ -85,13 +67,17 @@ func TestJoinPlanningRefusalsWarnWithApplicationAndTournamentContext(t *testing.
 			require.Contains(t, message, test.reason)
 			require.Empty(t, backend.published)
 			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
-			warning := f.d.diagnostics.joinRefusals[f.app.ID]
-			warning.warnedAt = warning.warnedAt.Add(-publicationWarningInterval)
-			f.d.diagnostics.joinRefusals[f.app.ID] = warning
-			_, err := f.d.candidates(t.Context(), snapshot, facts)
-			require.NoError(t, err)
-			require.Equal(t, 2, strings.Count(logs.String(), "PRT cannot join tournament"))
 			f.repo.AssertNotCalled(t, "UpdateApplicationStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 		})
+	}
+}
+
+func TestOrdinaryIneligibilityDoesNotWarnAboutJoinProtection(t *testing.T) {
+	for _, cause := range []error{txsender.ErrIneligible, fmt.Errorf("epoch unavailable: %w", txsender.ErrIneligible)} {
+		f := newDeliveryFixture(t)
+		var logs bytes.Buffer
+		f.d.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		f.d.warnJoinPlanningRefusal(f.app, f.block, cause)
+		require.Empty(t, logs.String())
 	}
 }

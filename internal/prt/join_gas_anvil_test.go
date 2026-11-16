@@ -32,14 +32,14 @@ import (
 // execution branch can change when the peer precedes us within one block.
 type joinGasBackend struct {
 	txsender.ProtectedClient
-	beforePublish func()
+	beforePublish func(context.Context)
 }
 
 func (b *joinGasBackend) Publish(ctx context.Context, raw []byte) (common.Hash, error) {
 	if b.beforePublish != nil {
 		hook := b.beforePublish
 		b.beforePublish = nil
-		hook()
+		hook(ctx)
 	}
 	return b.ProtectedClient.Publish(ctx, raw)
 }
@@ -102,7 +102,7 @@ func TestAnvilJoinGasAfterPeerJoin(t *testing.T) {
 			epoch := &model.Epoch{MachineHash: &machine, CommitmentProof: make([]common.Hash, model.Log2EpochComputationHashLeafCount)}
 			data, err := joinData(epoch)
 			require.NoError(t, err)
-			request := txsender.Request{To: sealed.Tournament, Data: data, Value: bond}
+			request := txsender.Request{To: sealed.Tournament, Data: data, Value: bond, EstimateWithZeroFees: true}
 			estimated, err := client.EstimateGas(ctx, ethereum.CallMsg{From: ours.From, To: &request.To, Data: data, Value: bond})
 			require.NoError(t, err)
 			var controlGas uint64
@@ -114,16 +114,17 @@ func TestAnvilJoinGasAfterPeerJoin(t *testing.T) {
 			}
 			backend := &joinGasBackend{ProtectedClient: txsender.ProtectedClient{Client: client}}
 			if fixture.peerFirst {
-				backend.beforePublish = func() {
+				backend.beforePublish = func(publishCtx context.Context) {
 					peerHash := common.HexToHash("0x0b")
 					proof := make([]common.Hash, model.Log2EpochComputationHashLeafCount)
 					position := uint64(1<<model.Log2EpochComputationHashLeafCount) - 1
 					left, right, err := merkle.RootChildrenFromProof(peerHash, proof, position)
 					require.NoError(t, err)
-					peer.Value = bond
-					tx, err := tournament.JoinTournament(peer, peerHash, hashSliceToByteSlice(proof), left, right)
+					peerOpts := *peer
+					peerOpts.Context, peerOpts.Value = publishCtx, bond
+					tx, err := tournament.JoinTournament(&peerOpts, peerHash, hashSliceToByteSlice(proof), left, right)
 					require.NoError(t, err)
-					joinGasMined(ctx, t, client, tx, types.ReceiptStatusSuccessful)
+					joinGasMined(publishCtx, t, client, tx, types.ReceiptStatusSuccessful)
 				}
 			}
 			chainID, err := client.ChainID(ctx)

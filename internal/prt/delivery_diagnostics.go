@@ -27,7 +27,6 @@ type publicationDiagnostics struct {
 	hadNonce                                               bool
 	warnedHead, warnedNonce, warnedJoin, warnedHardFailure time.Time
 	lastReply                                              txsender.ReplyClass
-	joinRefusals                                           map[int64]joinRefusalWarning
 	planningWarnings                                       map[actionID]time.Time
 	lastPublishedAction                                    actionID
 	lastPublishedNonce                                     uint64
@@ -164,6 +163,14 @@ func (s *delivery) warnPlanningPause(app *model.Application, kind actionKind, bl
 }
 
 func (s *delivery) warnPublicationRefusal(action actionID, report txsender.Report[actionID], err error) {
+	var funds *txsender.LimitError
+	if action.Kind == joinTournament && !report.Canceling && errors.As(err, &funds) && funds.Limit == "signer balance" {
+		s.Logger.Error("PRT signer cannot fund tournament join; fund the signer now; join must be included before the closing block",
+			"address", action.Application, "epoch", action.Epoch, "tournament", action.Target,
+			"join_closes_at_block", action.Deadline, "signer", s.txOptsFactory.From(), "action", actionName(action.Kind),
+			"required_wei", funds.Required.String(), "available_wei", funds.Available.String(), "error", err)
+		return
+	}
 	if !s.planningWarningDue(action) {
 		return
 	}

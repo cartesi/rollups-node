@@ -229,6 +229,29 @@ transaction's maximum gas cost plus value against the current balance. A join
 uses the contract's required bond; there is no configurable join-bond cap.
 The funding check before estimation uses only a minimum gas allowance. Its
 reported amount is a lower bound; the final padded allowance can require more funds.
+PRT estimates join gas with zero fees to avoid an RPC limit based on the signer's balance.
+This requires RPC support for zero-fee estimates; exact simulation and signing use real fees.
+If a funded signer repeatedly reports `gas estimate refused`, check that the
+configured RPC endpoint accepts estimates with zero fees before the join deadline.
+This warning can also identify a contract revert or another estimation refusal.
+
+Use the configured signer EOA for this read-only check. Set `RPC_URL` to the
+endpoint and `SIGNER` to its address:
+
+```bash
+cast rpc --rpc-url "$RPC_URL" eth_estimateGas \
+  "{\"from\":\"$SIGNER\",\"to\":\"$SIGNER\",\"value\":\"0x0\",\"input\":\"0x\",\"maxFeePerGas\":\"0x0\",\"maxPriorityFeePerGas\":\"0x0\"}" \
+  latest
+```
+
+For legacy fees, replace `maxFeePerGas` and `maxPriorityFeePerGas` with
+`gasPrice` set to `0x0`. A hexadecimal gas result confirms that the endpoint
+accepts this simple estimate. It does not prove that a join is eligible or that
+all estimates with zero fees will succeed. The command does not sign or send a
+transaction. Repeat the check when you change the endpoint.
+
+PRT logs each refused join funding check at ERROR with amounts and deadline, and repeats
+join planning warnings without changing application health.
 
 Ordinary contract calls add the greater of fifty percent or 150,000 gas to the
 estimate. A value-bearing join adds the greater of the full estimate or 150,000

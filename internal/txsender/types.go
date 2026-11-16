@@ -36,6 +36,10 @@ type Request struct {
 	GasLimit    uint64 // minimum allowance; zero uses only the padded estimate
 	Logger      *slog.Logger
 	CheckReturn func([]byte) bool
+
+	// EstimateWithZeroFees requires execution independent of tx.gasprice and
+	// block.basefee. It affects sizing only; exact calls and signed fees remain real.
+	EstimateWithZeroFees bool
 }
 
 type Eligibility uint8

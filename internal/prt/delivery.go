@@ -371,6 +371,8 @@ func (s *delivery) call(
 	key := actionID{ApplicationID: app.ID, Application: app.IApplicationAddress, Target: to, Kind: kind, Epoch: epoch,
 		Identity: crypto.Keccak256Hash(to[:], valueBytes, data), Deadline: deadline}
 	request := txsender.Request{To: to, Data: data, Value: value,
+		// Dave 3.0.0-alpha.6 join does not use the price-dependent refund path.
+		EstimateWithZeroFees: kind == joinTournament,
 		Logger: s.Logger.With("application", app.Name, "address", app.IApplicationAddress,
 			"action", actionName(kind), "epoch", epoch)}
 	if kind == recoverBond {

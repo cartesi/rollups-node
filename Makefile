@@ -363,7 +363,7 @@ delivery-test: ## Run delivery release fixtures against an isolated PostgreSQL/A
 	@CARTESI_CLAIMER_ANVIL_TEST=1 go test $(GO_BUILD_PARAMS) -tags=endtoendtests ./internal/claimer \
 		-run '^TestAnvil(QuorumDecidingVoteGas|AuthorityAcceptanceRecoversFromOperationalFaults)$$' -count=1 -v
 	@CARTESI_PRT_ANVIL_TEST=1 go test $(GO_BUILD_PARAMS) -tags=endtoendtests ./internal/prt \
-		-run '^TestAnvilJoinGasAfterPeerJoin$$' -count=1 -v
+		-run '^TestAnvil(JoinGasAfterPeerJoin|IncludedJoinReplansFromChain)$$' -count=1 -v
 
 echo-dapp: applications/echo-dapp ## Echo dapp
 
