@@ -103,7 +103,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Depot CLI
-        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1
 
       - name: Build rollups-node image (amd64)
         uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1
