@@ -43,7 +43,7 @@ func TestNewRootRereadsDescriptorUntilCompleteIntervalCommits(t *testing.T) {
 				adapter.On("Standing", mock.Anything).Return(TournamentStanding{State: model.TournamentStandingRootFailed,
 					FinishedAt: 30}, nil).Once()
 				expectTournamentAuxiliaryReads(adapter, mock.Anything, RootLevel, model.TournamentStandingRootFailed)
-				adapter.On("RetrieveAllEvents", mock.Anything).Return(&TournamentEvents{}, nil).Once()
+				adapter.On("RetrieveAllEvents", mock.Anything, mock.Anything).Return(&TournamentEvents{}, nil).Once()
 				adapter.On("StructuralEventCounts", mock.Anything).Return(zeroStructuralEventCounts(), nil).Once()
 				f.emptyParticipants(epoch, root)
 				var writeErr error
@@ -85,7 +85,7 @@ func TestNewRootRejectsDescriptorStartDifferentFromEpochSeal(t *testing.T) {
 	adapter.On("BondValue", mock.Anything).Return(big.NewInt(1), nil).Once()
 	adapter.On("Standing", mock.Anything).Return(TournamentStanding{State: model.TournamentStandingAwaitingClosure}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, mock.Anything, RootLevel, model.TournamentStandingAwaitingClosure)
-	adapter.On("RetrieveAllEvents", mock.Anything).Return(&TournamentEvents{}, nil).Maybe()
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.Anything).Return(&TournamentEvents{}, nil).Maybe()
 	adapter.On("StructuralEventCounts", mock.Anything).Return(zeroStructuralEventCounts(), nil).Maybe()
 	filterAddress := address.Hex()
 	f.repo.On("ListCommitments", mock.Anything, f.app.Name, repository.CommitmentFilter{EpochIndex: &epoch.Index,
@@ -133,11 +133,11 @@ func TestRootObservationNeedsNoFactoryLogAcrossVerdicts(t *testing.T) {
 			adapter.On("BondValue", mock.Anything).Return(big.NewInt(1), nil).Once()
 			adapter.On("Standing", mock.Anything).Return(TournamentStanding{State: model.TournamentStandingAwaitingClosure}, nil).Once()
 			expectTournamentAuxiliaryReads(adapter, mock.Anything, RootLevel, model.TournamentStandingAwaitingClosure)
-			adapter.On("RetrieveAllEvents", mock.Anything).Return(&TournamentEvents{}, nil).Once()
+			adapter.On("RetrieveAllEvents", mock.Anything, mock.Anything).Return(&TournamentEvents{}, nil).Once()
 			adapter.On("StructuralEventCounts", mock.Anything).Return(zeroStructuralEventCounts(), nil).Once()
 			f.emptyParticipants(epoch, address)
 			f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, uint64(100)).Return(nil).Once()
-			expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+			expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), epoch)
 			require.NoError(t, f.s.observeApplication(t.Context(), f.app, observerFacts(100)))
 			require.Nil(t, f.repo.committedTournaments[address].CreationEvent)
 			require.Equal(t, model.ApplicationStatus_OK, f.app.Status)

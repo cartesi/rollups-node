@@ -182,7 +182,7 @@ func (f *passiveDisputeFixture) assertCommitmentClocks(layer *passiveDisputeLaye
 	}
 }
 
-func (f *passiveDisputeFixture) assertWinner(layer *passiveDisputeLayer, expected TournamentStandingState) {
+func (f *passiveDisputeFixture) assertWinner(layer *passiveDisputeLayer, expected TournamentStandingState) *Tournament {
 	tournament, opts := f.observedTournament(layer)
 	view, err := layer.contract.TournamentStanding(opts)
 	f.r.NoError(err)
@@ -206,21 +206,20 @@ func (f *passiveDisputeFixture) assertWinner(layer *passiveDisputeLayer, expecte
 		f.r.Equal(inner.PausedAllowance, tournament.Snapshot.InnerResult.PausedAllowance)
 		f.r.Greater(view.WinnerExpiresAt, opts.BlockNumber.Uint64()+uint64(layer.descriptor.Level))
 	}
+	return tournament
 }
 
-func (f *passiveDisputeFixture) assertRecoveredRoot() {
+func (f *passiveDisputeFixture) assertRetiredRoot(expected *Tournament) {
+	f.t.Helper()
 	root := f.layers[0]
-	tournament, opts := f.observedTournament(root)
-	f.r.Equal(TournamentStandingRootWinner, tournament.Snapshot.Standing)
-	f.r.Equal(BondDispositionRecovered, tournament.Snapshot.BondRecovery.Disposition)
-	f.r.Nil(tournament.Snapshot.BondRecovery.Claimer)
-	f.r.Nil(tournament.Snapshot.BondRecovery.Payment)
-	f.assertCommitmentClocks(root, opts)
-	var response api.SingleResponse[*Commitment]
-	f.r.NoError(f.rpc.Call(f.ctx, "cartesi_getCommitment", api.GetCommitmentParams{Application: f.appName,
-		EpochIndex: "0x0", TournamentAddress: root.address.Hex(), Commitment: root.trees[0].root().Hex()}, &response))
-	f.r.Equal(common.Address{}, response.Data.Snapshot.Claimer)
-	f.r.Equal(f.actors[0].From, response.Data.SubmitterAddress)
+	var response api.SingleResponse[*Tournament]
+	f.r.NoError(f.rpc.Call(f.ctx, "cartesi_getTournament", api.GetTournamentParams{
+		Application: f.appName, Address: root.address.Hex(),
+	}, &response))
+	f.r.Equal(expected, response.Data, "keep the complete root row at its retirement block")
+	f.assertCommitmentClocks(root, &bind.CallOpts{
+		Context: f.ctx, BlockNumber: new(big.Int).SetUint64(expected.Snapshot.AsOfBlock),
+	})
 }
 
 func (f *passiveDisputeFixture) assertInnerWinnersExpire() {

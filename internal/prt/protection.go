@@ -99,12 +99,28 @@ func (s *Service) readProtectionClock(ctx context.Context, app *model.Applicatio
 		clock.Err = errors.New("sealed epoch identity does not match application")
 		return clock
 	}
-	adapter, err := s.adapterFactory.CreateTournamentAdapter(target.root)
-	if err != nil {
-		clock.Err = err
-		return clock
+	var descriptor TournamentDescriptor
+	var err error
+	stored, loadErr := s.repository.GetTournament(ctx, app.IApplicationAddress.Hex(), target.root.Hex())
+	if loadErr != nil {
+		s.Logger.Debug("failed to load committed root protection clock", "application", app.Name,
+			"epoch", target.index, "root_tournament", target.root, "error", loadErr)
 	}
-	descriptor, err := adapter.Descriptor(pinnedCallOpts(ctx, facts.Number))
+	if loadErr == nil && stored != nil && stored.ApplicationID == app.ID && stored.EpochIndex == target.index &&
+		stored.Address == target.root && isRootTournament(stored) &&
+		stored.Snapshot.AsOfBlock >= stored.StartInstant &&
+		s.tournamentObservationComplete(stored, stored.Snapshot.AsOfBlock, facts.Number) {
+		// A completed observation already contains the immutable root clock.
+		descriptor = TournamentDescriptor{Level: stored.Level, StartInstant: stored.StartInstant, Allowance: stored.Allowance}
+		clock.Source = fmt.Sprintf("committed root descriptor at block %d", stored.Snapshot.AsOfBlock)
+	} else {
+		adapter, createErr := s.adapterFactory.CreateTournamentAdapter(target.root)
+		if createErr != nil {
+			clock.Err = createErr
+			return clock
+		}
+		descriptor, err = adapter.Descriptor(pinnedCallOpts(ctx, facts.Number))
+	}
 	switch {
 	case err != nil:
 		clock.Err = err

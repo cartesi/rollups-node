@@ -231,7 +231,7 @@ func TestTournamentResultObservationRecordsOnlyPublishedStage(t *testing.T) {
 			if test.staged && test.stored == 0 {
 				f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, f.epoch.Index, uint64(10)).Return(nil).Once()
 			}
-			expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), f.epoch)
+			expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), f.epoch)
 			require.NoError(t, f.d.observeApplication(t.Context(), f.app, observerFacts(100)))
 			switch {
 			case test.staged && test.stored == 0:
@@ -430,7 +430,7 @@ func TestValidateApplicationDefersActionsForAcceptanceAfterPinnedHead(t *testing
 	service.client = client
 	service.defaultBlock = model.DefaultBlock_Finalized
 
-	expectProtectionReads(t, factory, consensus, observerFacts(20), epoch)
+	expectProtectionReads(t, &repo.Mock, factory, consensus, observerFacts(20), epoch)
 	require.NoError(t, service.delivery.observeApplication(t.Context(), app, observerFacts(20)))
 	consensus.AssertNumberOfCalls(t, "GetCurrentSealedEpoch", 2)
 	consensus.AssertNumberOfCalls(t, "CanStageTournamentResult", 1)

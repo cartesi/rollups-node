@@ -575,6 +575,11 @@ type ClaimerConfig struct {
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
 	// Redirects are not followed; use the final endpoint URL.
+	// The provider must serve historical state, logs and headers for catch-up.
+	// PRT counter and recovery searches can need state as old as the oldest unread
+	// tournament interval, including a first observation from tournament creation
+	// or a newly discovered child. A tournament can lag behind the EVM Reader.
+	// Missing historical state stops that tournament's observation without cursor progress.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -630,7 +635,9 @@ type ClaimerConfig struct {
 	// Minimum wait time in seconds for the exponential backoff retry policy. This is the initial delay before the first retry for HTTP blockchain requests.
 	BlockchainHttpRetryMinWait Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT"`
 
-	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
+	// Maximum number of blocks in a single log-range query to the provider.
+	// Larger ranges are divided into smaller queries. Zero means unlimited.
+	// PRT reads individual event blocks and does not use this setting.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
 	// How many seconds the node will wait before querying the database for new claims.
@@ -792,6 +799,11 @@ type EvmreaderConfig struct {
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
 	// Redirects are not followed; use the final endpoint URL.
+	// The provider must serve historical state, logs and headers for catch-up.
+	// PRT counter and recovery searches can need state as old as the oldest unread
+	// tournament interval, including a first observation from tournament creation
+	// or a newly discovered child. A tournament can lag behind the EVM Reader.
+	// Missing historical state stops that tournament's observation without cursor progress.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -829,7 +841,9 @@ type EvmreaderConfig struct {
 	// Minimum wait time in seconds for the exponential backoff retry policy. This is the initial delay before the first retry for HTTP blockchain requests.
 	BlockchainHttpRetryMinWait Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT"`
 
-	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
+	// Maximum number of blocks in a single log-range query to the provider.
+	// Larger ranges are divided into smaller queries. Zero means unlimited.
+	// PRT reads individual event blocks and does not use this setting.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
 	// Time in seconds to wait before checking for a new block header. The default (12s) is tuned for mainnet. Reduce for faster chains or devnets.
@@ -1097,6 +1111,11 @@ type NodeConfig struct {
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
 	// Redirects are not followed; use the final endpoint URL.
+	// The provider must serve historical state, logs and headers for catch-up.
+	// PRT counter and recovery searches can need state as old as the oldest unread
+	// tournament interval, including a first observation from tournament creation
+	// or a newly discovered child. A tournament can lag behind the EVM Reader.
+	// Missing historical state stops that tournament's observation without cursor progress.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -1202,7 +1221,9 @@ type NodeConfig struct {
 	// Minimum wait time in seconds for the exponential backoff retry policy. This is the initial delay before the first retry for HTTP blockchain requests.
 	BlockchainHttpRetryMinWait Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT"`
 
-	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
+	// Maximum number of blocks in a single log-range query to the provider.
+	// Larger ranges are divided into smaller queries. Zero means unlimited.
+	// PRT reads individual event blocks and does not use this setting.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
 	// How many seconds the node will wait before querying the database for new claims.
@@ -1502,6 +1523,11 @@ type PrtConfig struct {
 
 	// HTTP(S) endpoint with a DNS name or IP address for the blockchain RPC provider.
 	// Redirects are not followed; use the final endpoint URL.
+	// The provider must serve historical state, logs and headers for catch-up.
+	// PRT counter and recovery searches can need state as old as the oldest unread
+	// tournament interval, including a first observation from tournament creation
+	// or a newly discovered child. A tournament can lag behind the EVM Reader.
+	// Missing historical state stops that tournament's observation without cursor progress.
 	BlockchainHttpEndpoint URL `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT"`
 
 	// An unique identifier representing a blockchain network.
@@ -1556,9 +1582,6 @@ type PrtConfig struct {
 
 	// Minimum wait time in seconds for the exponential backoff retry policy. This is the initial delay before the first retry for HTTP blockchain requests.
 	BlockchainHttpRetryMinWait Duration `mapstructure:"CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT"`
-
-	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
-	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
 	// How many seconds the node expects services take initializing before aborting.
 	MaxStartupTime Duration `mapstructure:"CARTESI_MAX_STARTUP_TIME"`
@@ -1680,13 +1703,6 @@ func LoadPrtConfig() (*PrtConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT is required for the prt service: %w", err)
-	}
-
-	cfg.BlockchainMaxBlockRange, err = GetBlockchainMaxBlockRange()
-	if err != nil && err != ErrNotDefined {
-		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE: %w", err)
-	} else if err == ErrNotDefined {
-		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the prt service: %w", err)
 	}
 
 	cfg.MaxStartupTime, err = GetMaxStartupTime()
@@ -1891,7 +1907,6 @@ func (c *NodeConfig) ToPrtConfig() *PrtConfig {
 		BlockchainHttpRequestTimeout:  c.BlockchainHttpRequestTimeout,
 		BlockchainHttpRetryMaxWait:    c.BlockchainHttpRetryMaxWait,
 		BlockchainHttpRetryMinWait:    c.BlockchainHttpRetryMinWait,
-		BlockchainMaxBlockRange:       c.BlockchainMaxBlockRange,
 		MaxStartupTime:                c.MaxStartupTime,
 		PrtPollingInterval:            c.PrtPollingInterval,
 		SnapshotsDir:                  c.SnapshotsDir,

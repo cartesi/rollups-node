@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -14,6 +16,9 @@ import (
 
 func TestResultPublicationMakesProgressWithContinuousObserverLag(t *testing.T) {
 	f := newObserverCheckpointFixture(t)
+	// Keep observing the submitter's own pending bond while this test advances heads.
+	f.s.submissionEnabled = true
+	f.s.txOptsFactory = ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{From: common.HexToAddress("0x777")})
 	epoch := checkpointEpoch(0, "0x100")
 	tournament := resultBoundaryTournament(f, epoch, *epoch.Commitment)
 	var stageWriteCoverage []uint64
@@ -39,7 +44,7 @@ func TestResultPublicationMakesProgressWithContinuousObserverLag(t *testing.T) {
 		// Bind every result read to the block that was actually published. A
 		// read at the moving configured head cannot establish this checkpoint.
 		f.expectResultBoundarySnapshot(epoch, snapshot, published)
-		expectProtectionReads(t, f.factory, f.consensus, observerFacts(published), epoch)
+		expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(published), epoch)
 		require.NoError(t, f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(published)))
 		require.Equal(t, published, f.app.LastTournamentCheckBlock)
 		require.Equal(t, published, tournament.Snapshot.AsOfBlock)

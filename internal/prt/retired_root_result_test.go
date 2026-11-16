@@ -12,44 +12,59 @@ import (
 )
 
 func TestRetiredRootDoesNotHideLaterStaging(t *testing.T) {
-	f := newObserverCheckpointFixture(t)
-	f.app.LastTournamentCheckBlock = 90
-	epoch := checkpointEpoch(0, "0x100")
-	f.epochs(epoch)
-	root := resultBoundaryTournament(f, epoch, *epoch.Commitment)
-	root.Snapshot.AsOfBlock = 90
-	root.Snapshot.FinishedAtBlock = 80
-	root.Snapshot.Standing = model.TournamentStandingRootWinner
-	root.Snapshot.AcceptsJoins = false
-	root.Snapshot.WinnerCommitment = epoch.Commitment
-	root.CreationEvent = &model.TournamentCreationEvent{BlockNumber: 10}
-	root.Snapshot.BondRecovery.Disposition = model.BondDispositionRecovered
-	require.True(t, tournamentObservationComplete(root, 90, 100))
-	f.repo.storedTournaments = []*model.Tournament{root}
-	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), root.Address.Hex()).Return(root, nil)
-	snapshot := resultTestSnapshot(epoch, true)
-	snapshot.sealed.StagingBlockNumber = 100
-	f.expectResultBoundarySnapshot(epoch, snapshot, 100)
-	f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, epoch.Index, uint64(100)).Return(nil).Once()
+	for _, mode := range []string{testRecoveredRootMode, testReaderRootMode, testForeignRootMode} {
+		t.Run(mode, func(t *testing.T) {
+			f := newObserverCheckpointFixture(t)
+			f.app.LastTournamentCheckBlock = 90
+			epoch := checkpointEpoch(0, "0x100")
+			f.epochs(epoch)
+			root := resultBoundaryTournament(f, epoch, *epoch.Commitment)
+			root.Snapshot.AsOfBlock = 90
+			root.Snapshot.FinishedAtBlock = 80
+			root.Allowance = 70
+			root.Snapshot.Standing = model.TournamentStandingRootWinner
+			root.Snapshot.AcceptsJoins = false
+			root.Snapshot.WinnerCommitment = epoch.Commitment
+			root.CreationEvent = &model.TournamentCreationEvent{BlockNumber: 10}
+			root.Snapshot.BondRecovery.Disposition = model.BondDispositionRecovered
+			setCompletedRootTestMode(f.s, root, mode)
+			require.True(t, f.s.tournamentObservationComplete(root, 90, 100))
+			f.repo.storedTournaments = []*model.Tournament{root}
+			f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), root.Address.Hex()).Return(root, nil)
+			snapshot := resultTestSnapshot(epoch, true)
+			snapshot.sealed.StagingBlockNumber = 100
+			f.expectResultBoundarySnapshot(epoch, snapshot, 100)
+			f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, epoch.Index, uint64(100)).Return(nil).Once()
 
-	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
-	require.NoError(t, f.s.observeApplication(t.Context(), f.app, observerFacts(100)))
-	require.Equal(t, model.EpochStatus_ClaimStaged, epoch.Status)
-	require.Equal(t, uint64(90), root.Snapshot.AsOfBlock, "an immutable root needs no new tournament scan")
+			f.consensus.On("GetCurrentSealedEpoch", protectionOpts(observerFacts(100))).
+				Return(snapshot.sealed, nil).Once()
+			require.NoError(t, f.s.observeApplication(t.Context(), f.app, observerFacts(100)))
+			f.factory.AssertNotCalled(t, "CreateTournamentAdapter", root.Address)
+			require.Equal(t, model.EpochStatus_ClaimStaged, epoch.Status)
+			require.Equal(t, uint64(90), root.Snapshot.AsOfBlock, "an immutable root needs no new tournament scan")
+
+		})
+	}
 }
 
 func TestRetiredRootDoesNotHideLaterAcceptance(t *testing.T) {
-	f := newAcceptanceReceiptFixture(t)
-	root := f.repo.ExpectedCalls[0].ReturnArguments.Get(0).(*model.Tournament)
-	root.Snapshot.AsOfBlock = 90
-	root.Snapshot.Standing = model.TournamentStandingRootWinner
-	root.CreationEvent = &model.TournamentCreationEvent{BlockNumber: 10}
-	root.Snapshot.BondRecovery.Disposition = model.BondDispositionRecovered
-	require.True(t, tournamentObservationComplete(root, 90, 100))
-	f.expectReceipt()
-	f.expectAcceptance()
+	for _, mode := range []string{testRecoveredRootMode, testReaderRootMode, testForeignRootMode} {
+		t.Run(mode, func(t *testing.T) {
+			f := newAcceptanceReceiptFixture(t)
+			root := f.repo.ExpectedCalls[0].ReturnArguments.Get(0).(*model.Tournament)
+			root.Snapshot.AsOfBlock = 90
+			root.Snapshot.Standing = model.TournamentStandingRootWinner
+			root.CreationEvent = &model.TournamentCreationEvent{BlockNumber: 10}
+			root.Snapshot.BondRecovery.Disposition = model.BondDispositionRecovered
+			setCompletedRootTestMode(f.service, root, mode)
+			require.True(t, f.service.tournamentObservationComplete(root, 90, 100))
+			f.expectReceipt()
+			f.expectAcceptance()
 
-	deferred, err := f.service.reconcileAcceptedEpochs(t.Context(), f.app, []*model.Epoch{f.epoch}, f.consensus, 100)
-	require.NoError(t, err)
-	require.False(t, deferred, "a canonical consensus acceptance at finalized100 can follow retirement at90")
+			deferred, err := f.service.reconcileAcceptedEpochs(t.Context(), f.app, []*model.Epoch{f.epoch}, f.consensus, 100)
+			require.NoError(t, err)
+			require.False(t, deferred, "a canonical consensus acceptance at finalized100 can follow retirement at90")
+
+		})
+	}
 }

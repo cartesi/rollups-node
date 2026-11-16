@@ -6,7 +6,6 @@ package prt
 import (
 	"fmt"
 	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"math/big"
@@ -26,7 +25,7 @@ func TestDeliveryFirstRootDiscoveredAfterEmptyObserveDoesNotNeedAnotherBlock(t *
 	f.d.repository = &initialRootRepository{f.repo}
 	f.checkpoint.epochs()
 	f.consensus.On("GetCurrentSealedEpoch", protectionOpts(f.facts)).Return(CurrentSealedEpoch{}, nil).Once()
-	expectProtectionReads(t, f.factory, f.consensus, f.facts)
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, f.facts)
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.facts))
 	require.Zero(t, f.app.LastTournamentCheckBlock, "an empty initial observation cannot suppress same-head root discovery")
 	require.Empty(t, f.repo.windows)
@@ -61,12 +60,12 @@ func TestDeliveryFirstRootDiscoveredAfterEmptyObserveDoesNotNeedAnotherBlock(t *
 		State: model.TournamentStandingAwaitingClosure, AcceptsJoins: true,
 	}, nil).Twice()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, model.TournamentStandingAwaitingClosure)
-	adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-		return opts.Start == f.facts.Number && opts.End != nil && *opts.End == f.facts.Number
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
+		return opts.Start == f.facts.Number && opts.End == f.facts.Number
 	})).Return(&TournamentEvents{}, nil).Once()
 	adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 	f.checkpoint.emptyParticipants(f.epoch, address)
-	expectProtectionReads(t, f.factory, f.consensus, f.facts, f.epoch)
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, f.facts, f.epoch)
 	require.NoError(t, f.d.observeApplication(t.Context(), f.app, f.facts))
 	require.Len(t, f.repo.windows, 1)
 	window := f.repo.windows[0]
@@ -136,8 +135,8 @@ func TestDeliveryInitialRootIsObservedAtItsSealingBlockWithoutLocalProof(t *test
 					State: model.TournamentStandingAwaitingClosure, AcceptsJoins: true,
 				}, nil).Once()
 				expectTournamentAuxiliaryReads(adapter, opts, RootLevel, model.TournamentStandingAwaitingClosure)
-				adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-					return opts.Start == f.facts.Number && opts.End != nil && *opts.End == f.facts.Number
+				adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
+					return opts.Start == f.facts.Number && opts.End == f.facts.Number
 				})).Return(&TournamentEvents{}, nil).Once()
 				adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 				f.checkpoint.emptyParticipants(f.epoch, address)

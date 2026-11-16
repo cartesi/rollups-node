@@ -34,7 +34,7 @@ func protectionOpts(facts txsender.BlockRef) any {
 // Existing observation tests explicitly declare their additional diagnostic
 // reads. Separate adapters prevent diagnostic clocks from consuming projection
 // expectations. No standing, event, repository, or unknown read is defaulted.
-func expectProtectionReads(t *testing.T, factory *adapterFactoryMock, consensus *daveConsensusAdapterMock,
+func expectProtectionReads(t *testing.T, repo *mock.Mock, factory *adapterFactoryMock, consensus *daveConsensusAdapterMock,
 	facts txsender.BlockRef, epochs ...*model.Epoch,
 ) {
 	t.Helper()
@@ -54,6 +54,9 @@ func expectProtectionReads(t *testing.T, factory *adapterFactoryMock, consensus 
 			!slices.Contains(model.NonTerminalEpochStatuses(), epoch.Status) {
 			continue
 		}
+		lookup := repo.On("GetTournament", mock.Anything, mock.Anything, epoch.TournamentAddress.Hex()).
+			Return((*model.Tournament)(nil), nil).Once()
+		repo.ExpectedCalls = append([]*mock.Call{lookup}, repo.ExpectedCalls[:len(repo.ExpectedCalls)-1]...)
 		adapter := &tournamentAdapterMock{}
 		call := factory.On("CreateTournamentAdapter", *epoch.TournamentAddress).Return(adapter, nil).Once()
 		factory.ExpectedCalls = append([]*mock.Call{call}, factory.ExpectedCalls[:len(factory.ExpectedCalls)-1]...)
@@ -95,6 +98,8 @@ func TestProtectionIndependentPinnedClocksKeepSiblingAfterFailure(t *testing.T) 
 		EpochNumber: second.Index, Tournament: *second.TournamentAddress,
 	}, nil).Once()
 	for _, epoch := range []*model.Epoch{first, second} {
+		f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
+			Return((*model.Tournament)(nil), nil).Once()
 		adapter := &tournamentAdapterMock{}
 		f.factory.On("CreateTournamentAdapter", *epoch.TournamentAddress).Return(adapter, nil).Once()
 		if epoch == first {
@@ -131,6 +136,8 @@ func TestProtectionCurrentSealedFallbackSurvivesDiscoveryFailure(t *testing.T) {
 		EpochNumber: 7, Tournament: root, InputIndexLowerBound: 20, InputIndexUpperBound: 23,
 	}, nil).Once()
 	adapter := &tournamentAdapterMock{}
+	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), root.Hex()).
+		Return((*model.Tournament)(nil), cause).Once()
 	f.factory.On("CreateTournamentAdapter", root).Return(adapter, nil).Once()
 	adapter.On("Descriptor", protectionOpts(facts)).Return(TournamentDescriptor{StartInstant: 90, Allowance: 300}, nil).Once()
 	var output bytes.Buffer
@@ -163,6 +170,8 @@ func TestProtectionUnavailableClockRetainsExactIdentity(t *testing.T) {
 			adapter := &tournamentAdapterMock{}
 			f.factory.On("CreateTournamentAdapter", *epoch.TournamentAddress).Return(adapter, nil).Once()
 			adapter.On("Descriptor", protectionOpts(facts)).Return(test.descriptor, nil).Once()
+			f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
+				Return((*model.Tournament)(nil), nil).Once()
 			clock := f.s.readProtectionClock(withLiveBlock(t.Context(), facts.Number, facts.Hash), f.app,
 				protectionTarget{epoch: epoch, index: epoch.Index, root: *epoch.TournamentAddress}, facts)
 			require.Equal(t, epoch.Index, clock.EpochIndex)
@@ -181,7 +190,7 @@ func TestProtectionExecutionStopKeepsValidPrefix(t *testing.T) {
 			f.app.Status = status
 			first, second := checkpointEpoch(0, "0x100"), checkpointEpoch(1, "0x101")
 			facts := observerFacts(100)
-			expectProtectionReads(t, f.factory, f.consensus, facts, first, second)
+			expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, facts, first, second)
 			f.repo.On("GetEpochCompletionState", mock.Anything, f.app.IApplicationAddress.Hex(), first.Index).
 				Return(&repository.EpochCompletionState{Application: f.app, Epoch: first, Problem: prtTestProblem(status, 1)}, nil).Once()
 			var output bytes.Buffer
@@ -285,6 +294,8 @@ func TestProtectionCurrentSealedIdentitySurvivesWrongLocalBoundary(t *testing.T)
 	adapter := &tournamentAdapterMock{}
 	f.factory.On("CreateTournamentAdapter", *epoch.TournamentAddress).Return(adapter, nil).Once()
 	adapter.On("Descriptor", protectionOpts(facts)).Return(TournamentDescriptor{StartInstant: 90, Allowance: 300}, nil).Once()
+	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.TournamentAddress.Hex()).
+		Return((*model.Tournament)(nil), nil).Once()
 	clocks := f.s.observeProtection(t.Context(), f.app, []*model.Epoch{epoch}, f.consensus, facts, nil)
 	require.Len(t, clocks, 1)
 	require.Equal(t, epoch.Index, clocks[0].EpochIndex)
@@ -307,4 +318,84 @@ func TestProtectionObservedAcceptanceRetiresClockWithoutReceiptRead(t *testing.T
 	require.Empty(t, clocks)
 	f.factory.AssertNotCalled(t, "CreateTournamentAdapter", mock.Anything)
 	f.client.AssertNotCalled(t, "TransactionReceipt", mock.Anything, mock.Anything)
+}
+
+func TestCompletedRootProtectionUsesDurableClock(t *testing.T) {
+	for _, mode := range []string{testRecoveredRootMode, testReaderRootMode, testForeignRootMode} {
+		t.Run(mode, func(t *testing.T) {
+			f := newObserverCheckpointFixture(t)
+			epoch := checkpointEpoch(0, "0x100")
+			root := &model.Tournament{ApplicationID: f.app.ID, EpochIndex: epoch.Index, Address: *epoch.TournamentAddress,
+				StartInstant: 10, Allowance: 50, Snapshot: model.TournamentSnapshot{AsOfBlock: 90, FinishedAtBlock: 60,
+					Standing:     model.TournamentStandingRootWinner,
+					BondRecovery: model.TournamentBondRecovery{Disposition: model.BondDispositionRecovered}}}
+			setCompletedRootTestMode(f.s, root, mode)
+			before := *root
+			f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), root.Address.Hex()).Return(root, nil).Once()
+			clock := f.s.readProtectionClock(withLiveBlock(t.Context(), 100, observerFacts(100).Hash), f.app,
+				protectionTarget{epoch: epoch, index: epoch.Index, root: root.Address}, observerFacts(100))
+			require.NoError(t, clock.Err)
+			require.Equal(t, new(uint64(60)), clock.ClosingBlock)
+			require.Contains(t, clock.Source, "committed root descriptor at block 90")
+			require.Equal(t, before, *root)
+			f.factory.AssertNotCalled(t, "CreateTournamentAdapter", mock.Anything)
+		})
+	}
+}
+
+func TestProtectionFallsBackWhenSavedClockIsUnavailable(t *testing.T) {
+	readErr := errors.New("saved tournament read failed")
+	for _, test := range []struct {
+		name    string
+		change  func(*model.Tournament)
+		loadErr error
+	}{
+		{name: "another epoch", change: func(root *model.Tournament) { root.EpochIndex++ }},
+		{name: "child tournament", change: func(root *model.Tournament) {
+			root.Level = 1
+			root.ParentTournamentAddress = new(common.HexToAddress("0x200"))
+			root.ParentMatchIDHash = new(common.HexToHash("0x300"))
+			root.CreationEvent = &model.TournamentCreationEvent{}
+			root.Snapshot.Standing = model.TournamentStandingInnerEliminableWinnerExpired
+		}},
+		{name: "before creation", change: func(root *model.Tournament) { root.StartInstant = 91 }},
+		{name: "future snapshot", change: func(root *model.Tournament) { root.Snapshot.AsOfBlock = 101 }},
+		{name: "completion beyond snapshot", change: func(root *model.Tournament) { root.Snapshot.FinishedAtBlock = 91 }},
+		{name: "database error", loadErr: readErr},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newObserverCheckpointFixture(t)
+			var output bytes.Buffer
+			f.s.Logger = slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			epoch := checkpointEpoch(0, "0x100")
+			address := *epoch.TournamentAddress
+			root := &model.Tournament{ApplicationID: f.app.ID, EpochIndex: epoch.Index, Address: address,
+				StartInstant: 10, Allowance: 50, Snapshot: model.TournamentSnapshot{AsOfBlock: 90, FinishedAtBlock: 60,
+					Standing:     model.TournamentStandingRootWinner,
+					BondRecovery: model.TournamentBondRecovery{Disposition: model.BondDispositionRecovered}}}
+			// These rows deliberately provide evidence that cannot authorize reuse of the saved clock.
+			if test.change != nil {
+				test.change(root)
+			}
+			if test.loadErr != nil {
+				root = nil
+			}
+			f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), address.Hex()).Return(root, test.loadErr).Once()
+			adapter := &tournamentAdapterMock{}
+			f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()
+			facts := observerFacts(100)
+			adapter.On("Descriptor", protectionOpts(facts)).Return(TournamentDescriptor{StartInstant: 10, Allowance: 70}, nil).Once()
+			clock := f.s.readProtectionClock(withLiveBlock(t.Context(), facts.Number, facts.Hash), f.app,
+				protectionTarget{epoch: epoch, index: epoch.Index, root: address}, facts)
+			require.NoError(t, clock.Err)
+			require.Equal(t, new(uint64(80)), clock.ClosingBlock, "use the live clock, rather than saved start plus allowance")
+			require.Contains(t, clock.Source, "pinned root descriptor at block 100")
+			if test.loadErr != nil {
+				require.Contains(t, output.String(), "level=DEBUG")
+				require.Contains(t, output.String(), "failed to load committed root protection clock")
+				require.Contains(t, output.String(), readErr.Error())
+			}
+			adapter.AssertExpectations(t)
+		})
+	}
 }

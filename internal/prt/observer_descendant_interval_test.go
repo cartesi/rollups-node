@@ -11,7 +11,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
@@ -60,11 +59,11 @@ func TestNewDescendantFirstScanCommitsWithItsDiscoveringInterval(t *testing.T) {
 			if fault == "child read" {
 				readErr = failure
 			}
-			adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-				return opts.Start == 60 && opts.End != nil && *opts.End == 100
+			adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
+				return opts.Start == 60 && opts.End == 100
 			})).Return(childEvents, readErr).Once()
+			adapter.On("StructuralEventCounts", opts).Return(structuralCountsForEvents(childEvents), nil).Once()
 			if readErr == nil {
-				adapter.On("StructuralEventCounts", opts).Return(structuralCountsForEvents(childEvents), nil).Once()
 				f.emptyParticipants(epoch, child)
 				expectDescendantParticipantViews(adapter, childEvents)
 				var storeErr error
@@ -182,7 +181,7 @@ func TestFinishedNoWinnerTreeKeepsHistoricalChildAfterParentDeletion(t *testing.
 	adapter.On("Standing", mock.Anything).Return(TournamentStanding{State: model.TournamentStandingInnerEliminableNoWinner,
 		FinishedAt: 80}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, mock.Anything, 1, model.TournamentStandingInnerEliminableNoWinner)
-	adapter.On("RetrieveAllEvents", mock.Anything).Return(&TournamentEvents{}, nil).Once()
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.Anything).Return(&TournamentEvents{}, nil).Once()
 	adapter.On("StructuralEventCounts", mock.Anything).Return(zeroStructuralEventCounts(), nil).Once()
 	f.emptyParticipants(epoch, childAddress)
 	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID, mock.Anything, uint64(100)).Run(func(args mock.Arguments) {

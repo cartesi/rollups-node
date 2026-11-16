@@ -7,7 +7,6 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -73,7 +72,7 @@ func TestPassiveObservationIncludesLocalFailuresAndTerminalEpochs(t *testing.T) 
 					f.consensus.On("CanAcceptStagedTournamentResult", opts).Return(snapshot.accept, nil).Once()
 					f.repo.On("GetEpoch", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).Return(epoch, nil).Once()
 				}
-				expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+				expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), epoch)
 				err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 				require.NoError(t, err)
 				require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock)
@@ -121,7 +120,7 @@ func TestForeclosedInvalidOutputsRootObservesWhileInputDrainPending(t *testing.T
 	f.repo.On("HasUndrainedEpochsBeforeBlock", mock.Anything, f.app.ID, f.app.ForecloseBlock).Return(true, nil).Once()
 	f.repo.On("GetEpochCompletionState", mock.Anything, f.app.IApplicationAddress.Hex(), epoch.Index).
 		Return(&repository.EpochCompletionState{Application: f.app, Epoch: epoch, Problem: prtTestProblem(f.app.Status, 0)}, nil).Once()
-	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), epoch)
 	err = f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 
 	require.NoError(t, err)
@@ -164,7 +163,7 @@ func TestHealthyReaderPublishesBeforeRecordingStagedClaim(t *testing.T) {
 	f.repo.On("UpdateEpochReconciledStaged", mock.Anything, f.app.ID, epoch.Index, uint64(95)).
 		Run(func(mock.Arguments) { require.Equal(t, uint64(100), f.app.LastTournamentCheckBlock) }).Return(nil).Once()
 
-	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100), epoch)
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100), epoch)
 	err := f.s.delivery.observeApplication(t.Context(), f.app, observerFacts(100))
 	require.NoError(t, err)
 	require.Equal(t, model.ApplicationStatus_OK, f.app.Status)
@@ -197,9 +196,9 @@ func TestFalseFinalStatePublishesBeforeLocalDivergence(t *testing.T) {
 		State: model.TournamentStandingRootWinner, HasCandidate: true, Candidate: foreign, FinalState: falseState, FinishedAt: 90,
 	}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, model.TournamentStandingRootWinner)
-	adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
 		// A newly found clone includes its full history, even below the app cursor.
-		return opts.Start == 10 && opts.End != nil && *opts.End == 100
+		return opts.Start == 10 && opts.End == 100
 	})).Return(&TournamentEvents{}, nil).Once()
 	adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 	f.emptyParticipants(epoch, address)

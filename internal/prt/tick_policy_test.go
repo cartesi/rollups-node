@@ -64,8 +64,8 @@ func TestPRTTickOnlyObservesAndDoesNotCreateEmptyCoverage(t *testing.T) {
 		head := uint64(101 + tick)
 		tickHead(client, head)
 		f.block.Number = uint64(120 + tick)
-		expectProtectionReads(t, f.factory, f.consensus, observerFacts(head))
-		expectProtectionReads(t, f.factory, secondConsensus, observerFacts(head))
+		expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(head))
+		expectProtectionReads(t, &f.repo.Mock, f.factory, secondConsensus, observerFacts(head))
 		reschedule, err := f.d.Tick(t.Context())
 		require.False(t, reschedule)
 		require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestPRTTickPreservesDependencyCancellationAndDeadlines(t *testing.T) {
 					}
 				}
 				if !test.shutdown && (branch == activeApplicationName || branch == foreclosedApplicationName) {
-					expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
+					expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100))
 				}
 				_, err := f.d.Tick(ctx)
 				if test.quiet {
@@ -189,7 +189,7 @@ func TestPRTTickRetainsEarlierApplicationErrorDuringShutdown(t *testing.T) {
 		Return([]*model.Epoch(nil), uint64(0), firstError).Once()
 	f.repo.On("ListEpochs", mock.Anything, second.Name, mock.Anything, repository.Pagination{}, false).
 		Run(func(mock.Arguments) { cancel() }).Return([]*model.Epoch(nil), uint64(0), context.Canceled).Once()
-	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100))
 	_, err := f.d.Tick(ctx)
 	require.ErrorIs(t, err, firstError)
 	require.ErrorIs(t, err, context.Canceled)

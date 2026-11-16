@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -22,7 +21,6 @@ import (
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/prtprotection"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 type prtRepository interface {
@@ -72,16 +70,15 @@ type EthClientInterface interface {
 // DefaultAdapterFactory creates adapters using a concrete *ethclient.Client.
 type DefaultAdapterFactory struct {
 	client *ethclient.Client
-	filter ethutil.Filter
 }
 
 // NewDefaultAdapterFactory creates a DefaultAdapterFactory.
-func NewDefaultAdapterFactory(client *ethclient.Client, filter ethutil.Filter) *DefaultAdapterFactory {
-	return &DefaultAdapterFactory{client: client, filter: filter}
+func NewDefaultAdapterFactory(client *ethclient.Client) *DefaultAdapterFactory {
+	return &DefaultAdapterFactory{client: client}
 }
 
 func (f *DefaultAdapterFactory) CreateTournamentAdapter(addr common.Address) (TournamentAdapter, error) {
-	return NewITournamentAdapter(addr, f.client, f.filter)
+	return NewITournamentAdapter(addr, f.client)
 }
 
 func (f *DefaultAdapterFactory) CreateDaveConsensusAdapter(addr common.Address) (DaveConsensusAdapter, error) {
@@ -435,7 +432,7 @@ func (s *Service) reconcileAcceptedEpochs(
 		if err != nil {
 			return true, fmt.Errorf("loading epoch %d observed tournament: %w", epoch.Index, err)
 		}
-		if app.IsForeclosed() && epoch.LastBlock < app.ForecloseBlock && !rootObservationCovers(tournament, mostRecentBlock) {
+		if app.IsForeclosed() && epoch.LastBlock < app.ForecloseBlock && !s.rootObservationCovers(tournament, mostRecentBlock) {
 			return true, nil
 		}
 		if tournament == nil || tournament.Snapshot.FinishedAtBlock == 0 ||
@@ -453,7 +450,7 @@ func (s *Service) reconcileAcceptedEpochs(
 		}
 
 		observedBlock := min(mostRecentBlock, tournament.Snapshot.AsOfBlock)
-		if tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, mostRecentBlock) {
+		if s.tournamentObservationComplete(tournament, tournament.Snapshot.AsOfBlock, mostRecentBlock) {
 			observedBlock = mostRecentBlock
 		}
 		event, err := s.readEpochAcceptance(ctx, app, epoch, consensus, observedBlock)
@@ -521,7 +518,7 @@ func (s *Service) gatherTournamentData(
 		if t.MaxLevel != levelCount || t.Level != uint64(level) {
 			return nil, fmt.Errorf("tournament %s database geometry does not match observed hierarchy", tournamentAddress)
 		}
-		if t.Snapshot.AsOfBlock >= mostRecentBlock || tournamentObservationComplete(t, t.Snapshot.AsOfBlock, mostRecentBlock) {
+		if t.Snapshot.AsOfBlock >= mostRecentBlock || s.tournamentObservationComplete(t, t.Snapshot.AsOfBlock, mostRecentBlock) {
 			return nil, nil
 		}
 	}
@@ -583,12 +580,34 @@ func (s *Service) gatherTournamentData(
 		nextSearchBlock = t.StartInstant
 	}
 	endBlock := mostRecentBlock
+	previousCounts := zeroStructuralEventCounts()
+	if !created && nextSearchBlock > t.StartInstant {
+		// Committed events supply the seed without a historical cursor read.
+		// Changed counters still need state within the unread interval.
+		counts, countErr := s.repository.GetTournamentEventCounts(ctx, app.ID, epoch.Index, tournamentAddress, previousAsOf)
+		if countErr != nil {
+			return nil, fmt.Errorf("reading committed tournament event counts: %w", countErr)
+		}
+		if err := validateStoredStandingCount(counts); err != nil {
+			return nil, err
+		}
+		previousCounts = structuralEventCounts(counts)
+	}
+	currentCounts, err := adapter.StructuralEventCounts(pinnedCallOpts(ctx, endBlock))
+	if err != nil {
+		return nil, fmt.Errorf("reading current tournament event counts: %w", err)
+	}
+
 	events := &TournamentEvents{}
 	if nextSearchBlock <= endBlock {
 		s.Logger.Debug("Searching for tournament events", "level", level, "application", app.Name,
 			"epoch", epoch.Index, "tournament_address", tournamentAddress.String(),
 			"next_search_block", nextSearchBlock, "end_block", endBlock)
-		events, err = adapter.RetrieveAllEvents(&bind.FilterOpts{Context: ctx, Start: nextSearchBlock, End: &endBlock})
+		events, err = adapter.RetrieveAllEvents(ctx, TournamentEventQuery{
+			Start: nextSearchBlock, End: endBlock, Previous: previousCounts, Current: currentCounts,
+			FindRecovery: previousBondDisposition != BondDispositionRecovered &&
+				t.Snapshot.BondRecovery.Disposition == BondDispositionRecovered,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("retrieving tournament %s events: %w", tournamentAddress, err)
 		}
@@ -605,23 +624,6 @@ func (s *Service) gatherTournamentData(
 		"matchDeleted", len(events.MatchDeleted),
 		"newInnerTournament", len(events.NewInnerTournament))
 
-	previousCounts := zeroStructuralEventCounts()
-	if !created && nextSearchBlock > t.StartInstant {
-		// Committed event identities preserve the cumulative baseline even when
-		// the provider has pruned state at the previous observation block.
-		counts, countErr := s.repository.GetTournamentEventCounts(ctx, app.ID, epoch.Index, tournamentAddress, previousAsOf)
-		if countErr != nil {
-			return nil, fmt.Errorf("reading committed tournament event counts: %w", countErr)
-		}
-		if err := validateStoredStandingCount(counts); err != nil {
-			return nil, err
-		}
-		previousCounts = structuralEventCounts(counts)
-	}
-	currentCounts, err := adapter.StructuralEventCounts(pinnedCallOpts(ctx, endBlock))
-	if err != nil {
-		return nil, fmt.Errorf("reading current tournament event counts: %w", err)
-	}
 	if err := validateTournamentEventCounts(previousCounts, currentCounts, events); err != nil {
 		return nil, fmt.Errorf("tournament %s: %w", tournamentAddress, err)
 	}
@@ -639,19 +641,24 @@ func (s *Service) gatherTournamentData(
 	return append([]*repository.TournamentEventBatch{batch}, children...), nil
 }
 
-// rootObservationCovers separates immutable tournament facts from later
+// rootObservationCovers separates completed tournament observation from later
 // DaveConsensus stage/accept transitions. Retirement never advances a cursor.
-func rootObservationCovers(root *Tournament, head uint64) bool {
+func (s *Service) rootObservationCovers(root *Tournament, head uint64) bool {
 	if root == nil || root.Snapshot.AsOfBlock > head {
 		return false
 	}
-	return root.Snapshot.AsOfBlock == head || tournamentObservationComplete(root, root.Snapshot.AsOfBlock, head)
+	return root.Snapshot.AsOfBlock == head || s.tournamentObservationComplete(root, root.Snapshot.AsOfBlock, head)
 }
 
-// Finished clones reject joins and all match mutations. Once their winner can
-// no longer expire and their bond cannot be recovered, their current views and
-// events are immutable. Require a committed complete observation first.
-func tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
+func isRootTournament(t *Tournament) bool {
+	return t.Level == uint64(RootLevel) && t.ParentTournamentAddress == nil &&
+		t.ParentMatchIDHash == nil && t.CreationEvent == nil
+}
+
+// tournamentObservationComplete requires a complete committed terminal snapshot.
+// Reader-only roots and foreign root bonds stop at that snapshot. Submitting
+// nodes retain their own pending bonds. An inner winner can still expire.
+func (s *Service) tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
 	snapshot := t.Snapshot
 	if snapshot.FinishedAtBlock == 0 || snapshot.FinishedAtBlock > snapshot.AsOfBlock ||
 		snapshot.AsOfBlock > cursor || snapshot.AsOfBlock > head ||
@@ -661,8 +668,21 @@ func tournamentObservationComplete(t *Tournament, cursor, head uint64) bool {
 	switch snapshot.Standing {
 	case TournamentStandingRootWinner, TournamentStandingRootFailed,
 		TournamentStandingInnerEliminableNoWinner, TournamentStandingInnerEliminableWinnerExpired:
-		return snapshot.BondRecovery.Disposition == BondDispositionNoWinner ||
-			snapshot.BondRecovery.Disposition == BondDispositionRecovered
+		if snapshot.BondRecovery.Disposition == BondDispositionNoWinner ||
+			snapshot.BondRecovery.Disposition == BondDispositionRecovered {
+			return true
+		}
+		if snapshot.Standing != TournamentStandingRootWinner || !isRootTournament(t) ||
+			snapshot.AsOfBlock < t.StartInstant || snapshot.BondRecovery.Disposition != BondDispositionRecoverable ||
+			snapshot.BondRecovery.Claimer == nil || *snapshot.BondRecovery.Claimer == (common.Address{}) ||
+			snapshot.BondRecovery.Payment == nil {
+			return false
+		}
+		if !s.submissionEnabled {
+			return true
+		}
+		return s.txOptsFactory != nil && s.txOptsFactory.From() != (common.Address{}) &&
+			*snapshot.BondRecovery.Claimer != s.txOptsFactory.From()
 	case TournamentStandingMatchesActive, TournamentStandingAwaitingClosure, TournamentStandingInnerWinner:
 		return false
 	default:

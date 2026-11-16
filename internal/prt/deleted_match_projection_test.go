@@ -12,7 +12,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
@@ -275,8 +274,8 @@ func expectDeletedMatchTournament(
 	}, nil).Once()
 	adapter.On("Standing", opts).Return(TournamentStanding{State: model.TournamentStandingMatchesActive}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, TournamentLevel(level), model.TournamentStandingMatchesActive)
-	adapter.On("RetrieveAllEvents", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-		return opts.Start == 51 && opts.End != nil && *opts.End == 100
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(opts TournamentEventQuery) bool {
+		return opts.Start == 51 && opts.End == 100
 	})).Return(&TournamentEvents{}, nil).Once()
 	counts := zeroStructuralEventCounts()
 	if len(matches) != 0 {

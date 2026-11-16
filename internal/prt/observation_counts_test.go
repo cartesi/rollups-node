@@ -12,10 +12,14 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/txsender"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+const testCommittedBaselineOmission = "committed event baseline"
 
 func structuralCountsForEvents(events *TournamentEvents) StructuralEventCounts {
 	return StructuralEventCounts{
@@ -55,7 +59,7 @@ func TestTournamentObservationUsesCommittedCounterBaseline(t *testing.T) {
 		Kind: model.TournamentKindLeaf, StartInstant: 10}, nil).Once()
 	adapter.On("Standing", opts).Return(TournamentStanding{State: model.TournamentStandingMatchesActive}, nil).Once()
 	expectTournamentAuxiliaryReads(adapter, opts, RootLevel, model.TournamentStandingMatchesActive)
-	adapter.On("RetrieveAllEvents", mock.Anything).Return(&TournamentEvents{}, nil).Once()
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.Anything).Return(&TournamentEvents{}, nil).Once()
 	// No historical-state RPC expectation: the provider need only serve H.
 	adapter.On("StructuralEventCounts", opts).Return(structuralEventCounts(counts), nil).Once()
 	f.emptyParticipants(epoch, address)
@@ -69,7 +73,7 @@ func TestTournamentObservationUsesCommittedCounterBaseline(t *testing.T) {
 }
 
 func TestTournamentObservationRejectsIncompleteFinancialEvents(t *testing.T) {
-	for _, omission := range []string{"refund", "recovery", "committed event baseline"} {
+	for _, omission := range []string{"refund", "recovery", testCommittedBaselineOmission} {
 		t.Run(omission, func(t *testing.T) {
 			f := newObserverCheckpointFixture(t)
 			epoch := checkpointEpoch(0, "0x100")
@@ -96,8 +100,10 @@ func TestTournamentObservationRejectsIncompleteFinancialEvents(t *testing.T) {
 			if omission == "refund" {
 				events.MatchDeleted = []*itournament.ITournamentMatchDeleted{{}}
 			}
-			adapter.On("RetrieveAllEvents", mock.Anything).Return(events, nil).Once()
-			if omission == "committed event baseline" {
+			if omission != testCommittedBaselineOmission {
+				adapter.On("RetrieveAllEvents", mock.Anything, mock.Anything).Return(events, nil).Once()
+			}
+			if omission == testCommittedBaselineOmission {
 				f.repo.eventCountError = errors.New("committed event baseline unavailable")
 			} else {
 				adapter.On("StructuralEventCounts", opts).Return(structuralCountsForEvents(events), nil).Once()
@@ -121,6 +127,11 @@ func TestTournamentObservationRejectsIncompleteFinancialEvents(t *testing.T) {
 
 func TestTournamentObservationPublishesLateRecovery(t *testing.T) {
 	f := newObserverCheckpointFixture(t)
+	claimer := common.HexToAddress("0x777")
+	f.s.submissionEnabled = true
+	f.s.txOptsFactory = ethutil.NewStaticTransactOptsFactory(&bind.TransactOpts{From: claimer})
+	payment := model.Uint256{}
+
 	epoch := checkpointEpoch(0, "0x100")
 	epoch.Status = model.EpochStatus_ClaimAccepted
 	f.epochs(epoch)
@@ -129,7 +140,8 @@ func TestTournamentObservationPublishesLateRecovery(t *testing.T) {
 	address := *epoch.TournamentAddress
 	projection := &model.Tournament{Address: address, MaxLevel: 1, Kind: model.TournamentKindLeaf, StartInstant: 10,
 		Snapshot: model.TournamentSnapshot{AsOfBlock: 50, FinishedAtBlock: 40, Standing: model.TournamentStandingRootWinner,
-			BondRecovery: model.TournamentBondRecovery{Disposition: model.BondDispositionRecoverable}}}
+			BondRecovery: model.TournamentBondRecovery{Disposition: model.BondDispositionRecoverable,
+				Claimer: &claimer, Payment: &payment}}}
 	f.repo.On("GetTournament", mock.Anything, f.app.IApplicationAddress.Hex(), address.Hex()).Return(projection, nil).Once()
 	adapter := &tournamentAdapterMock{}
 	f.factory.On("CreateTournamentAdapter", address).Return(adapter, nil).Once()
@@ -141,7 +153,9 @@ func TestTournamentObservationPublishesLateRecovery(t *testing.T) {
 	events := &TournamentEvents{BondRecovered: []*itournament.ITournamentBondRecovered{{
 		Commitment: *epoch.Commitment, Claimer: common.HexToAddress("0x777"), Payment: new(big.Int), Burned: big.NewInt(8),
 	}}}
-	adapter.On("RetrieveAllEvents", mock.Anything).Return(events, nil).Once()
+	adapter.On("RetrieveAllEvents", mock.Anything, mock.MatchedBy(func(q TournamentEventQuery) bool {
+		return q.FindRecovery && q.Start == 51 && q.End == 100
+	})).Return(events, nil).Once()
 	adapter.On("StructuralEventCounts", opts).Return(zeroStructuralEventCounts(), nil).Once()
 	f.emptyParticipants(epoch, address)
 	f.repo.On("StoreTournamentInterval", mock.Anything, f.app.ID,

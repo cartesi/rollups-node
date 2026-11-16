@@ -5,6 +5,7 @@ package prt
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -34,13 +34,11 @@ type ITournamentAdapterImpl struct {
 	tournament        *itournament.ITournament
 	client            *ethclient.Client
 	tournamentAddress common.Address
-	filter            ethutil.Filter
 }
 
 func NewITournamentAdapter(
 	tournamentAddress common.Address,
 	client *ethclient.Client,
-	filter ethutil.Filter,
 ) (TournamentAdapter, error) {
 	tournamentContract, err := itournament.NewITournament(tournamentAddress, readOnlyBackend{Client: client})
 	if err != nil {
@@ -50,7 +48,6 @@ func NewITournamentAdapter(
 		tournament:        tournamentContract,
 		tournamentAddress: tournamentAddress,
 		client:            client,
-		filter:            filter,
 	}, nil
 }
 
@@ -348,13 +345,10 @@ var tournamentEventNames = [...]string{
 }
 
 func buildAllEventsFilterQuery(
-	opts *bind.FilterOpts,
+	block uint64,
 	tournamentAddress common.Address,
 	contractABI *abi.ABI,
 ) (ethereum.FilterQuery, error) {
-	if opts == nil {
-		return ethereum.FilterQuery{}, errors.New("tournament event filter is nil")
-	}
 	topics := make([]common.Hash, 0, len(tournamentEventNames))
 	for _, name := range tournamentEventNames {
 		event, ok := contractABI.Events[name]
@@ -365,28 +359,29 @@ func buildAllEventsFilterQuery(
 	}
 	q := ethereum.FilterQuery{
 		Addresses: []common.Address{tournamentAddress},
-		FromBlock: new(big.Int).SetUint64(opts.Start),
+		FromBlock: new(big.Int).SetUint64(block),
 		Topics:    [][]common.Hash{topics},
 	}
-	if opts.End != nil {
-		q.ToBlock = new(big.Int).SetUint64(*opts.End)
-	}
+	q.ToBlock = new(big.Int).SetUint64(block)
 	return q, nil
 }
 
-func (a *ITournamentAdapterImpl) RetrieveAllEvents(opts *bind.FilterOpts) (*TournamentEvents, error) {
-	if opts == nil || opts.End == nil || opts.Start > *opts.End {
+func (a *ITournamentAdapterImpl) RetrieveAllEvents(ctx context.Context, query TournamentEventQuery) (*TournamentEvents, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if query.Start > query.End {
 		return nil, errors.New("tournament events require a fixed, nonempty block range")
 	}
+	blocks, err := a.findEventBlocks(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return a.retrieveEventsAtBlocks(ctx, blocks)
+}
+
+func (a *ITournamentAdapterImpl) retrieveEventsAtBlocks(ctx context.Context, blocks []uint64) (*TournamentEvents, error) {
 	contractABI, err := itournament.ITournamentMetaData.GetAbi()
-	if err != nil {
-		return nil, err
-	}
-	query, err := buildAllEventsFilterQuery(opts, a.tournamentAddress, contractABI)
-	if err != nil {
-		return nil, err
-	}
-	iterator, err := a.filter.ChunkedFilterLogs(opts.Context, a.client, query)
 	if err != nil {
 		return nil, err
 	}
@@ -402,34 +397,41 @@ func (a *ITournamentAdapterImpl) RetrieveAllEvents(opts *bind.FilterOpts) (*Tour
 	identities := make(map[eventIdentity]struct{})
 	blockHashes := make(map[uint64]common.Hash)
 	var logs []types.Log
-	for entry, err := range iterator {
+	for _, block := range blocks {
+		query, err := buildAllEventsFilterQuery(block, a.tournamentAddress, contractABI)
 		if err != nil {
 			return nil, err
 		}
-		if entry == nil || entry.Address != a.tournamentAddress || entry.Removed {
-			return nil, errors.New("tournament event has an invalid address or removed flag")
+		entries, err := a.client.FilterLogs(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("reading tournament logs at block %d: %w", block, err)
 		}
-		if entry.BlockNumber < opts.Start || entry.BlockNumber > *opts.End {
-			return nil, errors.New("tournament event is outside the requested block range")
+		for _, entry := range entries {
+			if entry.Address != a.tournamentAddress || entry.Removed {
+				return nil, errors.New("tournament event has an invalid address or removed flag")
+			}
+			if entry.BlockNumber != block {
+				return nil, errors.New("tournament event is outside the requested block")
+			}
+			if entry.TxHash == (common.Hash{}) || entry.BlockHash == (common.Hash{}) {
+				return nil, errors.New("tournament event has an incomplete log identity")
+			}
+			position := logPosition{entry.BlockNumber, entry.Index}
+			identity := eventIdentity{entry.TxHash, entry.Index}
+			if _, exists := positions[position]; exists {
+				return nil, errors.New("tournament event repeats a block log position")
+			}
+			if _, exists := identities[identity]; exists {
+				return nil, errors.New("tournament event repeats a transaction log identity")
+			}
+			if hash, exists := blockHashes[entry.BlockNumber]; exists && hash != entry.BlockHash {
+				return nil, errors.New("tournament events disagree on the block hash")
+			}
+			positions[position] = struct{}{}
+			identities[identity] = struct{}{}
+			blockHashes[entry.BlockNumber] = entry.BlockHash
+			logs = append(logs, entry)
 		}
-		if entry.TxHash == (common.Hash{}) || entry.BlockHash == (common.Hash{}) {
-			return nil, errors.New("tournament event has an incomplete log identity")
-		}
-		position := logPosition{entry.BlockNumber, entry.Index}
-		identity := eventIdentity{entry.TxHash, entry.Index}
-		if _, exists := positions[position]; exists {
-			return nil, errors.New("tournament event repeats a block log position")
-		}
-		if _, exists := identities[identity]; exists {
-			return nil, errors.New("tournament event repeats a transaction log identity")
-		}
-		if hash, exists := blockHashes[entry.BlockNumber]; exists && hash != entry.BlockHash {
-			return nil, errors.New("tournament events disagree on the block hash")
-		}
-		positions[position] = struct{}{}
-		identities[identity] = struct{}{}
-		blockHashes[entry.BlockNumber] = entry.BlockHash
-		logs = append(logs, *entry)
 	}
 	slices.SortFunc(logs, func(one, two types.Log) int {
 		if order := cmp.Compare(one.BlockNumber, two.BlockNumber); order != 0 {

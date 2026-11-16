@@ -175,7 +175,7 @@ func runObservationWithIOError(ctx context.Context, t *testing.T, f *observerChe
 		}
 		if operation == "participant list" {
 			expectTournamentAuxiliaryReads(adapter, mock.MatchedBy(resultCallOptsAtBlock(100)), 1, model.TournamentStandingAwaitingClosure)
-			adapter.On("RetrieveAllEvents", mock.Anything).Return(&TournamentEvents{}, nil).Once()
+			adapter.On("RetrieveAllEvents", mock.Anything, mock.Anything).Return(&TournamentEvents{}, nil).Once()
 			adapter.On("StructuralEventCounts", mock.MatchedBy(resultCallOptsAtBlock(100))).Return(zeroStructuralEventCounts(), nil).Once()
 			addressString := address.Hex()
 			f.repo.On("ListCommitments", mock.Anything, f.app.Name,

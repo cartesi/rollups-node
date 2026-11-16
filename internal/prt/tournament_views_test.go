@@ -7,14 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"log/slog"
 	"math/big"
 	"testing"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -63,7 +60,7 @@ func newTournamentViewFixture(t *testing.T) *tournamentViewFixture {
 	client := ethclient.NewClient(rpc.DialInProc(server))
 	t.Cleanup(client.Close)
 	address := common.HexToAddress("0x1234")
-	adapter, err := NewITournamentAdapter(address, client, ethutil.Filter{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	adapter, err := NewITournamentAdapter(address, client)
 	require.NoError(t, err)
 	t.Cleanup(func() { backend.AssertExpectations(t) })
 	return &tournamentViewFixture{t: t, adapter: adapter, backend: backend, abi: contractABI,

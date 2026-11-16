@@ -73,7 +73,7 @@ func TestDeliveryHardObservationFailureBlocksSamePassPublication(t *testing.T) {
 	f.repo.On("ListEpochs", mock.Anything, f.app.Name, mock.Anything, mock.Anything, false).
 		Return([]*model.Epoch(nil), uint64(0), txsender.ErrUnsupported)
 	tickHead(client, 100)
-	expectProtectionReads(t, f.factory, f.consensus, observerFacts(100))
+	expectProtectionReads(t, &f.repo.Mock, f.factory, f.consensus, observerFacts(100))
 	_, err := f.d.Tick(t.Context())
 	require.ErrorIs(t, err, txsender.ErrUnsupported)
 	require.False(t, f.d.publicationStopped())
