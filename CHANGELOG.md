@@ -17,10 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Bumped Rollups Contracts to 2.0
+- Changed `cartesi-rollups-machine-tool` to replay accepted inputs and skip rejected inputs, and prove machines via the libcartesi-backed machine API instead of shelling out to `cartesi-machine` and `lua5.4`
+- **BREAKING**: `cartesi-rollups-machine-tool replay --to-input-index` and `--to-epoch` now cover all completed inputs; accepted inputs are replayed and rejected inputs are skipped
 - Normalized boolean configuration parameters (`CARTESI_LEGACY_BLOCKCHAIN_ENABLED`, `CARTESI_FEATURE_CLAIMER_ENABLED`, `CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED`, `CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED` and `CARTESI_LOG_PRETTY_ENABLED`) and adjusted their logic accordingly
 
 ### Removed
 
+- Removed the `--cartesi-machine`, `--lua`, and `--cartesi-sdk-root` flags from `cartesi-rollups-machine-tool replay`
 - Removed `advance-runner`, `dispatcher`, `graphql-server`, `host-runner`, `indexer`, `inspect-server`, and `state-server` Rust services
 - Removed `server-manager` from rollups-node Docker image
 - Removed support to host mode
