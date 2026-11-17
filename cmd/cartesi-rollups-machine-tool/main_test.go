@@ -4,14 +4,52 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
+
+func TestReplayCommandExecuteRejectedFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "default", want: false},
+		{name: "explicit false", args: []string{"--execute-rejected=false"}, want: false},
+		{name: "enabled", args: []string{"--execute-rejected"}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got replayOptions
+			cmd := newReplayCommandWithRunner(
+				func(_ context.Context, _ *cobra.Command, opts replayOptions) error {
+					got = opts
+					return nil
+				},
+			)
+			cmd.SetArgs(append([]string{
+				"--template", "template",
+				"--application", "app",
+				"--store", "store",
+				"--to-input-index", "0",
+			}, tt.args...))
+
+			require.NoError(t, cmd.ExecuteContext(t.Context()))
+			require.Equal(t, tt.want, got.ExecuteRejected)
+		})
+	}
+}
 
 func TestVerifyAccountsDriveMachineProof(t *testing.T) {
 	t.Parallel()

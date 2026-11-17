@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/model"
@@ -25,23 +26,24 @@ type inputStatusLister interface {
 	) ([]*model.Input, uint64, error)
 }
 
-// acceptedOnlyExecutor drives a single machine over the replay range,
-// executing only the inputs the database records as accepted. Rejected inputs
-// leave the machine state unchanged: the guest reverts to the checkpoint and
-// the node persisted the predecessor state for them, so the executor reports
-// the predecessor state proof without running the machine. A terminal input is
-// an error: by construction it can only be the last processed input, which the
-// caller rejects up front when the range reaches it.
+// acceptedOnlyExecutor drives a single machine over the replay range. It
+// executes accepted inputs and, when executeRejected is set, rejected inputs
+// too. By default rejected inputs are skipped: they leave the canonical
+// machine state unchanged because the guest reverts to the checkpoint, so the
+// executor reports the predecessor state proof without running the machine. A
+// terminal input is an error: by construction it can only be the last
+// processed input, which the caller rejects up front when the range reaches it.
 type acceptedOnlyExecutor struct {
-	machine   machine.Machine
-	repo      inputStatusLister
-	app       string
-	to        uint64
-	chunkSize uint64
-	statuses  map[uint64]model.InputCompletionStatus
-	loadedTo  uint64
-	processed uint64
-	prev      model.StateProof
+	machine         machine.Machine
+	repo            inputStatusLister
+	app             string
+	to              uint64
+	chunkSize       uint64
+	executeRejected bool
+	statuses        map[uint64]model.InputCompletionStatus
+	loadedTo        uint64
+	processed       uint64
+	prev            model.StateProof
 }
 
 // newAcceptedOnlyExecutor captures the template state as the initial
@@ -53,6 +55,7 @@ func newAcceptedOnlyExecutor(
 	app string,
 	to uint64,
 	chunkSize uint64,
+	executeRejected bool,
 ) (*acceptedOnlyExecutor, error) {
 	proof, err := m.StateProof(ctx)
 	if err != nil {
@@ -66,13 +69,14 @@ func newAcceptedOnlyExecutor(
 		return nil, fmt.Errorf("template state proof: %w", err)
 	}
 	return &acceptedOnlyExecutor{
-		machine:   m,
-		repo:      repo,
-		app:       app,
-		to:        to,
-		chunkSize: chunkSize,
-		statuses:  make(map[uint64]model.InputCompletionStatus),
-		prev:      prev,
+		machine:         m,
+		repo:            repo,
+		app:             app,
+		to:              to,
+		chunkSize:       chunkSize,
+		executeRejected: executeRejected,
+		statuses:        make(map[uint64]model.InputCompletionStatus),
+		prev:            prev,
 	}, nil
 }
 
@@ -94,19 +98,22 @@ func (e *acceptedOnlyExecutor) Advance(
 		return nil, err
 	}
 	if status == model.InputCompletionStatus_Accepted {
-		return e.advanceAccepted(ctx, input, epochIndex, inputIndex, computeHashes)
+		return e.advanceInput(ctx, input, epochIndex, inputIndex, computeHashes, status)
 	}
 	if status == model.InputCompletionStatus_Rejected {
-		// Trust the REJECTED status of inputs and skip their execution during a replay
-		// because reverts restore machines to their previously accepted state (no-op equivalent).
-		// This avoids fork/selection handling that the advancer must do.
-		e.processed++
-		return &model.AdvanceResult{
-			StateProof: e.prev,
-			EpochIndex: epochIndex,
-			InputIndex: inputIndex,
-			Status:     model.InputCompletionStatus_Rejected,
-		}, nil
+		if !e.executeRejected {
+			// Trust the REJECTED status of inputs and skip their execution during a replay
+			// because reverts restore machines to their previously accepted state (no-op equivalent).
+			// This avoids fork/selection handling that advanceRejected path must do.
+			e.processed++
+			return &model.AdvanceResult{
+				StateProof: e.prev,
+				EpochIndex: epochIndex,
+				InputIndex: inputIndex,
+				Status:     model.InputCompletionStatus_Rejected,
+			}, nil
+		}
+		return e.advanceRejected(ctx, input, epochIndex, inputIndex, computeHashes)
 	}
 	return nil, fmt.Errorf(
 		"input %d has terminal status %s; the machine cannot be snapshotted",
@@ -114,42 +121,109 @@ func (e *acceptedOnlyExecutor) Advance(
 	)
 }
 
-func (e *acceptedOnlyExecutor) advanceAccepted(
+func (e *acceptedOnlyExecutor) advanceInput(
 	ctx context.Context,
 	input []byte,
 	epochIndex uint64,
 	inputIndex uint64,
 	computeHashes bool,
+	expectedStatus model.InputCompletionStatus,
 ) (*model.AdvanceResult, error) {
 	resp, err := e.machine.Advance(ctx, input, machine.Hash(e.prev.MachineHash), computeHashes)
 	if err != nil {
 		return nil, fmt.Errorf("advance input %d: %w", inputIndex, err)
 	}
-	if resp.Status != machine.CompletionStatusAccepted {
+	switch resp.Status {
+	case machine.CompletionStatusAccepted:
+		if expectedStatus != model.InputCompletionStatus_Accepted {
+			return nil, fmt.Errorf(
+				"input %d: machine completed with %v, database records %s",
+				inputIndex, resp.Status, expectedStatus,
+			)
+		}
+		proof, err := e.machine.StateProof(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get state proof for input %d: %w", inputIndex, err)
+		}
+		if err := machine.ValidateAcceptedState(proof); err != nil {
+			return nil, fmt.Errorf("input %d: %w", inputIndex, err)
+		}
+		next, err := toModelStateProof(proof)
+		if err != nil {
+			return nil, fmt.Errorf("input %d: %w", inputIndex, err)
+		}
+		e.prev = next
+		e.processed++
+		return &model.AdvanceResult{
+			StateProof:          e.prev,
+			EpochIndex:          epochIndex,
+			InputIndex:          inputIndex,
+			Status:              model.InputCompletionStatus_Accepted,
+			Outputs:             resp.Outputs,
+			Reports:             resp.Reports,
+			PeriodicStateHashes: resp.PeriodicStateHashes,
+			PaddingRepetitions:  resp.PaddingRepetitions,
+		}, nil
+	case machine.CompletionStatusRejected:
 		return nil, fmt.Errorf(
-			"input %d: machine completed with %v, database records accepted",
-			inputIndex, resp.Status,
+			"input %d: machine completed with %v, database records %s",
+			inputIndex, resp.Status, expectedStatus,
+		)
+	case machine.CompletionStatusUnknown,
+		machine.CompletionStatusException,
+		machine.CompletionStatusHalted,
+		machine.CompletionStatusOverflow,
+		machine.CompletionStatusUnexpectedYield,
+		machine.CompletionStatusInvalidOutputsRoot:
+		return nil, fmt.Errorf(
+			"input %d: machine completed with %v, database records %s",
+			inputIndex, resp.Status, expectedStatus,
+		)
+	default:
+		return nil, fmt.Errorf(
+			"input %d: machine completed with %v, database records %s",
+			inputIndex, resp.Status, expectedStatus,
 		)
 	}
-	proof, err := e.machine.StateProof(ctx)
+}
+
+// advanceRejected executes a rejected input on a fork so the stored machine
+// stays at the predecessor accepted state. The fork is discarded after the
+// execution, matching the advancer's fork/select handling for rejection.
+func (e *acceptedOnlyExecutor) advanceRejected(
+	ctx context.Context,
+	input []byte,
+	epochIndex uint64,
+	inputIndex uint64,
+	computeHashes bool,
+) (result *model.AdvanceResult, err error) {
+	fork, err := e.machine.Fork(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get state proof for input %d: %w", inputIndex, err)
+		return nil, fmt.Errorf("fork machine for rejected input %d: %w", inputIndex, err)
 	}
-	if err := machine.ValidateAcceptedState(proof); err != nil {
-		return nil, fmt.Errorf("input %d: %w", inputIndex, err)
-	}
-	next, err := toModelStateProof(proof)
+	defer func() {
+		if closeErr := fork.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close rejected input fork %d: %w", inputIndex, closeErr))
+		}
+	}()
+
+	resp, err := fork.Advance(ctx, input, machine.Hash(e.prev.MachineHash), computeHashes)
 	if err != nil {
-		return nil, fmt.Errorf("input %d: %w", inputIndex, err)
+		return nil, fmt.Errorf("advance rejected input %d: %w", inputIndex, err)
 	}
-	e.prev = next
+	if resp.Status != machine.CompletionStatusRejected {
+		return nil, fmt.Errorf(
+			"input %d: machine completed with %v, database records %s",
+			inputIndex, resp.Status, model.InputCompletionStatus_Rejected,
+		)
+	}
+
 	e.processed++
 	return &model.AdvanceResult{
 		StateProof:          e.prev,
 		EpochIndex:          epochIndex,
 		InputIndex:          inputIndex,
-		Status:              model.InputCompletionStatus_Accepted,
-		Outputs:             resp.Outputs,
+		Status:              model.InputCompletionStatus_Rejected,
 		Reports:             resp.Reports,
 		PeriodicStateHashes: resp.PeriodicStateHashes,
 		PaddingRepetitions:  resp.PaddingRepetitions,
