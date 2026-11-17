@@ -28,8 +28,8 @@ type machineToolReplaySummary struct {
 
 // TestMachineToolReplayRejectedInput replays a reject-loop application through
 // a range that ends on a rejected input and through the accepted input after
-// it. Rejected inputs are skipped, so the stored roots must match the last
-// accepted input in each range.
+// it. Strict mode executes the rejected input; default mode skips it. Both must
+// produce the same canonical machine roots.
 func TestMachineToolReplayRejectedInput(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Minute)
 	defer cancel()
@@ -68,22 +68,39 @@ func TestMachineToolReplayRejectedInput(t *testing.T) {
 	require.NotNil(t, inputs[2].MachineHash)
 
 	tests := []struct {
-		name          string
-		toInputIndex  uint64
-		wantRoot      common.Hash
-		wantProcessed uint64
+		name            string
+		toInputIndex    uint64
+		executeRejected bool
+		wantRoot        common.Hash
+		wantProcessed   uint64
 	}{
 		{
-			name:          "through rejected",
-			toInputIndex:  1,
-			wantRoot:      *inputs[0].MachineHash,
-			wantProcessed: 2,
+			name:            "default through rejected",
+			toInputIndex:    1,
+			executeRejected: false,
+			wantRoot:        *inputs[0].MachineHash,
+			wantProcessed:   2,
 		},
 		{
-			name:          "through next accepted",
-			toInputIndex:  2,
-			wantRoot:      *inputs[2].MachineHash,
-			wantProcessed: 3,
+			name:            "strict through rejected",
+			toInputIndex:    1,
+			executeRejected: true,
+			wantRoot:        *inputs[0].MachineHash,
+			wantProcessed:   2,
+		},
+		{
+			name:            "default through next accepted",
+			toInputIndex:    2,
+			executeRejected: false,
+			wantRoot:        *inputs[2].MachineHash,
+			wantProcessed:   3,
+		},
+		{
+			name:            "strict through next accepted",
+			toInputIndex:    2,
+			executeRejected: true,
+			wantRoot:        *inputs[2].MachineHash,
+			wantProcessed:   3,
 		},
 	}
 	for _, tt := range tests {
@@ -95,6 +112,9 @@ func TestMachineToolReplayRejectedInput(t *testing.T) {
 				"--application", appName,
 				"--to-input-index", strconv.FormatUint(tt.toInputIndex, 10),
 				"--store", store,
+			}
+			if tt.executeRejected {
+				args = append(args, "--execute-rejected")
 			}
 
 			out := runMachineTool(ctx, t, args...)

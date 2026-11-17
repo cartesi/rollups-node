@@ -60,12 +60,20 @@ type fakeMachine struct {
 	advanceResp    *machine.AdvanceResponse
 	advanceErr     error
 	advanceCalls   int
+	forkErr        error
+	forkCalls      int
 	lastInput      []byte
 	lastCheckpoint machine.Hash
 	lastCompute    bool
 }
 
-func (f *fakeMachine) Fork(context.Context) (machine.Machine, error) { return nil, nil }
+func (f *fakeMachine) Fork(context.Context) (machine.Machine, error) {
+	f.forkCalls++
+	if f.forkErr != nil {
+		return nil, f.forkErr
+	}
+	return f, nil
+}
 
 func (f *fakeMachine) Hash(context.Context) (machine.Hash, error) {
 	return f.proof.MachineHash, nil
@@ -158,7 +166,7 @@ func TestNewAcceptedOnlyExecutor(t *testing.T) {
 		m := &fakeMachine{proof: testAcceptedStateProof(machine.Hash{1})}
 		repo := &fakeRepo{}
 
-		e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 10, 500)
+		e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 10, 500, false)
 		require.NoError(t, err)
 		require.Equal(t, machine.Hash{1}, machine.Hash(e.prev.MachineHash))
 		require.Zero(t, e.ProcessedInputs())
@@ -171,7 +179,7 @@ func TestNewAcceptedOnlyExecutor(t *testing.T) {
 		m := &fakeMachine{proof: proof}
 		repo := &fakeRepo{}
 
-		_, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 10, 500)
+		_, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 10, 500, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "template is not at an accepted state")
 	})
@@ -194,7 +202,7 @@ func TestAcceptedOnlyExecutorAcceptedInput(t *testing.T) {
 		},
 	}
 	repo := &fakeRepo{inputs: testInputs(2, model.InputCompletionStatus_Accepted)}
-	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 2, 500)
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 2, 500, false)
 	require.NoError(t, err)
 
 	result, err := e.Advance(ctx, []byte("input-0"), 0, 0, false)
@@ -233,13 +241,13 @@ func TestAcceptedOnlyExecutorAcceptedButMachineDisagrees(t *testing.T) {
 			advanceResp: &machine.AdvanceResponse{Status: status},
 		}
 		repo := &fakeRepo{inputs: testInputs(1, model.InputCompletionStatus_Accepted)}
-		e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1, 500)
+		e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1, 500, false)
 		require.NoError(t, err)
 
 		_, err = e.Advance(ctx, []byte("input"), 0, 0, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "input 0: machine completed with")
-		require.Contains(t, err.Error(), "database records accepted")
+		require.Contains(t, err.Error(), "database records ACCEPTED")
 		require.Zero(t, e.ProcessedInputs())
 	}
 }
@@ -250,7 +258,7 @@ func TestAcceptedOnlyExecutorRejectedInput(t *testing.T) {
 	templateRoot := machine.Hash{1}
 	m := &fakeMachine{proof: testAcceptedStateProof(templateRoot)}
 	repo := &fakeRepo{inputs: testInputs(1, model.InputCompletionStatus_Rejected)}
-	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1, 500)
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1, 500, false)
 	require.NoError(t, err)
 
 	result, err := e.Advance(ctx, []byte("input"), 0, 0, false)
@@ -261,12 +269,62 @@ func TestAcceptedOnlyExecutorRejectedInput(t *testing.T) {
 	require.Equal(t, uint64(1), e.ProcessedInputs())
 }
 
+func TestAcceptedOnlyExecutorExecutesRejectedInput(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	templateRoot := machine.Hash{1}
+	m := &fakeMachine{
+		proof: testAcceptedStateProof(templateRoot),
+		advanceResp: &machine.AdvanceResponse{
+			Status:              machine.CompletionStatusRejected,
+			Reports:             []machine.Report{[]byte("rejected")},
+			PeriodicStateHashes: []machine.Hash{{9}},
+			PaddingRepetitions:  3,
+		},
+	}
+	repo := &fakeRepo{inputs: testInputs(1, model.InputCompletionStatus_Rejected)}
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1, 500, true)
+	require.NoError(t, err)
+
+	result, err := e.Advance(ctx, []byte("input"), 0, 0, false)
+	require.NoError(t, err)
+	require.Equal(t, 1, m.forkCalls)
+	require.Equal(t, 1, m.advanceCalls)
+	require.Equal(t, []byte("input"), m.lastInput)
+	require.Equal(t, templateRoot, m.lastCheckpoint)
+	require.Equal(t, model.InputCompletionStatus_Rejected, result.Status)
+	require.Equal(t, templateRoot, machine.Hash(result.MachineHash))
+	require.Equal(t, [][]byte{[]byte("rejected")}, result.Reports)
+	require.Equal(t, [][32]byte{{9}}, result.PeriodicStateHashes)
+	require.Equal(t, uint64(3), result.PaddingRepetitions)
+	require.Equal(t, uint64(1), e.ProcessedInputs())
+}
+
+func TestAcceptedOnlyExecutorExecutedRejectedInputMustReject(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	m := &fakeMachine{
+		proof:       testAcceptedStateProof(machine.Hash{1}),
+		advanceResp: &machine.AdvanceResponse{Status: machine.CompletionStatusAccepted},
+	}
+	repo := &fakeRepo{inputs: testInputs(1, model.InputCompletionStatus_Rejected)}
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1, 500, true)
+	require.NoError(t, err)
+
+	_, err = e.Advance(ctx, []byte("input"), 0, 0, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "database records REJECTED")
+	require.Equal(t, 1, m.forkCalls)
+	require.Equal(t, 1, m.advanceCalls)
+	require.Equal(t, uint64(0), e.ProcessedInputs())
+}
+
 func TestAcceptedOnlyExecutorTerminalStatus(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	m := &fakeMachine{proof: testAcceptedStateProof(machine.Hash{1})}
 	repo := &fakeRepo{inputs: testInputs(1, model.InputCompletionStatus_Exception)}
-	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1, 500)
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1, 500, false)
 	require.NoError(t, err)
 
 	_, err = e.Advance(ctx, []byte("input"), 0, 0, false)
@@ -281,7 +339,7 @@ func TestAcceptedOnlyExecutorMissingStatus(t *testing.T) {
 	ctx := context.Background()
 	m := &fakeMachine{proof: testAcceptedStateProof(machine.Hash{1})}
 	repo := &fakeRepo{inputs: testInputs(1, model.InputCompletionStatus_Accepted)}
-	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1, 500)
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1, 500, false)
 	require.NoError(t, err)
 	// simulate a range whose statuses were never persisted
 	e.loadedTo = 1
@@ -296,7 +354,7 @@ func TestAcceptedOnlyExecutorLoadsStatusChunksOnDemand(t *testing.T) {
 	ctx := context.Background()
 	m := &fakeMachine{proof: testAcceptedStateProof(machine.Hash{1})}
 	repo := &fakeRepo{inputs: testInputs(1200, model.InputCompletionStatus_Rejected)}
-	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1200, 500)
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 1200, 500, false)
 	require.NoError(t, err)
 
 	for i := uint64(0); i < 1200; i++ {
@@ -317,7 +375,7 @@ func TestAcceptedOnlyExecutorPartialChunk(t *testing.T) {
 	ctx := context.Background()
 	m := &fakeMachine{proof: testAcceptedStateProof(machine.Hash{1})}
 	repo := &fakeRepo{inputs: testInputs(120, model.InputCompletionStatus_Rejected)}
-	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 120, 500)
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 120, 500, false)
 	require.NoError(t, err)
 
 	_, err = e.Advance(ctx, []byte("input"), 0, 0, false)
@@ -333,7 +391,7 @@ func TestAcceptedOnlyExecutorShortChunkPage(t *testing.T) {
 	ctx := context.Background()
 	m := &fakeMachine{proof: testAcceptedStateProof(machine.Hash{1})}
 	repo := &fakeRepo{inputs: testInputs(499, model.InputCompletionStatus_Rejected)}
-	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 500, 500)
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 500, 500, false)
 	require.NoError(t, err)
 
 	_, err = e.Advance(ctx, []byte("input"), 0, 0, false)
@@ -349,7 +407,7 @@ func TestAcceptedOnlyExecutorOutOfSequenceChunk(t *testing.T) {
 		{Index: 0, Status: model.InputCompletionStatus_Rejected},
 		{Index: 2, Status: model.InputCompletionStatus_Rejected}, // gap at 1
 	}}
-	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 2, 500)
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 2, 500, false)
 	require.NoError(t, err)
 
 	_, err = e.Advance(ctx, []byte("input"), 0, 0, false)
@@ -364,7 +422,7 @@ func TestAcceptedOnlyExecutorNonCompletedStatusInChunk(t *testing.T) {
 	inputs := testInputs(2, model.InputCompletionStatus_Rejected)
 	inputs[1].Status = model.InputCompletionStatus_None
 	repo := &fakeRepo{inputs: inputs}
-	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 2, 500)
+	e, err := newAcceptedOnlyExecutor(ctx, m, repo, "app", 2, 500, false)
 	require.NoError(t, err)
 
 	_, err = e.Advance(ctx, []byte("input"), 0, 0, false)

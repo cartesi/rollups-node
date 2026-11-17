@@ -43,6 +43,8 @@ func machineToolConfig(path string) *machine.MachineConfig {
 	return cfg
 }
 
+type replayRunner func(context.Context, *cobra.Command, replayOptions) error
+
 func main() {
 	config.SetDefaults()
 	if err := newRootCommand().ExecuteContext(context.Background()); err != nil {
@@ -86,15 +88,19 @@ func validateEmulatorCompatibility() error {
 }
 
 func newReplayCommand() *cobra.Command {
+	return newReplayCommandWithRunner(runReplay)
+}
+
+func newReplayCommandWithRunner(run replayRunner) *cobra.Command {
 	var opts replayOptions
 	cmd := &cobra.Command{
 		Use:   "replay",
 		Short: "Replay completed inputs from the node database into a machine template",
 		Long: `Replays the application's accepted inputs from the completed input range in
-the node database into the machine template given by --template. Rejected inputs
-are skipped because they leave the machine state unchanged. The result is
-verified against the persisted evidence, and the machine is stored at the end of
-the range.
+the node database into the machine template given by --template. By default,
+rejected inputs are skipped because they leave the machine state unchanged; pass
+--execute-rejected to execute and verify them too. The result is verified against
+the persisted evidence, and the machine is stored at the end of the range.
 
 The loaded template is hash-verified against the application's template hash.
 
@@ -104,7 +110,7 @@ of the range), machine_root and store.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.HasToEpoch = cmd.Flags().Changed("to-epoch")
 			opts.HasToInputIndex = cmd.Flags().Changed("to-input-index")
-			return runReplay(cmd.Context(), cmd, opts)
+			return run(cmd.Context(), cmd, opts)
 		},
 	}
 	cmd.Flags().StringVar(&opts.Application, "application", "", "Application name or address")
@@ -113,6 +119,8 @@ of the range), machine_root and store.`,
 	cmd.Flags().StringVar(&opts.Template, "template", "", "Machine template path (hash-verified against the application's template hash)")
 	cmd.Flags().Uint64Var(&opts.ToEpoch, "to-epoch", 0, "Replay completed inputs in epochs up to this epoch")
 	cmd.Flags().Uint64Var(&opts.ToInputIndex, "to-input-index", 0, "Replay completed inputs up to this input index")
+	cmd.Flags().BoolVar(&opts.ExecuteRejected, "execute-rejected", false,
+		"Execute rejected inputs instead of skipping them")
 	cobra.CheckErr(cmd.MarkFlagRequired("template"))
 	cobra.CheckErr(cmd.MarkFlagRequired("application"))
 	cobra.CheckErr(cmd.MarkFlagRequired("store"))
@@ -128,6 +136,7 @@ type replayOptions struct {
 	ToInputIndex       uint64
 	HasToEpoch         bool
 	HasToInputIndex    bool
+	ExecuteRejected    bool
 }
 
 func runReplay(ctx context.Context, cmd *cobra.Command, opts replayOptions) error {
@@ -206,7 +215,9 @@ func runReplay(ctx context.Context, cmd *cobra.Command, opts replayOptions) erro
 		)
 	}
 
-	executor, err := newAcceptedOnlyExecutor(ctx, m, repo, app.Name, toInputExclusive, defaultInputPageSize)
+	executor, err := newAcceptedOnlyExecutor(
+		ctx, m, repo, app.Name, toInputExclusive, defaultInputPageSize, opts.ExecuteRejected,
+	)
 	if err != nil {
 		return err
 	}
