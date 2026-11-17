@@ -64,7 +64,7 @@ GO_ARTIFACTS := $(addprefix cartesi-rollups-,node cli evm-reader advancer valida
 # These artifacts embed the machine runtime and therefore require libcartesi.
 # Keep this list explicit: every other artifact is built with CGO_ENABLED=0, so
 # the normal build fails if a C dependency leaks into a pure service or tool.
-MACHINE_GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-advancer
+MACHINE_GO_ARTIFACTS := cartesi-rollups-node cartesi-rollups-advancer cartesi-rollups-machine-tool
 PURE_GO_ARTIFACTS := $(filter-out $(MACHINE_GO_ARTIFACTS),$(GO_ARTIFACTS))
 
 # fixme(vfusco): path on all oses
@@ -683,7 +683,7 @@ INTEGRATION_SHARDS := basic quorum prt replay restart withdrawal awskms
 INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMachineStates|MultiApp|EchoAuthorityStaging|IntegrationCLI|IntegrationLogScanner|TransactionFeeReplacement)$$
 INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
 INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt|PrtPassiveDisputeObserver|PrtRecoveryFixtureConfig|ReaderConfigClearsSignerAndCanRestoreExactSubmittingRecord|RecoveryFixturePreservesFinalizedProfileAndParentLimits|SparseDisputeCommitment(MatchesDenseTrees|CanonicalGeometry|RejectsOutOfRangeRequests)|PassiveObserver(CleanupPreservesRestoreOrder|Config(PreservesOriginalAndUnrelatedFields|RejectsMissingFieldsAndInvalidJSON))|PrtCommitmentMatchesMachineCLI)$$
-INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim|IndependentClaimWatch|IndependentClaimObserverCorrectClaims)$$
+INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim|IndependentClaimWatch|IndependentClaimObserverCorrectClaims|MachineToolReplayRejectedInput)$$
 INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess|ManagedNodeDeadlineStopsChildrenBeforeProcessExit)$$
 INTEGRATION_SHARD_withdrawal := ^Test(WithdrawalLifecycle|RefundLifecycle|AccountsDriveStartIndex_MemoryRanges_ReturnsStartIndex)$$
 INTEGRATION_SHARD_awskms     := ^TestLocalStackAWSIntegration$$
