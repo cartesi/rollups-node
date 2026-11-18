@@ -888,7 +888,7 @@ func (m *machineImpl) executionCycleBounds(
 
 	configured := executionCycleSpan != 0
 	if executionCycleSpan == 0 {
-		// Emulator 0.22 arms imcyclemax = mcycle + 2^48 - 1 (saturating)
+		// Emulator 0.23 arms imcyclemax = mcycle + 2^48 - 1 (saturating)
 		// at input delivery. A pending halt or manual yield takes precedence
 		// over overflow at that endpoint. Match its complete cycle window.
 		executionCycleSpan = model.MaxExecutionCycleSpan
@@ -1032,7 +1032,7 @@ func (m *machineImpl) runIncrementInterval(ctx context.Context,
 		"breakReason", breakReason)
 
 	if atSaturatedEndpoint && !isFixedPointBreakReason(breakReason) {
-		// Emulator 0.22 reports a pending halt or manual yield before overflow
+		// Emulator 0.23 reports a pending halt or manual yield before overflow
 		// at imcyclemax. Every permitted endpoint result is a fixed point.
 		return incrementResult{breakReason: breakReason, currentCycle: currentCycle}, fmt.Errorf(
 			"machine returned break reason %d instead of a fixed point at MaxUint64: %w",

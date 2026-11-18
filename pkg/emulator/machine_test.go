@@ -52,6 +52,38 @@ func createLoopMachine(t *testing.T) *Machine {
 	return machine
 }
 
+// A machine created with an explicit directory must keep its writes in that
+// directory, so a later load observes the state at destroy time rather than
+// the initial image.
+func TestCreateWithDirectoryPersistsWrites(t *testing.T) {
+	const (
+		ramStart  = uint64(0x80000000)
+		ramLength = 4096
+	)
+	config, err := json.Marshal(map[string]any{
+		"ram": map[string]any{"length": ramLength},
+	})
+	require.NoError(t, err)
+
+	dir := filepath.Join(t.TempDir(), "machine")
+	machine, err := CreateMachine(string(config), "", dir)
+	require.NoError(t, err)
+	t.Cleanup(machine.Delete)
+
+	snapshot := []byte("snapshot")
+	require.NoError(t, machine.WriteMemory(ramStart, snapshot))
+	running, err := machine.ReadMemory(ramStart, uint64(len(snapshot)))
+	require.NoError(t, err)
+	require.Equal(t, snapshot, running)
+
+	require.NoError(t, machine.Destroy())
+	require.NoError(t, machine.Load(dir, ""))
+
+	reloaded, err := machine.ReadMemory(ramStart, uint64(len(snapshot)))
+	require.NoError(t, err)
+	require.Equal(t, snapshot, reloaded)
+}
+
 func collectMCycleRootHashes(
 	t *testing.T,
 	machine *Machine,

@@ -97,7 +97,10 @@ func (m *Machine) Create(config, runtimeConfig, dir string) error {
 			cDir = C.CString(dir)
 			defer C.free(unsafe.Pointer(cDir))
 		}
-		err = newError(C.cm_create_new(cConfig, cRuntime, cDir, &m.ptr))
+		// A directory-backed machine must keep its writes in the directory,
+		// as it did before emulator 0.23 introduced the sharing argument.
+		// The C API ignores the sharing mode when dir is empty.
+		err = newError(C.cm_create_new(cConfig, cRuntime, cDir, SharingAll, &m.ptr))
 	})
 	return err
 }

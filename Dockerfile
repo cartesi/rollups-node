@@ -3,7 +3,7 @@
 
 # syntax=docker.io/docker/dockerfile:1
 
-ARG EMULATOR_VERSION=0.22.0
+ARG EMULATOR_VERSION=0.23.0
 
 # Build directories.
 ARG GO_BUILD_PATH=/build/cartesi/go
@@ -29,8 +29,8 @@ RUN <<EOF
     ARCH=$(dpkg --print-architecture)
     wget -O /tmp/cartesi-machine-emulator.deb "https://github.com/cartesi/machine-emulator/releases/download/v${EMULATOR_VERSION}/machine-emulator_${ARCH}.deb"
     case "$ARCH" in
-        amd64) echo "906ae4cd0524ef254ea9a83712e6ad353c36123acae21628fb93c1c47955429a  /tmp/cartesi-machine-emulator.deb" | sha256sum --check ;;
-        arm64) echo "212710b5ad74e469368cd5f54b006eebde1e8620833acca5be9a845cf74ab2cc  /tmp/cartesi-machine-emulator.deb" | sha256sum --check ;;
+        amd64) echo "6d63f3094228694e2cf01d60e0a96e2f9d1fb8b4f152548f89a8a5646d4b75ca  /tmp/cartesi-machine-emulator.deb" | sha256sum --check ;;
+        arm64) echo "134fe1b96896e27ed93b74251e6bb0942e19e2b54b9681da13ad696fc5f004b6  /tmp/cartesi-machine-emulator.deb" | sha256sum --check ;;
         *) echo "unsupported architecture: $ARCH"; exit 1 ;;
     esac
     apt-get install -y --no-install-recommends /tmp/cartesi-machine-emulator.deb

@@ -32,7 +32,7 @@ const (
 	wantGenerationDeployment = "generation"
 )
 
-var testDeploymentPristine = common.HexToHash("0x558f38f2350970a0a566b2450afa64250059c1cff66c9a55560e5b93fa783926")
+var testDeploymentPristine = common.HexToHash("0x89ae34ba1dc65a8a3668b484bcedf897665c803c41dc9ef9f1faf147b9d443d7")
 
 type deploymentRPCReply struct {
 	data []byte
@@ -90,7 +90,7 @@ func newDeploymentViewRPC(t *testing.T, rows [][]uint64, count uint64) (*DaveCon
 	t.Helper()
 	backend := &deploymentViewRPC{consensus: common.HexToAddress("0x101"), factory: common.HexToAddress("0x202"),
 		transition: common.HexToAddress("0x303"), head: txsender.BlockRef{Number: 100, Hash: common.HexToHash("0x104")},
-		rows: rows, count: count, march: 22, pristine: testDeploymentPristine, absent: make(map[common.Address]bool),
+		rows: rows, count: count, march: 23, pristine: testDeploymentPristine, absent: make(map[common.Address]bool),
 		overrides: make(map[string]deploymentRPCReply)}
 	server := rpc.NewServer()
 	require.NoError(t, server.RegisterName("eth", backend))

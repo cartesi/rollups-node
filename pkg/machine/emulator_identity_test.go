@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	testRequiredMarchID = uint64(22)
+	testRequiredMarchID = uint64(23)
 	testOtherMarchID    = uint64(21)
 	identityTimeout     = 2 * time.Second
 )

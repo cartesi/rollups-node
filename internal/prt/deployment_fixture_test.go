@@ -29,7 +29,7 @@ func compatibleDeploymentEvidence(head txsender.BlockRef) DeploymentEvidence {
 		FactoryKnown: true, Factory: common.HexToAddress("0x160"),
 		Alpha6Shape: true,
 		Transition:  common.HexToAddress("0x170"),
-		MarchID:     22, Pristine: model.UarchPristineStateHash(), Count: 2,
+		MarchID:     23, Pristine: model.UarchPristineStateHash(), Count: 2,
 		Rows: []DeploymentParameters{{Levels: 2, Log2Step: 38, Height: 54, ResponseBudget: 11, CommitmentBudget: 22, MaxAllowance: 33},
 			{Levels: 2, Log2Step: 0, Height: 38, ResponseBudget: 11, CommitmentBudget: 22, MaxAllowance: 33}},
 		Candidate: deploymentCompatible, Cause: deploymentCauseComplete}

@@ -18,7 +18,7 @@ import (
 )
 
 func TestRequestAdmissionRefusesUnsupportedBoundary(t *testing.T) {
-	// These are HTIF fields from emulator 0.22's send_cmio_response input boundary.
+	// These are HTIF fields from emulator 0.23's send_cmio_response input boundary.
 	accepted := emulator.HtifDeviceYield<<emulator.HtifDeviceShift |
 		uint64(emulator.YieldManual)<<emulator.HtifCommandShift |
 		uint64(emulator.ManualYieldReasonAccepted)<<emulator.HtifReasonShift

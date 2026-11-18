@@ -28,7 +28,7 @@ const (
 	mcycleOverflowHeadroom = uint64(255)
 	unexpectedYieldRAMSize = uint64(4096)
 	snapshotDirectoryMode  = os.FileMode(0o755)
-	storedRootHashOffset   = int64(0x60)
+	storedRootHashOffset   = int64(0x5c)
 
 	machineTimeout = 5 * time.Minute
 )
@@ -240,7 +240,7 @@ func store(machine *emulator.Machine, output string) error {
 	}
 
 	// Force the emulator to materialize dirty Merkle nodes before storing.
-	// The deploy CLI reads the cached root at hash_tree.sht offset 0x60, while
+	// The deploy CLI reads the cached root at hash_tree.sht offset 0x5c, while
 	// the advancer asks the emulator for the live root after loading. Comparing
 	// both representations here prevents a fixture from registering one hash
 	// and loading as another.
