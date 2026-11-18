@@ -351,6 +351,9 @@ type MachineRuntimeConfig struct {
 	Concurrency      *ConcurrencyRuntimeConfig `json:"concurrency,omitempty"`
 	SkipVersionCheck bool                      `json:"skip_version_check"`
 	SoftYield        bool                      `json:"soft_yield"`
+	// ClearHashTree discards cached hash-tree data after construction
+	// (create or load only) and rebuilds it lazily from machine state.
+	ClearHashTree bool `json:"clear_hash_tree"`
 }
 
 type ConcurrencyRuntimeConfig struct {

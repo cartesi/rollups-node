@@ -102,6 +102,15 @@ func (m *Machine) Create(config, runtimeConfig, dir string) error {
 	return err
 }
 
+// clear_hash_tree
+func (m *Machine) ClearHashTree() error {
+	var err error
+	m.callCAPI(func() {
+		err = newError(C.cm_clear_hash_tree(m.ptr))
+	})
+	return err
+}
+
 // get_default_config
 func (m *Machine) GetDefaultConfig() (string, error) {
 	var cfg *C.char
