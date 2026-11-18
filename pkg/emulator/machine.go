@@ -97,7 +97,7 @@ func (m *Machine) Create(config, runtimeConfig, dir string) error {
 			cDir = C.CString(dir)
 			defer C.free(unsafe.Pointer(cDir))
 		}
-		err = newError(C.cm_create_new(cConfig, cRuntime, cDir, &m.ptr))
+		err = newError(C.cm_create_new(cConfig, cRuntime, cDir, SharingNone, &m.ptr))
 	})
 	return err
 }

@@ -67,9 +67,9 @@ func ReadRootHash(machineDir string) (common.Hash, error) {
 	}
 	defer f.Close()
 
-	// root hash is located at this offset (0x60). Double check its value
+	// root hash is located at this offset (0x5c). Double check its value
 	// with the cartesi-machine-stored-hash tool.
-	_, err = f.Seek(0x60, io.SeekStart) //nolint:mnd // Fixed root-hash offset in the machine image header.
+	_, err = f.Seek(0x5c, io.SeekStart) //nolint:mnd // Fixed root-hash offset in the machine image header.
 	if err != nil {
 		return zero, err
 	}
