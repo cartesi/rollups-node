@@ -6,7 +6,7 @@ package jsonrpc
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"math/big"
@@ -16,14 +16,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/stretchr/testify/require"
+
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
 	"github.com/cartesi/rollups-node/test/tooling/db"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/stretchr/testify/require"
 )
 
 // histogram to gather statistics for each method
@@ -42,12 +44,12 @@ func (h hist) inc(k string) {
 type hex64 uint64
 
 func (x *hex64) MarshalJSON() ([]byte, error) {
-	return json.Marshal(hexutil.EncodeUint64(uint64(*x)))
+	return json.Marshal(hexutil.EncodeUint64(uint64(*x)), jsonutil.Options)
 }
 
 func (x *hex64) UnmarshalJSON(in []byte) error {
 	var hexString string
-	err := json.Unmarshal(in, &hexString)
+	err := json.Unmarshal(in, &hexString, jsonutil.Options)
 	if err != nil {
 		return err
 	}
@@ -65,7 +67,7 @@ type testRPCResponse[T any] struct {
 	Result  struct {
 		Data T `json:"data"`
 	} `json:"result"`
-	Error *RPCError `json:"error,omitempty"`
+	Error *RPCError `json:"error,omitzero"`
 	ID    any       `json:"id"`
 }
 

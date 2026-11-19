@@ -4,11 +4,14 @@
 package model
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 type TournamentSnapshot struct {
@@ -25,9 +28,15 @@ type TournamentSnapshot struct {
 	BondRecovery     TournamentBondRecovery  `json:"bond_recovery"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value TournamentSnapshot) MarshalJSON() ([]byte, error) {
+	return json.Marshal(value, jsonutil.Options)
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value TournamentSnapshot) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias TournamentSnapshot
-	return json.Marshal(struct {
+	return json.MarshalEncode(enc, struct {
 		*Alias
 		AsOfBlock       hexutil.Uint64 `json:"as_of_block"`
 		FinishedAtBlock hexutil.Uint64 `json:"finished_at_block"`
@@ -49,7 +58,7 @@ func (value *TournamentSnapshot) UnmarshalJSON(data []byte) error {
 		FinishedAtBlock hexutil.Uint64 `json:"finished_at_block"`
 		WinnerExpiresAt hexutil.Uint64 `json:"winner_expires_at"`
 	}{Alias: (*Alias)(&decoded)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux, jsonutil.Options); err != nil {
 		return err
 	}
 	decoded.AsOfBlock = uint64(aux.AsOfBlock)
@@ -65,9 +74,15 @@ type TournamentInnerResult struct {
 	PausedAllowance  uint64                     `json:"paused_allowance"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value TournamentInnerResult) MarshalJSON() ([]byte, error) {
+	return json.Marshal(value, jsonutil.Options)
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value TournamentInnerResult) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias TournamentInnerResult
-	return json.Marshal(struct {
+	return json.MarshalEncode(enc, struct {
 		*Alias
 		PausedAllowance hexutil.Uint64 `json:"paused_allowance"`
 	}{
@@ -83,7 +98,7 @@ func (value *TournamentInnerResult) UnmarshalJSON(data []byte) error {
 		*Alias
 		PausedAllowance hexutil.Uint64 `json:"paused_allowance"`
 	}{Alias: (*Alias)(&decoded)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux, jsonutil.Options); err != nil {
 		return err
 	}
 	decoded.PausedAllowance = uint64(aux.PausedAllowance)
@@ -105,9 +120,15 @@ type CommitmentSnapshot struct {
 	ClockAllowance uint64         `json:"clock_allowance"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value CommitmentSnapshot) MarshalJSON() ([]byte, error) {
+	return json.Marshal(value, jsonutil.Options)
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value CommitmentSnapshot) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias CommitmentSnapshot
-	return json.Marshal(struct {
+	return json.MarshalEncode(enc, struct {
 		*Alias
 		AsOfBlock      hexutil.Uint64 `json:"as_of_block"`
 		ClockDeadline  hexutil.Uint64 `json:"clock_deadline"`
@@ -129,7 +150,7 @@ func (value *CommitmentSnapshot) UnmarshalJSON(data []byte) error {
 		ClockDeadline  hexutil.Uint64 `json:"clock_deadline"`
 		ClockAllowance hexutil.Uint64 `json:"clock_allowance"`
 	}{Alias: (*Alias)(&decoded)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux, jsonutil.Options); err != nil {
 		return err
 	}
 	decoded.AsOfBlock = uint64(aux.AsOfBlock)
@@ -148,9 +169,15 @@ type MatchSnapshot struct {
 	DeferredCharge uint64                  `json:"deferred_charge"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value MatchSnapshot) MarshalJSON() ([]byte, error) {
+	return json.Marshal(value, jsonutil.Options)
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value MatchSnapshot) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias MatchSnapshot
-	return json.Marshal(struct {
+	return json.MarshalEncode(enc, struct {
 		*Alias
 		AsOfBlock      hexutil.Uint64 `json:"as_of_block"`
 		DeferredCharge hexutil.Uint64 `json:"deferred_charge"`
@@ -169,7 +196,7 @@ func (value *MatchSnapshot) UnmarshalJSON(data []byte) error {
 		AsOfBlock      hexutil.Uint64 `json:"as_of_block"`
 		DeferredCharge hexutil.Uint64 `json:"deferred_charge"`
 	}{Alias: (*Alias)(&decoded)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux, jsonutil.Options); err != nil {
 		return err
 	}
 	decoded.AsOfBlock = uint64(aux.AsOfBlock)
@@ -188,9 +215,15 @@ type MatchBisectionSnapshot struct {
 	Responder            CommitmentSide `json:"responder"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value MatchBisectionSnapshot) MarshalJSON() ([]byte, error) {
+	return json.Marshal(value, jsonutil.Options)
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value MatchBisectionSnapshot) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias MatchBisectionSnapshot
-	return json.Marshal(struct {
+	return json.MarshalEncode(enc, struct {
 		*Alias
 		CurrentHeight *hexutil.Uint64 `json:"current_height"`
 	}{
@@ -206,7 +239,7 @@ func (value *MatchBisectionSnapshot) UnmarshalJSON(data []byte) error {
 		*Alias
 		CurrentHeight *hexutil.Uint64 `json:"current_height"`
 	}{Alias: (*Alias)(&decoded)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux, jsonutil.Options); err != nil {
 		return err
 	}
 	decoded.CurrentHeight = (*uint64)(aux.CurrentHeight)
@@ -228,9 +261,15 @@ type TournamentCreationEvent struct {
 	LogIndex    uint64      `json:"log_index"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value TournamentCreationEvent) MarshalJSON() ([]byte, error) {
+	return json.Marshal(value, jsonutil.Options)
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value TournamentCreationEvent) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias TournamentCreationEvent
-	return json.Marshal(struct {
+	return json.MarshalEncode(enc, struct {
 		*Alias
 		BlockNumber hexutil.Uint64 `json:"block_number"`
 		LogIndex    hexutil.Uint64 `json:"log_index"`
@@ -249,7 +288,7 @@ func (value *TournamentCreationEvent) UnmarshalJSON(data []byte) error {
 		BlockNumber hexutil.Uint64 `json:"block_number"`
 		LogIndex    hexutil.Uint64 `json:"log_index"`
 	}{Alias: (*Alias)(&decoded)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux, jsonutil.Options); err != nil {
 		return err
 	}
 	decoded.BlockNumber = uint64(aux.BlockNumber)
@@ -271,9 +310,15 @@ type LeafMatchSeal struct {
 	LogIndex           uint64      `json:"log_index"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value LeafMatchSeal) MarshalJSON() ([]byte, error) {
+	return json.Marshal(value, jsonutil.Options)
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value LeafMatchSeal) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias LeafMatchSeal
-	return json.Marshal(struct {
+	return json.MarshalEncode(enc, struct {
 		*Alias
 		EliminableAt hexutil.Uint64 `json:"eliminable_at"`
 		DeadlineTwo  hexutil.Uint64 `json:"deadline_two"`
@@ -301,7 +346,7 @@ func (value *LeafMatchSeal) UnmarshalJSON(data []byte) error {
 		BlockNumber  hexutil.Uint64 `json:"block_number"`
 		LogIndex     hexutil.Uint64 `json:"log_index"`
 	}{Alias: (*Alias)(&decoded)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux, jsonutil.Options); err != nil {
 		return err
 	}
 	decoded.EliminableAt = uint64(aux.EliminableAt)
@@ -385,9 +430,15 @@ type BondEvent struct {
 	UpdatedAt         time.Time          `json:"updated_at"`
 }
 
+// MarshalJSON retains the byte-slice API for existing callers.
 func (value BondEvent) MarshalJSON() ([]byte, error) {
+	return json.Marshal(value, jsonutil.Options)
+}
+
+// MarshalJSONTo streams the wire representation without a complete JSON buffer.
+func (value BondEvent) MarshalJSONTo(enc *jsontext.Encoder) error {
 	type Alias BondEvent
-	return json.Marshal(struct {
+	return json.MarshalEncode(enc, struct {
 		*Alias
 		EpochIndex  hexutil.Uint64 `json:"epoch_index"`
 		BlockNumber hexutil.Uint64 `json:"block_number"`
@@ -409,7 +460,7 @@ func (value *BondEvent) UnmarshalJSON(data []byte) error {
 		BlockNumber hexutil.Uint64 `json:"block_number"`
 		LogIndex    hexutil.Uint64 `json:"log_index"`
 	}{Alias: (*Alias)(&decoded)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux, jsonutil.Options); err != nil {
 		return err
 	}
 	decoded.EpochIndex = uint64(aux.EpochIndex)

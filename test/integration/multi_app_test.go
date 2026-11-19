@@ -7,16 +7,19 @@ package integration
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/suite"
+
 	"github.com/cartesi/rollups-node/internal/jsonrpc/api"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 	jsonrpcclient "github.com/cartesi/rollups-node/pkg/jsonrpc/client"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/suite"
 )
 
 type MultiAppSuite struct {
@@ -104,12 +107,12 @@ func (s *MultiAppSuite) TestMultiAppIsolation() {
 		inputBox, err := ethutil.GetInputBox(s.ctx, client, common.HexToAddress(app.address))
 		require.NoError(err, "read %s input box from the contract", app.name)
 
-		var response api.SingleResponse[map[string]json.RawMessage]
+		var response api.SingleResponse[map[string]jsontext.Value]
 		err = rpc.Call(s.ctx, "cartesi_getApplication", api.GetApplicationParams{Application: app.name}, &response)
 		require.NoError(err, "read %s through JSON-RPC", app.name)
 		require.NotContains(response.Data, "data_availability")
 		var storedInputBox common.Address
-		require.NoError(json.Unmarshal(response.Data["iinputbox_address"], &storedInputBox))
+		require.NoError(json.Unmarshal(response.Data["iinputbox_address"], &storedInputBox, jsonutil.Options))
 		require.Equal(inputBox, storedInputBox)
 	}
 

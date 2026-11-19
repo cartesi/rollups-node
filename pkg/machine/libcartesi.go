@@ -5,7 +5,8 @@ package machine
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"math/bits"
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
 
@@ -41,7 +43,7 @@ type RemoteMachineInterface interface {
 		log2McyclePeriod,
 		mcyclePhase uint64,
 		log2BundleMcycleCount int32,
-		previousPartialBundle json.RawMessage,
+		previousPartialBundle jsontext.Value,
 	) ([]byte, error)
 }
 
@@ -85,7 +87,7 @@ func (p *proofJSON) UnmarshalJSON(data []byte) error {
 		TargetHash     string   `json:"target_hash"`
 	}
 
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux, jsonutil.Options); err != nil {
 		return err
 	}
 
@@ -282,7 +284,7 @@ func (e *LibCartesiBackend) GetProof(
 		return MemoryProof{}, fmt.Errorf("failed to get proof: %w", err)
 	}
 	proof := &proofJSON{}
-	err = json.Unmarshal([]byte(jsonMessage), proof)
+	err = json.Unmarshal([]byte(jsonMessage), proof, jsonutil.Options)
 	if err != nil {
 		return MemoryProof{}, fmt.Errorf("failed to unmarshal proof JSON: %w", err)
 	}
@@ -377,7 +379,7 @@ func (e *LibCartesiBackend) ShutdownServer(timeout time.Duration) error {
 
 func (e *LibCartesiBackend) NewMachineRuntimeConfig() (string, error) {
 	// Convert runtime options to JSON
-	jsonConf, err := json.Marshal(emulator.NewMachineRuntimeConfig())
+	jsonConf, err := json.Marshal(emulator.NewMachineRuntimeConfig(), jsonutil.Options)
 	if err != nil {
 		return "", fmt.Errorf("could not marshal machine runtime config: %w", err)
 	}
@@ -448,13 +450,13 @@ func (e *LibCartesiBackend) RunAndCollectRootHashes(
 		return Failed, err
 	}
 	result := struct {
-		RootHashes     []string        `json:"hashes"`
-		MCyclePhase    uint64          `json:"mcycle_phase"`
-		BreakReason    string          `json:"break_reason"`
-		PartialBundle  json.RawMessage `json:"partial_bundle,omitempty"`
-		ConsoleIOError string          `json:"console_io_error,omitempty"`
+		RootHashes     []string       `json:"hashes"`
+		MCyclePhase    uint64         `json:"mcycle_phase"`
+		BreakReason    string         `json:"break_reason"`
+		PartialBundle  jsontext.Value `json:"partial_bundle,omitzero"`
+		ConsoleIOError string         `json:"console_io_error,omitempty"`
 	}{}
-	err = json.Unmarshal(rawResult, &result)
+	err = json.Unmarshal(rawResult, &result, jsonutil.Options)
 	if err != nil {
 		return Failed, fmt.Errorf("failed to unmarshal CollectMCycleRootHashes result: %w", err)
 	}

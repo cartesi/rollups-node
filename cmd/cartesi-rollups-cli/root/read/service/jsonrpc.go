@@ -5,7 +5,7 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 
 	"github.com/cartesi/rollups-node/internal/config"
@@ -18,17 +18,17 @@ type JsonrpcReadService struct {
 	Client *client.Client
 }
 
-func (s *JsonrpcReadService) GetApplication(ctx context.Context, params api.GetApplicationParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetApplication(ctx context.Context, params api.GetApplicationParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getApplication", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetEpoch(ctx context.Context, params api.GetEpochParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetEpoch(ctx context.Context, params api.GetEpochParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -36,12 +36,12 @@ func (s *JsonrpcReadService) GetEpoch(ctx context.Context, params api.GetEpochPa
 		return nil, fmt.Errorf("invalid epoch index: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getEpoch", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) ListEpochs(ctx context.Context, params api.ListEpochsParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) ListEpochs(ctx context.Context, params api.ListEpochsParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -55,12 +55,12 @@ func (s *JsonrpcReadService) ListEpochs(ctx context.Context, params api.ListEpoc
 		}
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_listEpochs", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetInput(ctx context.Context, params api.GetInputParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetInput(ctx context.Context, params api.GetInputParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -68,12 +68,12 @@ func (s *JsonrpcReadService) GetInput(ctx context.Context, params api.GetInputPa
 		return nil, fmt.Errorf("invalid input index: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getInput", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) ListInputs(ctx context.Context, params api.ListInputsParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) ListInputs(ctx context.Context, params api.ListInputsParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -95,12 +95,12 @@ func (s *JsonrpcReadService) ListInputs(ctx context.Context, params api.ListInpu
 		}
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_listInputs", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetOutput(ctx context.Context, params api.GetOutputParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetOutput(ctx context.Context, params api.GetOutputParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -108,12 +108,12 @@ func (s *JsonrpcReadService) GetOutput(ctx context.Context, params api.GetOutput
 		return nil, fmt.Errorf("invalid output index: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getOutput", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) ListOutputs(ctx context.Context, params api.ListOutputsParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) ListOutputs(ctx context.Context, params api.ListOutputsParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -144,12 +144,12 @@ func (s *JsonrpcReadService) ListOutputs(ctx context.Context, params api.ListOut
 		}
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_listOutputs", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetReport(ctx context.Context, params api.GetReportParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetReport(ctx context.Context, params api.GetReportParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -157,12 +157,12 @@ func (s *JsonrpcReadService) GetReport(ctx context.Context, params api.GetReport
 		return nil, fmt.Errorf("invalid report index: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getReport", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) ListReports(ctx context.Context, params api.ListReportsParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) ListReports(ctx context.Context, params api.ListReportsParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -179,12 +179,12 @@ func (s *JsonrpcReadService) ListReports(ctx context.Context, params api.ListRep
 		}
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_listReports", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetWithdrawal(ctx context.Context, params api.GetWithdrawalParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetWithdrawal(ctx context.Context, params api.GetWithdrawalParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -192,12 +192,12 @@ func (s *JsonrpcReadService) GetWithdrawal(ctx context.Context, params api.GetWi
 		return nil, fmt.Errorf("invalid account index: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getWithdrawal", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) ListWithdrawals(ctx context.Context, params api.ListWithdrawalsParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) ListWithdrawals(ctx context.Context, params api.ListWithdrawalsParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -207,12 +207,12 @@ func (s *JsonrpcReadService) ListWithdrawals(ctx context.Context, params api.Lis
 		}
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_listWithdrawals", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetTournament(ctx context.Context, params api.GetTournamentParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetTournament(ctx context.Context, params api.GetTournamentParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -220,12 +220,12 @@ func (s *JsonrpcReadService) GetTournament(ctx context.Context, params api.GetTo
 		return nil, fmt.Errorf("invalid address: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getTournament", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) ListTournaments(ctx context.Context, params api.ListTournamentsParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) ListTournaments(ctx context.Context, params api.ListTournamentsParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -254,12 +254,12 @@ func (s *JsonrpcReadService) ListTournaments(ctx context.Context, params api.Lis
 		}
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_listTournaments", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetCommitment(ctx context.Context, params api.GetCommitmentParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetCommitment(ctx context.Context, params api.GetCommitmentParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -273,12 +273,12 @@ func (s *JsonrpcReadService) GetCommitment(ctx context.Context, params api.GetCo
 		return nil, fmt.Errorf("invalid commitment: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getCommitment", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) ListCommitments(ctx context.Context, params api.ListCommitmentsParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) ListCommitments(ctx context.Context, params api.ListCommitmentsParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -295,12 +295,12 @@ func (s *JsonrpcReadService) ListCommitments(ctx context.Context, params api.Lis
 		}
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_listCommitments", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetMatch(ctx context.Context, params api.GetMatchParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetMatch(ctx context.Context, params api.GetMatchParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -314,12 +314,12 @@ func (s *JsonrpcReadService) GetMatch(ctx context.Context, params api.GetMatchPa
 		return nil, fmt.Errorf("invalid ID hash: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getMatch", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) ListMatches(ctx context.Context, params api.ListMatchesParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) ListMatches(ctx context.Context, params api.ListMatchesParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -336,12 +336,12 @@ func (s *JsonrpcReadService) ListMatches(ctx context.Context, params api.ListMat
 		}
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_listMatches", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetMatchAdvanced(ctx context.Context, params api.GetMatchAdvanceParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -361,12 +361,12 @@ func (s *JsonrpcReadService) GetMatchAdvanced(ctx context.Context, params api.Ge
 		return nil, fmt.Errorf("invalid log index: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getMatchAdvance", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) ListMatchAdvances(ctx context.Context, params api.ListMatchAdvancesParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -380,12 +380,12 @@ func (s *JsonrpcReadService) ListMatchAdvances(ctx context.Context, params api.L
 		return nil, fmt.Errorf("invalid ID hash: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_listMatchAdvances", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) GetStandingChange(ctx context.Context, params api.GetStandingChangeParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) GetStandingChange(ctx context.Context, params api.GetStandingChangeParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -402,12 +402,12 @@ func (s *JsonrpcReadService) GetStandingChange(ctx context.Context, params api.G
 		return nil, fmt.Errorf("invalid log index: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_getStandingChange", params, &resp)
 	return resp, err
 }
 
-func (s *JsonrpcReadService) ListStandingChanges(ctx context.Context, params api.ListStandingChangesParams) (json.RawMessage, error) {
+func (s *JsonrpcReadService) ListStandingChanges(ctx context.Context, params api.ListStandingChangesParams) (jsontext.Value, error) {
 	if _, err := config.ToApplicationNameOrAddressFromString(params.Application); err != nil {
 		return nil, fmt.Errorf("invalid application: %w", err)
 	}
@@ -418,7 +418,7 @@ func (s *JsonrpcReadService) ListStandingChanges(ctx context.Context, params api
 		return nil, fmt.Errorf("invalid tournament address: %w", err)
 	}
 
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err := s.Client.Call(ctx, "cartesi_listStandingChanges", params, &resp)
 	return resp, err
 }

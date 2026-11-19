@@ -56,8 +56,8 @@ func newServiceMock(t *testing.T) (*Service, *claimerRepositoryMock, *claimerBlo
 	opts := &tint.Options{
 		Level:     slog.LevelDebug,
 		AddSource: true,
-		// RFC3339 with milliseconds and without timezone
-		TimeFormat: "2006-01-02T15:04:05.000",
+		// RFC3339 with milliseconds and an explicit timezone offset
+		TimeFormat: "2006-01-02T15:04:05.000-07:00",
 	}
 	handler := tint.NewTextHandler(os.Stdout, opts)
 	repository := &claimerRepositoryMock{}

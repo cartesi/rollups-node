@@ -6,7 +6,8 @@ package provedriveroot
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"math/big"
 	"net/http/httptest"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 )
 
@@ -87,7 +89,7 @@ func TestCommandRequiresMatchingDriveRootEvent(t *testing.T) {
 			if test.zeroRoot {
 				proofRoot = common.Hash{}
 			}
-			proof, err := json.Marshal(proveDriveRootJSON{AccountsDriveMerkleRoot: proofRoot.Hex(), Proof: []string{root.Hex()}})
+			proof, err := json.Marshal(proveDriveRootJSON{AccountsDriveMerkleRoot: proofRoot.Hex(), Proof: []string{root.Hex()}}, jsonutil.Options)
 			require.NoError(t, err)
 			args := []string{address.Hex(), "--proof-file", writeProofFile(t, string(proof)), "--yes", "--json"}
 			if test.noWait {
@@ -117,7 +119,7 @@ func TestCommandRequiresMatchingDriveRootEvent(t *testing.T) {
 			}
 			require.NoError(t, err)
 			var result map[string]string
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result, jsonutil.Options))
 			status := "mined"
 			if test.noWait {
 				status = "broadcast"
@@ -158,7 +160,7 @@ func (*driveRootRPC) GetTransactionCount(context.Context, common.Address, string
 	return 0
 }
 
-func (r *driveRootRPC) EstimateGas(context.Context, map[string]json.RawMessage) hexutil.Uint64 {
+func (r *driveRootRPC) EstimateGas(context.Context, map[string]jsontext.Value) hexutil.Uint64 {
 	r.estimates.Add(1)
 	return 123456
 }

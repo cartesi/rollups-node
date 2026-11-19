@@ -7,7 +7,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -15,14 +16,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-machine-tool/accountdrive"
-	"github.com/cartesi/rollups-node/internal/cli"
-	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/spf13/cobra"
+
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-machine-tool/accountdrive"
+	"github.com/cartesi/rollups-node/internal/cli"
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/internal/repository"
 )
 
 const defaultInputPageSize = uint64(500)
@@ -149,7 +152,7 @@ func runReplay(ctx context.Context, opts replayOptions) error {
 	if lastInputIndex != nil {
 		summary.LastInputIndex = fmt.Sprintf("0x%x", *lastInputIndex)
 	}
-	return json.NewEncoder(os.Stdout).Encode(summary)
+	return json.MarshalEncode(jsontext.NewEncoder(os.Stdout), summary, jsonutil.Options)
 }
 
 func replayInputs(
@@ -323,7 +326,7 @@ func runProveAccountsDrive(ctx context.Context, opts proveAccountsDriveOptions) 
 		DriveRootProofFile:      opts.OutDriveRootProof,
 		WithdrawProofFile:       opts.OutWithdrawProof,
 	}
-	return json.NewEncoder(os.Stdout).Encode(summary)
+	return json.MarshalEncode(jsontext.NewEncoder(os.Stdout), summary, jsonutil.Options)
 }
 
 type storedDriveConfig struct {
@@ -347,7 +350,7 @@ func findStoredDrive(snapshot string, start uint64, length uint64) (string, erro
 		return "", fmt.Errorf("read stored machine config: %w", err)
 	}
 	var cfg storedMachineConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil {
+	if err := json.Unmarshal(raw, &cfg, jsonutil.Options); err != nil {
 		return "", fmt.Errorf("parse stored machine config: %w", err)
 	}
 	for _, drives := range [][]storedDriveConfig{cfg.Config.FlashDrive, cfg.Config.NVRAM} {
@@ -401,7 +404,7 @@ func generateMachineProof(
 		return nil, fmt.Errorf("read machine proof: %w", err)
 	}
 	var proof cartesiMachineProof
-	if err := json.Unmarshal(raw, &proof); err != nil {
+	if err := json.Unmarshal(raw, &proof, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("parse machine proof: %w", err)
 	}
 
@@ -455,7 +458,7 @@ func writeWithdrawProof(path string, proof *accountdrive.Proof) error {
 }
 
 func writeJSON(path string, value any) error {
-	raw, err := json.MarshalIndent(value, "", "  ")
+	raw, err := json.Marshal(value, jsonutil.Options, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

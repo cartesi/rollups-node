@@ -8,7 +8,8 @@ package integration
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -17,12 +18,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/model"
-	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
+	"github.com/cartesi/rollups-node/pkg/contracts/itournament"
 )
 
 // maxBlocksToMine is the sanity cap for mineForTournamentTimeout to prevent
@@ -40,7 +43,7 @@ const (
 var anvilHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 // anvilRPCCall calls an Anvil JSON-RPC method and returns the raw result.
-func anvilRPCCall(ctx context.Context, method string, params ...any) (json.RawMessage, error) {
+func anvilRPCCall(ctx context.Context, method string, params ...any) (jsontext.Value, error) {
 	endpoint := envOrDefault(
 		"CARTESI_BLOCKCHAIN_HTTP_ENDPOINT", "http://localhost:8545")
 
@@ -50,7 +53,7 @@ func anvilRPCCall(ctx context.Context, method string, params ...any) (json.RawMe
 		Params  []any  `json:"params"`
 		ID      int    `json:"id"`
 	}{JSONRPC: "2.0", Method: method, Params: params, ID: 1}
-	body, err := json.Marshal(rpcReq)
+	body, err := json.Marshal(rpcReq, jsonutil.Options)
 	if err != nil {
 		return nil, fmt.Errorf("marshal rpc request: %w", err)
 	}
@@ -78,13 +81,13 @@ func anvilRPCCall(ctx context.Context, method string, params ...any) (json.RawMe
 		return nil, fmt.Errorf("%s: read response: %w", method, err)
 	}
 	var rpcResp struct {
-		Result json.RawMessage `json:"result"`
+		Result jsontext.Value `json:"result"`
 		Error  *struct {
 			Code    int    `json:"code"`
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal(respBody, &rpcResp); err != nil {
+	if err := json.Unmarshal(respBody, &rpcResp, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("%s: parse response: %w", method, err)
 	}
 	if rpcResp.Error != nil {

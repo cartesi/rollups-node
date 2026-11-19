@@ -6,14 +6,17 @@ package api
 import (
 	"bytes"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"strings"
 
-	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
 )
 
 // ParseOutputType parses a hex-encoded 4-byte output type selector.
@@ -100,16 +103,17 @@ func DecodeInput(input *model.Input, parsedAbi *abi.ABI) (*DecodedInput, error) 
 	}, nil
 }
 
-// MarshalJSON produces a flat JSON object merging Input fields with decoded_data.
+// MarshalJSON retains the byte-slice API for existing callers.
 func (d *DecodedInput) MarshalJSON() ([]byte, error) {
-	inputJSON, err := d.Input.MarshalJSON()
-	if err != nil {
-		return nil, err
-	}
-	if d.DecodedData == nil {
-		return inputJSON, nil
-	}
-	return mergeJSONField(inputJSON, "decoded_data", d.DecodedData)
+	return json.Marshal(d, jsonutil.Options)
+}
+
+// MarshalJSONTo flattens base fields and decoded data without a JSON merge buffer.
+func (d *DecodedInput) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return json.MarshalEncode(enc, &struct {
+		*model.InputJSON
+		DecodedData *EvmAdvance `json:"decoded_data,omitzero"`
+	}{InputJSON: d.Input.JSONFields(), DecodedData: d.DecodedData})
 }
 
 // DecodedData is the single canonical type for decoded output data, used by
@@ -229,53 +233,29 @@ func (d *DecodedOutput) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	var raw struct {
-		DecodedData json.RawMessage `json:"decoded_data"`
+		DecodedData jsontext.Value `json:"decoded_data"`
 	}
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := json.Unmarshal(data, &raw, jsonutil.Options); err != nil {
 		return err
 	}
 	if len(raw.DecodedData) > 0 && string(raw.DecodedData) != "null" {
 		d.DecodedData = new(DecodedData)
-		if err := json.Unmarshal(raw.DecodedData, d.DecodedData); err != nil {
+		if err := json.Unmarshal(raw.DecodedData, d.DecodedData, jsonutil.Options); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// MarshalJSON produces a flat JSON object merging Output fields with decoded_data.
+// MarshalJSON retains the byte-slice API for existing callers.
 func (d *DecodedOutput) MarshalJSON() ([]byte, error) {
-	outputJSON, err := d.Output.MarshalJSON()
-	if err != nil {
-		return nil, err
-	}
-	if d.DecodedData == nil {
-		return outputJSON, nil
-	}
-	return mergeJSONField(outputJSON, "decoded_data", d.DecodedData)
+	return json.Marshal(d, jsonutil.Options)
 }
 
-// mergeJSONField appends a key-value pair to an existing JSON object.
-// The base must be a valid JSON object (ending with '}'). The value is
-// marshaled and appended as a new field.
-func mergeJSONField(base []byte, key string, value any) ([]byte, error) {
-	if len(base) == 0 || base[len(base)-1] != '}' {
-		return nil, fmt.Errorf("mergeJSONField: base is not a valid JSON object")
-	}
-	fieldJSON, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	trimmed := bytes.TrimSuffix(base, []byte("}"))
-	var buf bytes.Buffer
-	buf.Write(trimmed)
-	if len(trimmed) > 0 && trimmed[len(trimmed)-1] != '{' {
-		buf.WriteByte(',')
-	}
-	buf.WriteByte('"')
-	buf.WriteString(key)
-	buf.WriteString(`":`)
-	buf.Write(fieldJSON)
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
+// MarshalJSONTo flattens base fields and decoded data without a JSON merge buffer.
+func (d *DecodedOutput) MarshalJSONTo(enc *jsontext.Encoder) error {
+	return json.MarshalEncode(enc, &struct {
+		*model.OutputJSON
+		DecodedData *DecodedData `json:"decoded_data,omitzero"`
+	}{OutputJSON: d.Output.JSONFields(), DecodedData: d.DecodedData})
 }

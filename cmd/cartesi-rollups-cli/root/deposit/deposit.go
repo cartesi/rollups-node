@@ -5,25 +5,28 @@ package deposit
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"strings"
 
-	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
-	"github.com/cartesi/rollups-node/internal/cli"
-	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/internal/config/auth"
-	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
-	"github.com/cartesi/rollups-node/pkg/contracts/ierc20errors"
-	"github.com/cartesi/rollups-node/pkg/contracts/ierc20metadata"
-	"github.com/cartesi/rollups-node/pkg/contracts/ierc20portal"
-	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/spf13/cobra"
+
+	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
+	"github.com/cartesi/rollups-node/internal/cli"
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/config/auth"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
+	"github.com/cartesi/rollups-node/pkg/contracts/ierc20errors"
+	"github.com/cartesi/rollups-node/pkg/contracts/ierc20metadata"
+	"github.com/cartesi/rollups-node/pkg/contracts/ierc20portal"
+	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 )
 
 var Cmd = &cobra.Command{
@@ -252,7 +255,7 @@ func runERC20(cmd *cobra.Command, args []string) error {
 			PortalAddress      common.Address `json:"portal_address"`
 			TokenAddress       common.Address `json:"token_address"`
 			Amount             string         `json:"amount"`
-			ApproveTxHash      *common.Hash   `json:"approve_transaction_hash,omitempty"`
+			ApproveTxHash      *common.Hash   `json:"approve_transaction_hash,omitzero"`
 		}{
 			TransactionResult:  cli.NewTransactionResult(tx, receipt),
 			ApplicationAddress: appAddr,
@@ -261,9 +264,8 @@ func runERC20(cmd *cobra.Command, args []string) error {
 			Amount:             amount.String(),
 			ApproveTxHash:      approveHash,
 		}
-		encoder := json.NewEncoder(cmd.OutOrStdout())
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(result)
+		encoder := jsontext.NewEncoder(cmd.OutOrStdout(), jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+		return json.MarshalEncode(encoder, result, jsonutil.Options)
 	}
 	if approveHash != nil {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "approve tx-hash: %s\n", approveHash.Hex()); err != nil {

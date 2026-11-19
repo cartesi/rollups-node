@@ -4,12 +4,14 @@
 package jsonrpc
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"regexp"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 // -----------------------------------------------------------------------------
@@ -17,17 +19,17 @@ import (
 // -----------------------------------------------------------------------------
 
 type RPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
-	ID      json.RawMessage `json:"id"`
+	JSONRPC string         `json:"jsonrpc"`
+	Method  string         `json:"method"`
+	Params  jsontext.Value `json:"params"`
+	ID      jsontext.Value `json:"id"`
 }
 
 type RPCResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Result  any             `json:"result,omitempty"`
-	Error   *RPCError       `json:"error,omitempty"`
-	ID      json.RawMessage `json:"id"`
+	JSONRPC string         `json:"jsonrpc"`
+	Result  any            `json:"result,omitzero"`
+	Error   *RPCError      `json:"error,omitzero"`
+	ID      jsontext.Value `json:"id"`
 }
 
 type RPCError struct {
@@ -44,7 +46,7 @@ func newRPCError(code int, message string) error {
 }
 
 // writeRPCError sends a generic error response for internal errors.
-func writeRPCError(w io.Writer, id json.RawMessage, code int, message string) error {
+func writeRPCError(w io.Writer, id jsontext.Value, code int, message string) error {
 	// Hide detailed error info for internal errors.
 	if code == JSONRPC_INTERNAL_ERROR {
 		message = "Internal server error"
@@ -57,16 +59,28 @@ func writeRPCError(w io.Writer, id json.RawMessage, code int, message string) er
 		},
 		ID: id,
 	}
-	return json.NewEncoder(w).Encode(resp)
+	return writeRPCResponse(w, resp)
 }
 
-func writeRPCResult(w io.Writer, id json.RawMessage, result any) error {
+func writeRPCResult(w io.Writer, id jsontext.Value, result any) error {
 	resp := RPCResponse{
 		JSONRPC: "2.0",
 		Result:  result,
 		ID:      id,
 	}
-	return json.NewEncoder(w).Encode(resp)
+	return writeRPCResponse(w, resp)
+}
+
+// MarshalWrite streams composite values, allowing the response budget to stop
+// encoding before the entire result has been serialized. Preserve v1 wire
+// semantics and Encode's trailing newline. Response models use MarshalJSONTo
+// to stream their fields without constructing intermediate JSON byte slices.
+func writeRPCResponse(w io.Writer, resp RPCResponse) error {
+	if err := json.MarshalWrite(w, resp, jsonutil.Options); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w, "\n")
+	return err
 }
 
 // -----------------------------------------------------------------------------

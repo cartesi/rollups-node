@@ -5,14 +5,17 @@ package deploy
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 // withdrawalConfigJSON is the on-the-wire schema. All five fields are
@@ -55,9 +58,8 @@ func parseWithdrawalConfig(inline, filePath string) (iapplicationfactory.Withdra
 	}
 
 	var aux withdrawalConfigJSON
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&aux); err != nil {
+	dec := jsontext.NewDecoder(bytes.NewReader(raw))
+	if err := json.UnmarshalDecode(dec, &aux, jsonutil.Options, json.RejectUnknownMembers(true)); err != nil {
 		return iapplicationfactory.WithdrawalConfig{}, fmt.Errorf(
 			"withdrawal config (%s): invalid JSON: %w", src, err)
 	}

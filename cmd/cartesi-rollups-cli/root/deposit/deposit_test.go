@@ -6,7 +6,8 @@ package deposit
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math/big"
 	"net/http/httptest"
@@ -23,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/ierc20metadata"
 	"github.com/cartesi/rollups-node/pkg/contracts/ierc20portal"
@@ -78,7 +80,7 @@ func (r *depositRPC) GetTransactionCount(context.Context, common.Address, string
 	return hexutil.Uint64(r.nonce.Load()), nil
 }
 
-func (r *depositRPC) EstimateGas(context.Context, map[string]json.RawMessage) (hexutil.Uint64, error) {
+func (r *depositRPC) EstimateGas(context.Context, map[string]jsontext.Value) (hexutil.Uint64, error) {
 	r.estimates.Add(1)
 	return testGasLimit, nil
 }
@@ -111,15 +113,15 @@ func (r *depositRPC) GetTransactionReceipt(_ context.Context, hash common.Hash) 
 		Logs: logs, GasUsed: testGasLimit, CumulativeGasUsed: testGasLimit}, nil
 }
 
-func (r *depositRPC) Call(_ context.Context, args map[string]json.RawMessage, block string) (hexutil.Bytes, error) {
+func (r *depositRPC) Call(_ context.Context, args map[string]jsontext.Value, block string) (hexutil.Bytes, error) {
 	r.inputBoxReads.Add(1)
 	r.inputBoxBlock.Store(block)
 	var target common.Address
 	var data hexutil.Bytes
-	if err := json.Unmarshal(args["to"], &target); err != nil {
+	if err := json.Unmarshal(args["to"], &target, jsonutil.Options); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(args["input"], &data); err != nil {
+	if err := json.Unmarshal(args["input"], &data, jsonutil.Options); err != nil {
 		return nil, err
 	}
 	parsed, err := iapplication.IApplicationMetaData.GetAbi()
@@ -251,7 +253,7 @@ func TestDepositTransactionPolicy(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, portalABI.Methods["depositErc20Tokens"].ID, deposit.Data()[:4])
 			var result map[string]string
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &result, jsonutil.Options))
 			require.Equal(t, deposit.Hash().Hex(), result["transaction_hash"])
 			if tt.wantReceipts == 0 {
 				require.Zero(t, service.inputBoxReads.Load())

@@ -6,12 +6,13 @@
 package snapshot
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"math/rand"
 	"os"
 
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/emulator"
 )
 
@@ -66,7 +67,7 @@ func (snapshot *Snapshot) Close() error {
 // ------------------------------------------------------------------------------------------------
 
 func getMachineConfig(command string) (string, error) {
-	entrypoint, err := json.Marshal(command)
+	entrypoint, err := json.Marshal(command, jsonutil.Options)
 	if err != nil {
 		return "", err
 	}

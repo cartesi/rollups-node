@@ -6,7 +6,8 @@ package contract
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 )
 
@@ -35,14 +37,14 @@ func (m *sentryInspectionRPC) GetCode(_ context.Context, address common.Address,
 }
 
 func (m *sentryInspectionRPC) Call(
-	_ context.Context, call map[string]json.RawMessage, block rpc.BlockNumber,
+	_ context.Context, call map[string]jsontext.Value, block rpc.BlockNumber,
 ) (hexutil.Bytes, error) {
 	var address common.Address
 	var input hexutil.Bytes
-	if err := json.Unmarshal(call["to"], &address); err != nil {
+	if err := json.Unmarshal(call["to"], &address, jsonutil.Options); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(call["input"], &input); err != nil {
+	if err := json.Unmarshal(call["input"], &input, jsonutil.Options); err != nil {
 		return nil, err
 	}
 	args := m.Called(address, []byte(input), block)
@@ -150,17 +152,17 @@ func TestQueryDaveSentriesAtPinnedBlock(t *testing.T) {
 			for index, sentry := range test.sentries {
 				require.Equal(t, SentryResult{ID: uint64(index + 1), Address: sentry.Hex()}, result.Sentries[index])
 			}
-			encoded, err := json.Marshal(result)
+			encoded, err := json.Marshal(result, jsonutil.Options)
 			require.NoError(t, err)
-			var fields map[string]json.RawMessage
-			require.NoError(t, json.Unmarshal(encoded, &fields))
+			var fields map[string]jsontext.Value
+			require.NoError(t, json.Unmarshal(encoded, &fields, jsonutil.Options))
 			require.JSONEq(t, fmt.Sprintf("%q", test.manager.Hex()), string(fields["sentry_manager"]))
 			require.Equal(t, fmt.Sprint(len(test.sentries)), string(fields["num_sentries"]))
 			if len(test.sentries) == 0 {
 				require.Equal(t, "[]", string(fields["sentries"]))
 			} else {
 				var sentries []SentryResult
-				require.NoError(t, json.Unmarshal(fields["sentries"], &sentries))
+				require.NoError(t, json.Unmarshal(fields["sentries"], &sentries, jsonutil.Options))
 				require.Equal(t, result.Sentries, sentries)
 			}
 			var text bytes.Buffer
@@ -227,7 +229,7 @@ func TestPrintDaveIncludesSentryRoster(t *testing.T) {
 			output := captureSentryInspectionOutput(t, func() { require.NoError(t, client.printDave(address)) })
 			if asJSON {
 				var result DaveConsensusResult
-				require.NoError(t, json.Unmarshal([]byte(output), &result))
+				require.NoError(t, json.Unmarshal([]byte(output), &result, jsonutil.Options))
 				require.Equal(t, manager.Hex(), result.SentryManager)
 				require.EqualValues(t, 1, result.NumSentries)
 				require.Equal(t, []SentryResult{{ID: 1, Address: sentry.Hex()}}, result.Sentries)

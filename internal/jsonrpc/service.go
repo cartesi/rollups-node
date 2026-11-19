@@ -5,19 +5,21 @@ package jsonrpc
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
+
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/inputs"
 	"github.com/cartesi/rollups-node/pkg/contracts/outputs"
 	"github.com/cartesi/rollups-node/pkg/service"
-
-	"github.com/ethereum/go-ethereum/accounts/abi"
 )
 
 const (
@@ -32,7 +34,7 @@ type Service struct {
 	inputABI   *abi.ABI
 	outputABI  *abi.ABI
 	// OpenAPI description for JSON-RPC API loaded from 'jsonrpc-discover.json' file
-	discoverSpec json.RawMessage
+	discoverSpec jsontext.Value
 	handlers     dispatchTable
 	// dispatchTimeout expires requests early enough to serialize a complete
 	// timeout response before the HTTP server's write deadline.
@@ -77,7 +79,7 @@ func Create(ctx context.Context, c *CreateInfo) (service.SupervisedService, erro
 	if err != nil {
 		return nil, fmt.Errorf("unable to read jsonrpc-discover content: %w", err)
 	}
-	if err := json.Unmarshal(data, &s.discoverSpec); err != nil {
+	if err := json.Unmarshal(data, &s.discoverSpec, jsonutil.Options); err != nil {
 		return nil, fmt.Errorf("unable to unmarshal discovery spec JSON: %w", err)
 	}
 

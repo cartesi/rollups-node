@@ -4,10 +4,12 @@ package ethutil
 
 import (
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 // create a type for salt to print correctly as JSON
@@ -28,7 +30,7 @@ func ParseSalt(salt string) (SaltBytes, error) {
 
 // print it as a single string instead of multiple integer values
 func (me *SaltBytes) MarshalJSON() ([]byte, error) {
-	return json.Marshal(hex.EncodeToString(me[:]))
+	return json.Marshal(hex.EncodeToString(me[:]), jsonutil.Options)
 }
 
 func (me SaltBytes) String() string {

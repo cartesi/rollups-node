@@ -4,13 +4,15 @@
 package model
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"math/big"
 	"testing"
 
 	"github.com/holiman/uint256"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func TestUint256Codec(t *testing.T) {
@@ -37,7 +39,7 @@ func TestUint256Codec(t *testing.T) {
 			}
 		}
 		if decimal == maximum {
-			encoded, err := json.Marshal(value)
+			encoded, err := json.Marshal(value, jsonutil.Options)
 			if err != nil || string(encoded) != maxHex {
 				t.Fatalf("JSON: %s, %v", encoded, err)
 			}
@@ -55,10 +57,10 @@ func TestUint256Codec(t *testing.T) {
 	}
 	for _, raw := range []string{`"0x0"`, `"0x10000000000000000"`, maxHex} {
 		var value Uint256
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		if err := json.Unmarshal([]byte(raw), &value, jsonutil.Options); err != nil {
 			t.Fatal(err)
 		}
-		encoded, err := json.Marshal(value)
+		encoded, err := json.Marshal(value, jsonutil.Options)
 		if err != nil || string(encoded) != raw {
 			t.Fatalf("JSON round trip: %s, %v", encoded, err)
 		}
@@ -69,7 +71,7 @@ func TestUint256Codec(t *testing.T) {
 	} {
 		value := Uint256(*uint256.NewInt(7))
 		before := value
-		if err := json.Unmarshal([]byte(raw), &value); err == nil {
+		if err := json.Unmarshal([]byte(raw), &value, jsonutil.Options); err == nil {
 			t.Fatalf("accepted invalid JSON %s", raw)
 		}
 		if value != before {

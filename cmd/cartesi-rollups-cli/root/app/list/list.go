@@ -4,14 +4,17 @@
 package list //nolint:revive // The package implements the CLI's "list" subcommand.
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
+
+	"github.com/spf13/cobra"
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
-	"github.com/spf13/cobra"
 )
 
 var Cmd = &cobra.Command{
@@ -53,7 +56,7 @@ func run(cmd *cobra.Command, _ []string) {
 		applications = []*model.Application{}
 	}
 
-	result, err := json.MarshalIndent(applications, "", "    ")
+	result, err := json.Marshal(applications, jsonutil.Options, jsontext.WithIndentPrefix(""), jsontext.WithIndent("    "))
 	cobra.CheckErr(err)
 
 	fmt.Println(string(result))

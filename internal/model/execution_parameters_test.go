@@ -4,11 +4,13 @@
 package model
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func TestExecutionParametersJSONRoundtrip(t *testing.T) {
@@ -28,7 +30,7 @@ func TestExecutionParametersJSONRoundtrip(t *testing.T) {
 		MaxConcurrentInspects: 10,
 	}
 
-	data, err := json.Marshal(&original)
+	data, err := json.Marshal(&original, jsonutil.Options)
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"advance_inc_cycles":"0x65"`)
 	require.Contains(t, string(data), `"advance_max_cycles":"0x6f"`)
@@ -36,7 +38,7 @@ func TestExecutionParametersJSONRoundtrip(t *testing.T) {
 	require.Contains(t, string(data), `"inspect_max_cycles":"0xde"`)
 
 	var decoded ExecutionParameters
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded, jsonutil.Options))
 	require.Equal(t, original.SnapshotPolicy, decoded.SnapshotPolicy)
 	require.Equal(t, original.AdvanceIncCycles, decoded.AdvanceIncCycles)
 	require.Equal(t, original.AdvanceMaxCycles, decoded.AdvanceMaxCycles)
@@ -53,13 +55,13 @@ func TestExecutionParametersJSONRoundtrip(t *testing.T) {
 }
 
 func TestExecutionParametersZeroCycleMaximumsRoundtrip(t *testing.T) {
-	data, err := json.Marshal(&ExecutionParameters{})
+	data, err := json.Marshal(&ExecutionParameters{}, jsonutil.Options)
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"advance_max_cycles":"0x0"`)
 	require.Contains(t, string(data), `"inspect_max_cycles":"0x0"`)
 
 	var decoded ExecutionParameters
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded, jsonutil.Options))
 	require.Zero(t, decoded.AdvanceMaxCycles)
 	require.Zero(t, decoded.InspectMaxCycles)
 }

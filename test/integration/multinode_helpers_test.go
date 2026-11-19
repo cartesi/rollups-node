@@ -118,17 +118,21 @@ func startMultiNode(logPath string, extraEnv ...string) (*multiNode, error) {
 			mn.stop(nil)
 			return nil, fmt.Errorf("%s not found on PATH: %w", svc.name, err)
 		}
-		cmd := exec.Command(svc.name) //nolint:gosec
-		cmd.Stdout = logFile
-		cmd.Stderr = logFile
-		cmd.Env = append(append(append([]string{}, base...), svc.extraEnv...), extraEnv...)
-		if workDir := os.Getenv("CARTESI_TEST_NODE_WORKDIR"); workDir != "" {
-			if err := os.MkdirAll(workDir, 0755); err != nil { //nolint:mnd
+		workDir := os.Getenv("CARTESI_TEST_NODE_WORKDIR")
+		if workDir != "" {
+			if err := os.MkdirAll(workDir, 0755); err != nil {
 				mn.stop(nil)
 				return nil, fmt.Errorf("create node workdir %s: %w", workDir, err)
 			}
-			cmd.Dir = workDir
 		}
+		env := append(append(append([]string{}, base...), svc.extraEnv...), extraEnv...)
+		cmd, err := limitedNodeCommand(svc.name, logFile, env, workDir)
+		if err != nil {
+			mn.stop(nil)
+			return nil, err
+		}
+		cmd.Stdout, cmd.Stderr = logFile, logFile
+
 		proc, err := startNodeSubprocess(svc.name, cmd)
 		if err != nil {
 			mn.stop(nil)

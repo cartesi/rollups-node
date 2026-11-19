@@ -4,7 +4,8 @@
 package foreclose
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -15,6 +16,7 @@ import (
 	"github.com/cartesi/rollups-node/cmd/cartesi-rollups-cli/util"
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 )
 
@@ -154,9 +156,8 @@ func run(cmd *cobra.Command, args []string) error {
 			cli.TransactionResult
 			ApplicationAddr common.Address `json:"application_address"`
 		}{TransactionResult: cli.NewTransactionResult(tx, receipt), ApplicationAddr: appAddr}
-		encoder := json.NewEncoder(cmd.OutOrStdout())
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(result)
+		encoder := jsontext.NewEncoder(cmd.OutOrStdout(), jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+		return json.MarshalEncode(encoder, result, jsonutil.Options)
 	}
 	return cli.WriteTransactionResult(cmd, tx, receipt)
 }

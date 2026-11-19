@@ -6,7 +6,7 @@ package httpclient
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -20,8 +20,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/internal/errutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/errutil"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -263,7 +265,7 @@ func TestNonSuccessDiagnosticsPreserveOnlyNumericRPCCode(t *testing.T) {
 				Code int `json:"code"`
 			} `json:"error"`
 		}
-		require.NoError(t, json.Unmarshal(body, &parsed))
+		require.NoError(t, json.Unmarshal(body, &parsed, jsonutil.Options))
 		require.Equal(t, code, parsed.Error.Code)
 	}
 	for _, body := range []string{"plain secret", `{"error":{"code":"secret","message":"secret"}}`, `{"error":null}`, `[]`} {

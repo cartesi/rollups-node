@@ -5,11 +5,11 @@ package prt
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"math/big"
 	"testing"
 
-	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -18,6 +18,9 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
 )
 
 type daveConsensusViewRPC struct{ mock.Mock }
@@ -26,8 +29,8 @@ type daveEventQuery struct {
 	BlockHash common.Hash      `json:"blockHash"`
 	Address   []common.Address `json:"address"`
 	Topics    [][]common.Hash  `json:"topics"`
-	FromBlock json.RawMessage  `json:"fromBlock"`
-	ToBlock   json.RawMessage  `json:"toBlock"`
+	FromBlock jsontext.Value   `json:"fromBlock"`
+	ToBlock   jsontext.Value   `json:"toBlock"`
 }
 
 func (m *daveConsensusViewRPC) GetLogs(_ context.Context, query daveEventQuery) ([]types.Log, error) {
@@ -69,14 +72,14 @@ func TestDaveConsensusAdapterFiltersAcceptanceByExactBlockHashContractAndEpoch(t
 }
 
 func (m *daveConsensusViewRPC) Call(
-	_ context.Context, call map[string]json.RawMessage, block rpc.BlockNumber,
+	_ context.Context, call map[string]jsontext.Value, block rpc.BlockNumber,
 ) (hexutil.Bytes, error) {
 	var address common.Address
 	var input hexutil.Bytes
-	if err := json.Unmarshal(call["to"], &address); err != nil {
+	if err := json.Unmarshal(call["to"], &address, jsonutil.Options); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(call["input"], &input); err != nil {
+	if err := json.Unmarshal(call["input"], &input, jsonutil.Options); err != nil {
 		return nil, err
 	}
 	args := m.Called(address, []byte(input), block)

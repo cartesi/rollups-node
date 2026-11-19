@@ -5,7 +5,8 @@ package inspect
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -13,13 +14,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
+
 	"github.com/cartesi/rollups-node/internal/config"
 	"github.com/cartesi/rollups-node/internal/inspectmessages"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 	"github.com/cartesi/rollups-node/internal/manager"
 	. "github.com/cartesi/rollups-node/internal/model"
 	pkgmachine "github.com/cartesi/rollups-node/pkg/machine"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 // httpShutdownTimeout is how long to wait for in-flight inspect HTTP requests
@@ -217,7 +220,7 @@ func (inspect *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	response := inspect.buildInspectResponse(dapp, requestID, result)
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err := json.MarshalEncode(jsontext.NewEncoder(w), response, jsonutil.Options); err != nil {
 		// Headers are already flushed; we can only log. Writing a 500 via
 		// WriteInternalError here would produce "superfluous WriteHeader"
 		// warnings and garble the response.

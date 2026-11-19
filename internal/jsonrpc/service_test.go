@@ -5,7 +5,7 @@ package jsonrpc
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cartesi/rollups-node/pkg/service"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/pkg/service"
 )
 
 // ensureSentinelRejects fires a request against s.server.Handler and
@@ -76,7 +77,7 @@ func TestJSONRPC_ServerHandlerAppliesBatchDispatchTimeout(t *testing.T) {
 	s.Server.Handler.ServeHTTP(rr, req)
 
 	var responses []RPCResponse
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &responses))
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &responses, jsonutil.Options))
 	require.Len(t, responses, 3)
 	requireRPCError(t, responses[0], float64(1), JSONRPC_TIMEOUT_ERROR)
 	requireRPCError(t, responses[1], float64(2), JSONRPC_TIMEOUT_ERROR)

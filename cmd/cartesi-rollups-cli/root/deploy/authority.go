@@ -5,18 +5,21 @@ package deploy
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 
-	"github.com/cartesi/rollups-node/internal/cli"
-	"github.com/cartesi/rollups-node/internal/config"
-	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
-	"github.com/cartesi/rollups-node/pkg/ethutil"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/spf13/cobra"
+
+	"github.com/cartesi/rollups-node/internal/cli"
+	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
+	"github.com/cartesi/rollups-node/pkg/ethutil"
 )
 
 var (
@@ -134,9 +137,8 @@ func runDeployAuthority(cmd *cobra.Command, _ []string) {
 			*ethutil.AuthorityDeployment
 			Transaction cli.TransactionResult `json:"transaction"`
 		}{AuthorityDeployment: deployment, Transaction: cli.NewTransactionResult(tx, receipt)}
-		encoder := json.NewEncoder(cmd.OutOrStdout())
-		encoder.SetIndent("", "  ")
-		cobra.CheckErr(encoder.Encode(report))
+		encoder := jsontext.NewEncoder(cmd.OutOrStdout(), jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
+		cobra.CheckErr(json.MarshalEncode(encoder, report, jsonutil.Options))
 	} else {
 		cobra.CheckErr(cli.WriteTransactionResult(cmd, tx, receipt))
 		_, err := fmt.Fprintf(cmd.OutOrStdout(), "Consensus address: %s\nEpoch length: %d\n", deployment.Address, deployment.EpochLength)

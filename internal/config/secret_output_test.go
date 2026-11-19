@@ -5,7 +5,7 @@ package config
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -18,6 +18,8 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
 )
 
 func resetSecretConfig(t *testing.T) {
@@ -70,7 +72,7 @@ func TestRedactedFormattingDoesNotExposeValue(t *testing.T) {
 			require.NotContains(t, output, marker)
 			require.Contains(t, output, "[REDACTED]")
 		}
-		data, err := json.Marshal(struct{ Secret any }{Secret: value})
+		data, err := json.Marshal(struct{ Secret any }{Secret: value}, jsonutil.Options)
 		require.NoError(t, err)
 		require.NotContains(t, string(data), marker)
 		require.Contains(t, string(data), "[REDACTED]")
@@ -155,6 +157,6 @@ func TestRedactedNumericFormattingAndDeserialization(t *testing.T) {
 	}
 	// JSON input and direct value access used by signer configuration remain valid.
 	var value RedactedString
-	require.NoError(t, json.Unmarshal([]byte(`{"Value":"SYNTHETIC_SIGNER_VALUE"}`), &value))
+	require.NoError(t, json.Unmarshal([]byte(`{"Value":"SYNTHETIC_SIGNER_VALUE"}`), &value, jsonutil.Options))
 	require.Equal(t, "SYNTHETIC_SIGNER_VALUE", value.Value)
 }

@@ -4,15 +4,18 @@
 package config
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"math"
 	"math/big"
 	"testing"
 
-	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cartesi/rollups-node/internal/jsonutil"
+	"github.com/cartesi/rollups-node/internal/model"
 )
 
 func TestPersistentConfigRejectsInvalidJSONFields(t *testing.T) {
@@ -32,16 +35,16 @@ func TestPersistentConfigRejectsInvalidJSONFields(t *testing.T) {
 	} {
 		t.Run(raw, func(t *testing.T) {
 			var chain PersistentChainConfig
-			require.Error(t, json.Unmarshal([]byte(raw), &chain))
+			require.Error(t, json.Unmarshal([]byte(raw), &chain, jsonutil.Options))
 			var submitter PersistentSubmitterConfig
-			require.Error(t, json.Unmarshal([]byte(raw), &submitter))
+			require.Error(t, json.Unmarshal([]byte(raw), &submitter, jsonutil.Options))
 		})
 	}
 	for _, mode := range []string{"", `,"ClaimSubmissionEnabled":null`, `,"ClaimSubmissionEnabled":"false"`} {
 		t.Run("mode"+mode, func(t *testing.T) {
 			raw := []byte(`{"DefaultBlock":"FINALIZED","ChainID":1` + mode + `}`)
 			var submitter PersistentSubmitterConfig
-			require.Error(t, json.Unmarshal(raw, &submitter))
+			require.Error(t, json.Unmarshal(raw, &submitter, jsonutil.Options))
 		})
 	}
 }
@@ -55,14 +58,14 @@ func TestPersistentConfigRoundTrip(t *testing.T) {
 			if enabled {
 				want.ResolvedSignerAddress = common.HexToAddress("0x1")
 			}
-			raw, err := json.Marshal(want)
+			raw, err := json.Marshal(want, jsonutil.Options)
 			require.NoError(t, err)
 			var got PersistentSubmitterConfig
-			require.NoError(t, json.Unmarshal(raw, &got))
+			require.NoError(t, json.Unmarshal(raw, &got, jsonutil.Options))
 			require.Equal(t, want, got)
 			require.NoError(t, got.CheckRequested(want))
 			var chain PersistentChainConfig
-			require.NoError(t, json.Unmarshal(raw, &chain))
+			require.NoError(t, json.Unmarshal(raw, &chain, jsonutil.Options))
 			require.NoError(t, chain.CheckRequested(want.chainConfig()))
 		}
 	}
@@ -73,17 +76,17 @@ func TestPersistentConfigAcceptsUnknownFields(t *testing.T) {
 	raw := []byte(`{"DefaultBlock":"FINALIZED","ChainID":42,"ClaimSubmissionEnabled":true,
         "ResolvedSignerAddress":"0x0000000000000000000000000000000000000001","ExtraSetting":{"enabled":false}}`)
 	var chain PersistentChainConfig
-	require.NoError(t, json.Unmarshal(raw, &chain))
+	require.NoError(t, json.Unmarshal(raw, &chain, jsonutil.Options))
 	require.Equal(t, PersistentChainConfig{DefaultBlock: model.DefaultBlock_Finalized, ChainID: 42}, chain)
 	var submitter PersistentSubmitterConfig
-	require.NoError(t, json.Unmarshal(raw, &submitter))
+	require.NoError(t, json.Unmarshal(raw, &submitter, jsonutil.Options))
 	require.NoError(t, submitter.CheckRequested(PersistentSubmitterConfig{
 		DefaultBlock: model.DefaultBlock_Finalized, ChainID: 42, ClaimSubmissionEnabled: true,
 		ResolvedSignerAddress: common.HexToAddress("0x1"),
 	}))
 	roundTrip, err := json.Marshal(submitter)
 	require.NoError(t, err)
-	var fields map[string]json.RawMessage
+	var fields map[string]jsontext.Value
 	require.NoError(t, json.Unmarshal(roundTrip, &fields))
 	require.NotContains(t, fields, "ExtraSetting")
 }
