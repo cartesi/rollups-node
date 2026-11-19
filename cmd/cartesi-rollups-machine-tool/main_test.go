@@ -4,12 +4,156 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/cartesi/rollups-node/pkg/machine"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
+
+func TestReplayCommandExecuteRejectedFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "default", want: false},
+		{name: "explicit false", args: []string{"--execute-rejected=false"}, want: false},
+		{name: "enabled", args: []string{"--execute-rejected"}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var got replayOptions
+			cmd := newReplayCommandWithRunner(
+				func(_ context.Context, _ *cobra.Command, opts replayOptions) error {
+					got = opts
+					return nil
+				},
+			)
+			cmd.SetArgs(append([]string{
+				"--template", "template",
+				"--application", "app",
+				"--store", "store",
+				"--to-input-index", "0",
+			}, tt.args...))
+
+			require.NoError(t, cmd.ExecuteContext(t.Context()))
+			require.Equal(t, tt.want, got.ExecuteRejected)
+		})
+	}
+}
+
+func TestVerifyAccountsDriveMachineProof(t *testing.T) {
+	t.Parallel()
+
+	const (
+		log2DriveSize int32  = 9
+		driveStart    uint64 = 0x1200
+	)
+	driveRoot := crypto.Keccak256Hash([]byte("accounts drive"))
+	siblings := make([]machine.Hash, int(machineMemoryLog2Size-log2DriveSize))
+	for i := range siblings {
+		siblings[i] = machine.Hash(crypto.Keccak256Hash([]byte{byte(i)}))
+	}
+
+	machineRoot := machine.Hash(driveRoot)
+	index := driveStart >> uint64(log2DriveSize)
+	for _, sibling := range siblings {
+		if index&1 == 0 {
+			machineRoot = machine.Hash(crypto.Keccak256Hash(machineRoot[:], sibling[:]))
+		} else {
+			machineRoot = machine.Hash(crypto.Keccak256Hash(sibling[:], machineRoot[:]))
+		}
+		index >>= 1
+	}
+
+	validProof := func() *machine.MemoryProof {
+		return &machine.MemoryProof{
+			Log2RootSize:   machineMemoryLog2Size,
+			Log2TargetSize: log2DriveSize,
+			TargetAddress:  driveStart,
+			TargetHash:     machine.Hash(driveRoot),
+			Siblings:       append([]machine.Hash(nil), siblings...),
+			RootHash:       machineRoot,
+		}
+	}
+
+	t.Run("valid proof", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, verifyAccountsDriveMachineProof(
+			validProof(), driveStart, log2DriveSize, machineRoot, driveRoot,
+		))
+	})
+
+	t.Run("nil proof", func(t *testing.T) {
+		t.Parallel()
+		require.ErrorContains(t, verifyAccountsDriveMachineProof(
+			nil, driveStart, log2DriveSize, machineRoot, driveRoot,
+		), "no accounts-drive proof")
+	})
+
+	tests := []struct {
+		name   string
+		mutate func(*machine.MemoryProof)
+		want   string
+	}{
+		{
+			name:   "wrong root log2 size",
+			mutate: func(proof *machine.MemoryProof) { proof.Log2RootSize-- },
+			want:   "root log2 size",
+		},
+		{
+			name:   "wrong target log2 size",
+			mutate: func(proof *machine.MemoryProof) { proof.Log2TargetSize++ },
+			want:   "target log2 size",
+		},
+		{
+			name:   "wrong target address",
+			mutate: func(proof *machine.MemoryProof) { proof.TargetAddress++ },
+			want:   "target address",
+		},
+		{
+			name: "missing sibling",
+			mutate: func(proof *machine.MemoryProof) {
+				proof.Siblings = proof.Siblings[:len(proof.Siblings)-1]
+			},
+			want: "siblings",
+		},
+		{
+			name:   "wrong target hash",
+			mutate: func(proof *machine.MemoryProof) { proof.TargetHash[0] ^= 0xff },
+			want:   "accounts-drive root mismatch",
+		},
+		{
+			name:   "wrong root hash",
+			mutate: func(proof *machine.MemoryProof) { proof.RootHash[0] ^= 0xff },
+			want:   "machine proof root mismatch",
+		},
+		{
+			name:   "tampered sibling",
+			mutate: func(proof *machine.MemoryProof) { proof.Siblings[0][0] ^= 0xff },
+			want:   "siblings do not reconstruct",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			proof := validProof()
+			tt.mutate(proof)
+			require.ErrorContains(t, verifyAccountsDriveMachineProof(
+				proof, driveStart, log2DriveSize, machineRoot, driveRoot,
+			), tt.want)
+		})
+	}
+}
 
 func TestFindStoredDrive_MemoryRanges_ReturnsBackingFile(t *testing.T) {
 	t.Parallel()

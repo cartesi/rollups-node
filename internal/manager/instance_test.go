@@ -1463,6 +1463,8 @@ type MockRollupsMachine struct {
 	StateProofReturn             *machine.StateProof
 	StateProofError              error
 	StateProofFunc               func(context.Context) (*machine.StateProof, error)
+	GetProofReturn               *machine.MemoryProof
+	GetProofError                error
 	AdvanceError                 error
 	LastAdvanceComputeHashes     bool
 
@@ -1492,6 +1494,10 @@ func (m *MockRollupsMachine) StateProof(ctx context.Context) (*machine.StateProo
 		return m.StateProofFunc(ctx)
 	}
 	return m.StateProofReturn, m.StateProofError
+}
+
+func (m *MockRollupsMachine) GetProof(_ context.Context, _ uint64, _, _ int32) (*machine.MemoryProof, error) {
+	return m.GetProofReturn, m.GetProofError
 }
 
 func (m *MockRollupsMachine) Advance(
