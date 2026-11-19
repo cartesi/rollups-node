@@ -43,6 +43,6 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## github.com/cartesi/dave
 
 * Name: github.com/cartesi/dave
-* Version: 3.0.0-alpha.6
-* License: [Apache-2.0](https://github.com/cartesi/dave/blob/v3.0.0-alpha.6/LICENSE)
+* Version: 3.0.0-alpha.8-test1
+* License: [Apache-2.0](https://github.com/cartesi/dave/blob/v3.0.0-alpha.8-test1/LICENSE)
 * Note: source of the generated PRT contract bindings under pkg/contracts/.
