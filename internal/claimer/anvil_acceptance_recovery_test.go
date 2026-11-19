@@ -180,7 +180,7 @@ func seedAcceptanceApplication(
 ) (*model.Application, *model.Epoch) {
 	t.Helper()
 	factory, err := iauthorityfactory.NewIAuthorityFactory(anvilFixtureAddress(
-		"CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS", "0xB4d29c86e36385b5321a453C34D288AEB0ad11f9"), client)
+		"CARTESI_CONTRACTS_AUTHORITY_FACTORY_ADDRESS", "0xAd208ee3574eB121C5535D848ba106a6EB5700D2"), client)
 	require.NoError(t, err)
 	salt := crypto.Keccak256Hash(signer.From.Bytes())
 	consensus, err := factory.CalculateAuthorityAddress(&bind.CallOpts{Context: ctx}, signer.From, big.NewInt(1), new(big.Int), salt)
@@ -189,9 +189,9 @@ func seedAcceptanceApplication(
 	require.NoError(t, err)
 	anvilClaimMined(ctx, t, client, tx)
 	appFactory, err := iapplicationfactory.NewIApplicationFactory(anvilFixtureAddress(
-		"CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS", "0x35Cd91f13141Bb6A6FC69E1eeDD241bbA1Ddd45F"), client)
+		"CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS", "0x04BEA8345Ac754a66068b4ACde66cbC0B114A873"), client)
 	require.NoError(t, err)
-	inputBox := anvilFixtureAddress("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS", "0xEbE9f4Dfc04ae10bBeE663859c3dc5A23f94eA3C")
+	inputBox := anvilFixtureAddress("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS", "0xEbE915623f5887426C23C89fbD1de5c497e0e08E")
 	withdrawal := iapplicationfactory.WithdrawalConfig{}
 	address, err := appFactory.CalculateApplicationAddress(
 		&bind.CallOpts{Context: ctx}, consensus, signer.From, salt, inputBox, withdrawal, salt)

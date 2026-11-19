@@ -46,9 +46,9 @@ const (
 	withdrawalPreForecloseAmount  uint64 = 25
 	withdrawalPostForecloseAmount uint64 = withdrawalDepositAmount - withdrawalPreForecloseAmount
 
-	defaultDevnetERC20PortalAddress             = "0x3332DE61a8BB9aC84893b2f552Fe81C9a6dC5419"
-	defaultDevnetTestUsdcAddress                = "0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81"
-	defaultDevnetWithdrawalOutputBuilderAddress = "0xB4D253c7a110241561B3eD6d632846dF7d4e9Af7"
+	defaultDevnetERC20PortalAddress             = "0x42a32B3bB9d7BB2C804d5a4341a202Cf7d385F35"
+	defaultDevnetTestUsdcAddress                = "0xdCA18148a57e1A3891114a418aF219e7cB6e321e"
+	defaultDevnetWithdrawalOutputBuilderAddress = "0xF223DEd6072F29C7C0FfAAfdBbE6aE8813a2134d"
 
 	accountsDriveLog2AccountSize      = uint8(5)
 	accountsDriveLog2MaxNumOfAccounts = uint8(17)

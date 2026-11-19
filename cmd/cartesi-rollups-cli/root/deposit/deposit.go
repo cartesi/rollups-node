@@ -58,8 +58,8 @@ Supported Environment Variables:
 
 const erc20Examples = `# Deposit 100 units of a token through the Erc20Portal:
 cartesi-rollups-cli deposit erc20 echo-dapp \
-  --portal 0x3332DE61a8BB9aC84893b2f552Fe81C9a6dC5419 \
-  --token 0x7a051EDffC0884cd88d4a377F4C87BE074CF6c81 \
+  --portal 0x42a32B3bB9d7BB2C804d5a4341a202Cf7d385F35 \
+  --token 0xdCA18148a57e1A3891114a418aF219e7cB6e321e \
   --amount 100
 
 # Approve the portal first, then deposit:

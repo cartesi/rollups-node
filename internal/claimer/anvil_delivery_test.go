@@ -29,7 +29,7 @@ import (
 
 const anvilClaimFixtureTimeout = 2 * time.Minute
 
-// X12 runs against the installed alpha.10 factories with independently funded
+// X12 runs against the installed beta.1 factories with independently funded
 // random accounts. It does not reset Anvil, revert snapshots, or use a node key.
 func TestAnvilQuorumDecidingVoteGas(t *testing.T) {
 	if os.Getenv("CARTESI_CLAIMER_ANVIL_TEST") != "1" {
@@ -47,16 +47,16 @@ func TestAnvilQuorumDecidingVoteGas(t *testing.T) {
 	chainID, err := client.ChainID(ctx)
 	require.NoError(t, err)
 	quorumFactory, err := iquorumfactory.NewIQuorumFactory(anvilFixtureAddress(
-		"CARTESI_CONTRACTS_QUORUM_FACTORY_ADDRESS", "0x0754D5Eb680c71bf469B39e48C5b64AB0813fdb9"), client)
+		"CARTESI_CONTRACTS_QUORUM_FACTORY_ADDRESS", "0x97602f62e3F69C37538c3c4Ce168911dacF5b352"), client)
 	require.NoError(t, err)
 	version, err := quorumFactory.Version(&bind.CallOpts{Context: ctx})
 	require.NoError(t, err)
 	require.EqualValues(t, 3, version.Major)
-	require.Equal(t, "alpha.10", version.PreRelease, "this profile is calibrated for the repository's supported version")
+	require.Equal(t, "beta.1", version.PreRelease, "this profile is calibrated for the repository's supported version")
 	appFactory, err := iapplicationfactory.NewIApplicationFactory(anvilFixtureAddress(
-		"CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS", "0x35Cd91f13141Bb6A6FC69E1eeDD241bbA1Ddd45F"), client)
+		"CARTESI_CONTRACTS_APPLICATION_FACTORY_ADDRESS", "0x04BEA8345Ac754a66068b4ACde66cbC0B114A873"), client)
 	require.NoError(t, err)
-	inputBox := anvilFixtureAddress("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS", "0xEbE9f4Dfc04ae10bBeE663859c3dc5A23f94eA3C")
+	inputBox := anvilFixtureAddress("CARTESI_CONTRACTS_INPUT_BOX_ADDRESS", "0xEbE915623f5887426C23C89fbD1de5c497e0e08E")
 	for _, fixture := range []struct {
 		name       string
 		expensive  bool

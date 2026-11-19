@@ -237,7 +237,7 @@ func seedPRTCapacityApplications(
 	t.Helper()
 	factoryAddress := os.Getenv("CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS")
 	if factoryAddress == "" {
-		factoryAddress = "0xF8f6dFA3A3e40C10926839FFd8a221C87C8b2ccD"
+		factoryAddress = "0xf3E815d248480D47980aFA45508aF617Ffb2d5d6"
 	}
 	factory, err := idaveappfactory.NewIDaveAppFactory(common.HexToAddress(factoryAddress), client)
 	require.NoError(t, err)
@@ -263,7 +263,7 @@ func seedPRTCapacityApplications(
 			WithAddress(addresses.AppContractAddress).WithConsensus(model.Consensus_PRT).WithEpochLength(1).
 			WithClaimStagingPeriod(1_000_000).WithWithdrawalConfig(model.WithdrawalConfig{}).Build()
 		app.IConsensusAddress, app.TemplateHash = addresses.DaveConsensusAddress, salt
-		app.IInputBoxAddress = common.HexToAddress("0xEbE9f4Dfc04ae10bBeE663859c3dc5A23f94eA3C")
+		app.IInputBoxAddress = common.HexToAddress("0xEbE915623f5887426C23C89fbD1de5c497e0e08E")
 		app.IInputBoxBlock, app.LastInputCheckBlock = lastDeployment, lastDeployment
 		app.ID, err = repo.CreateApplication(ctx, app, false)
 		require.NoError(t, err)

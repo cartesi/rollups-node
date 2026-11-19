@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Event data is encoded directly from alpha.10's published signature and ABI
+// Event data is encoded directly from beta.1's published signature and ABI
 // word layout. These are observation fixtures, not application execution proofs.
 const claimCounterHistoryCase = "counter history"
 

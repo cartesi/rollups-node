@@ -65,7 +65,7 @@ func TestAnvilJoinGasAfterPeerJoin(t *testing.T) {
 	t.Cleanup(client.Close)
 	factoryAddress := os.Getenv("CARTESI_CONTRACTS_DAVE_APP_FACTORY_ADDRESS")
 	if factoryAddress == "" {
-		factoryAddress = "0xd34BEC37Fa5816ABA2f87BdaD2E13dd1B161370f"
+		factoryAddress = "0xf3E815d248480D47980aFA45508aF617Ffb2d5d6"
 	}
 	factory, err := idaveappfactory.NewIDaveAppFactory(common.HexToAddress(factoryAddress), client)
 	require.NoError(t, err)
