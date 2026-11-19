@@ -25,12 +25,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cartesi/rollups-node/internal/config"
+	"github.com/cartesi/rollups-node/internal/ethutiltest"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveappfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
-	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorumfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iselfhostedapplicationfactory"
 )
@@ -85,10 +85,23 @@ func TestDeploymentCLIReportsPredictedAddress(t *testing.T) {
 	supportsInterfaceMethod := consensusABI.Methods["supportsInterface"]
 	var supportsInterfaceID [4]byte
 	copy(supportsInterfaceID[:], supportsInterfaceMethod.ID)
-	unsupportedConsensus, err := supportsInterfaceMethod.Outputs.Pack(false)
-	require.NoError(t, err)
-	supportedConsensus, err := supportsInterfaceMethod.Outputs.Pack(true)
-	require.NoError(t, err)
+	packBool := func(value bool) hexutil.Bytes {
+		data, err := supportsInterfaceMethod.Outputs.Pack(value)
+		require.NoError(t, err)
+		return data
+	}
+	unsupportedConsensus := packBool(false)
+	supportedConsensus := packBool(true)
+
+	// The application case points --consensus at an Authority. The fake answers
+	// supportsInterface by the decoded interface ID, never by call order.
+	consensusAnswers := map[[4]byte]hexutil.Bytes{
+		ethutiltest.ERC165InterfaceID:        supportedConsensus,
+		ethutiltest.ERC165InvalidInterfaceID: unsupportedConsensus,
+		ethutiltest.IDataProviderInterfaceID: unsupportedConsensus,
+		ethutiltest.IQuorumInterfaceID:       unsupportedConsensus,
+		ethutiltest.IConsensusInterfaceID:    supportedConsensus,
+	}
 
 	for _, test := range []struct {
 		name string
@@ -105,9 +118,8 @@ func TestDeploymentCLIReportsPredictedAddress(t *testing.T) {
 			backend := &deploymentCLIBackend{
 				responses: map[string]hexutil.Bytes{},
 				sent:      make(chan *types.Transaction, 2), predictedAddress: predictedAddress, secondaryAddress: secondaryAddress,
-				supportsInterfaceID:        supportsInterfaceID,
-				supportsInterfaceResponses: []hexutil.Bytes{unsupportedConsensus, unsupportedConsensus, supportedConsensus},
-				supportsInterfaceFallback:  unsupportedConsensus,
+				supportsInterfaceID: supportsInterfaceID,
+				supportsInterface:   consensusAnswers,
 			}
 			for _, response := range []struct {
 				metadata *bind.MetaData
@@ -125,7 +137,6 @@ func TestDeploymentCLIReportsPredictedAddress(t *testing.T) {
 				{iinputbox.IInputBoxMetaData, "getDeploymentBlockNumber", []any{big.NewInt(1)}},
 				{iconsensus.IConsensusMetaData, "getEpochLength", []any{big.NewInt(10)}},
 				{iconsensus.IConsensusMetaData, "getClaimStagingPeriod", []any{big.NewInt(0)}},
-				{iquorum.IQuorumMetaData, "numOfValidators", []any{big.NewInt(1)}},
 			} {
 				parsed, err := response.metadata.GetAbi()
 				require.NoError(t, err)
@@ -179,10 +190,8 @@ type deploymentCLIBackend struct {
 	receiptReads       atomic.Int32
 	postBroadcastReads atomic.Int32
 
-	supportsInterfaceID        [4]byte
-	supportsInterfaceResponses []hexutil.Bytes
-	supportsInterfaceFallback  hexutil.Bytes
-	supportsInterfaceCalls     atomic.Int32
+	supportsInterfaceID [4]byte
+	supportsInterface   map[[4]byte]hexutil.Bytes
 }
 
 func (*deploymentCLIBackend) ChainId(context.Context) *hexutil.Big { //nolint:revive // Ethereum RPC method eth_chainId.
@@ -224,11 +233,16 @@ func (b *deploymentCLIBackend) Call(_ context.Context, call struct {
 	if len(call.Input) >= 4 {
 		if b.supportsInterfaceID != ([4]byte{}) &&
 			bytes.Equal(call.Input[:4], b.supportsInterfaceID[:]) {
-			index := int(b.supportsInterfaceCalls.Add(1)) - 1
-			if index < len(b.supportsInterfaceResponses) {
-				return b.supportsInterfaceResponses[index], nil
+			if len(call.Input) < 8 {
+				return nil, fmt.Errorf("supportsInterface call without an interface ID: %x", call.Input)
 			}
-			return b.supportsInterfaceFallback, nil
+			var interfaceID [4]byte
+			copy(interfaceID[:], call.Input[4:8])
+			response, found := b.supportsInterface[interfaceID]
+			if !found {
+				return nil, fmt.Errorf("unexpected supportsInterface query: %x", interfaceID)
+			}
+			return response, nil
 		}
 		if response, found := b.responses[string(call.Input[:4])]; found {
 			return response, nil

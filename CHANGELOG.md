@@ -16,7 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Bumped Rollups Contracts to 2.0
-- Changed `cartesi-rollups-cli app register --prt` to assert the detected consensus type instead of forcing PRT registration, and `cartesi-rollups-cli deploy application --consensus` to reject PRT consensus addresses
+- Changed `cartesi-rollups-cli app register` to detect the consensus type on chain with EIP-165 and store it, so a PRT application is registered as PRT even without `--prt`
+- Changed `cartesi-rollups-cli app register --prt` to assert the detected consensus type instead of forcing PRT registration
+- Changed `cartesi-rollups-cli app register` and `cartesi-rollups-cli deploy application --consensus` to refuse a consensus address without code, without EIP-165 support, or with an IConsensus version that this node cannot operate
+- Changed the `cartesi-rollups-cli deploy application --consensus` error for a PRT (Dave) consensus to state that `--prt` deploys a new PRT application
+- Changed `cartesi-rollups-cli deploy application` to refuse `--prt` together with `--consensus`, which was silently ignored
 - Normalized boolean configuration parameters (`CARTESI_LEGACY_BLOCKCHAIN_ENABLED`, `CARTESI_FEATURE_CLAIMER_ENABLED`, `CARTESI_FEATURE_MACHINE_HASH_CHECK_ENABLED`, `CARTESI_EXPERIMENTAL_SERVER_MANAGER_LOG_BYPASS_ENABLED` and `CARTESI_LOG_PRETTY_ENABLED`) and adjusted their logic accordingly
 
 ### Removed
@@ -27,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fixed `cartesi-rollups-cli` consensus type detection to use EIP-165 instead of probing a quorum method
+- Fixed `cartesi-rollups-cli` consensus type detection to use EIP-165 instead of probing a quorum method, so a failed RPC read can no longer register a Quorum application as Authority
 
 ## [1.5.1] 2024-08-26
 

@@ -6,6 +6,7 @@ package register
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -17,7 +18,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/iapplication"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -112,13 +112,6 @@ func run(cmd *cobra.Command, _ []string) {
 	validName, err := config.ToApplicationNameFromString(name)
 	cobra.CheckErr(err)
 
-	dsn, err := config.GetDatabaseConnection()
-	cobra.CheckErr(err)
-
-	repo, err := cli.OpenRepository(ctx, dsn)
-	cobra.CheckErr(err)
-	defer repo.Close()
-
 	applicationEnabled := !disabled
 
 	address := common.HexToAddress(applicationAddress)
@@ -163,7 +156,12 @@ func run(cmd *cobra.Command, _ []string) {
 
 	consensusType, err := getConsensusType(ctx, consensus)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to detect consensus type: %v\n", err)
+		var validationErr consensusValidationError
+		if errors.As(err, &validationErr) {
+			fmt.Fprintf(os.Stderr, "Consensus type validation failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "Failed to detect consensus type: %v\n", err)
+		}
 		os.Exit(1)
 	}
 	if err := validateRegistrationConsensusType(consensusType, applicationTypePRT); err != nil {
@@ -177,8 +175,7 @@ func run(cmd *cobra.Command, _ []string) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to get epoch length from consensus: %v\n",
 				cli.DecorateRevert(err, iconsensus.IConsensusMetaData))
-			repo.Close()
-			os.Exit(1) //nolint:gocritic // The repository is closed explicitly before exiting.
+			os.Exit(1)
 		}
 	}
 
@@ -267,7 +264,17 @@ func run(cmd *cobra.Command, _ []string) {
 		cobra.CheckErr(application.ExecutionParameters.Validate())
 	}
 
+	// Open the database only after every blockchain read, and close it before
+	// anything can exit. The old code held the connection open across the RPC
+	// retries and then called os.Exit with the deferred Close still pending.
+	dsn, err := config.GetDatabaseConnection()
+	cobra.CheckErr(err)
+
+	repo, err := cli.OpenRepository(ctx, dsn)
+	cobra.CheckErr(err)
+
 	_, err = repo.CreateApplication(ctx, &application, withExecutionParameters)
+	repo.Close()
 	cobra.CheckErr(err)
 
 	if printAsJSON {
@@ -374,6 +381,14 @@ func getClaimStagingPeriod(
 	return ethutil.GetClaimStagingPeriod(ctx, client, consensusAddr)
 }
 
+// consensusValidationError marks a failure that happened after the consensus type
+// was detected, such as a zero-validator Quorum or an IConsensus version that the
+// node cannot operate. It keeps the command from reporting a validation failure as
+// a detection failure.
+type consensusValidationError struct {
+	error
+}
+
 func getConsensusType(
 	ctx context.Context,
 	consensusAddr common.Address,
@@ -386,24 +401,31 @@ func getConsensusType(
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to the blockchain http endpoint: %s", ethEndpoint)
 	}
+	return detectConsensusType(ctx, client, consensusAddr)
+}
 
-	callOpts := &bind.CallOpts{Context: ctx}
-	caller, err := iconsensus.NewIConsensusCaller(consensusAddr, client)
-	if err != nil {
-		return "", fmt.Errorf("failed to bind consensus contract: %w", err)
-	}
-	detected, _, err := ethutil.DetectConsensusType(callOpts, caller)
+// detectConsensusType applies the register command's consensus policy to an
+// already-connected client: ERC-165 detection, the IConsensus version that the
+// node can operate, and the Quorum validator check. A read error never yields a
+// type, so a failed probe can never be stored as Authority.
+func detectConsensusType(
+	ctx context.Context,
+	caller bind.ContractCaller,
+	consensusAddr common.Address,
+) (model.Consensus, error) {
+	detected, version, err := cli.DetectConsensusType(ctx, caller, consensusAddr)
 	if err != nil {
 		return "", err
 	}
 
 	if detected == ethutil.ConsensusQuorum {
-		quorum, err := iquorum.NewIQuorum(consensusAddr, client)
-		if err != nil {
-			return "", err
+		if err := cli.ValidateQuorumConsensus(ctx, caller, consensusAddr); err != nil {
+			return "", consensusValidationError{error: err}
 		}
-		if err := ethutil.ValidateQuorum(callOpts, quorum); err != nil {
-			return "", err
+	}
+	if err := ethutil.ValidateConsensusVersion(detected, version); err != nil {
+		return "", consensusValidationError{
+			error: fmt.Errorf("consensus %s: %w", consensusAddr, err),
 		}
 	}
 
