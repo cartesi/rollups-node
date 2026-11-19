@@ -85,6 +85,10 @@ toplevel_skips_verbose() {
 # top-level tests. Built as a bash array so the pattern is never re-expanded
 # by the shell.
 GO_TEST_ARGS=(-count=1 -v -timeout 55m -ldflags "-r /opt/cartesi/lib" -tags=endtoendtests)
+# This opt-in smoke test validates the host's Docker launcher. Compose runs
+# nodes directly in its own container, so exclude the test before execution
+# rather than allowing its expected skip through the strict skip check.
+GO_TEST_ARGS+=(-skip '^TestLimitedNodeDocker$')
 if [ -n "${TEST_PATTERN:-}" ]; then
   echo "Running integration shard '${SHARD_NAME:-unnamed}' with -run '${TEST_PATTERN}'"
   GO_TEST_ARGS+=(-run "${TEST_PATTERN}")
