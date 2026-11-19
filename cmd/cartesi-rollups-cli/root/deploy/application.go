@@ -6,6 +6,7 @@ package deploy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -18,7 +19,6 @@ import (
 	"github.com/cartesi/rollups-node/pkg/contracts/iauthorityfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iconsensus"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveappfactory"
-	"github.com/cartesi/rollups-node/pkg/contracts/iquorum"
 	"github.com/cartesi/rollups-node/pkg/contracts/iquorumfactory"
 	"github.com/cartesi/rollups-node/pkg/contracts/iselfhostedapplicationfactory"
 	"github.com/cartesi/rollups-node/pkg/ethutil"
@@ -122,6 +122,15 @@ func init() {
 }
 
 func validateApplicationDeployment(cmd *cobra.Command, args []string) error {
+	prt, err := cmd.Flags().GetBool("prt")
+	if err != nil {
+		return err
+	}
+	if prt && cmd.Flags().Changed("consensus") {
+		// --prt always deploys a new DaveConsensus, so --consensus would be
+		// silently ignored.
+		return fmt.Errorf("--prt and --consensus are mutually exclusive: --prt deploys a new PRT (Dave) consensus")
+	}
 	register, err := cmd.Flags().GetBool("register")
 	if err != nil {
 		return err
@@ -209,7 +218,6 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 	application.TemplateURI = templateURI
 	application.Enabled = applicationEnableParam
 	application.Status = model.ApplicationStatus_OK
-	application.ConsensusType = model.Consensus_Authority
 
 	// load execution parameters from a file?
 	withExecutionParameters := cmd.Flags().Changed("execution-parameters-file")
@@ -281,45 +289,7 @@ func runDeployApplication(cmd *cobra.Command, args []string) {
 		fmt.Fprint(os.Stderr, "success\n")
 	}
 
-	// TODO(mpolitzer): can this be more concise?
-	// (they are similar but different in a couple of fields)
-	switch res := result.(type) {
-	case *ethutil.SelfhostedApplicationDeploymentResult:
-		application.IApplicationAddress = res.ApplicationAddress
-		application.IConsensusAddress = res.AuthorityAddress
-		application.IInputBoxAddress = res.Deployment.InputBoxAddress
-		application.TemplateHash = res.Deployment.TemplateHash
-		application.EpochLength = res.Deployment.EpochLength
-		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
-		application.IInputBoxBlock = res.Deployment.IInputBoxBlock
-		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
-
-	case *ethutil.ApplicationDeploymentResult:
-		application.IApplicationAddress = res.ApplicationAddress
-		application.IConsensusAddress = res.Deployment.Consensus
-		application.IInputBoxAddress = res.Deployment.InputBoxAddress
-		application.TemplateHash = res.Deployment.TemplateHash
-		application.EpochLength = res.Deployment.EpochLength
-		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
-		application.IInputBoxBlock = res.Deployment.IInputBoxBlock
-		if res.Deployment.ConsensusType != "" {
-			application.ConsensusType = model.Consensus(res.Deployment.ConsensusType)
-		}
-		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
-
-	case *ethutil.PRTApplicationDeploymentResult:
-		application.IApplicationAddress = res.ApplicationAddress
-		application.IConsensusAddress = res.DaveConsensusAddress
-		application.IInputBoxAddress = res.InputBoxAddress
-		application.TemplateHash = res.Deployment.TemplateHash
-		application.EpochLength = res.Deployment.EpochLength
-		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
-		application.IInputBoxBlock = res.IInputBoxBlock
-		application.ConsensusType = model.Consensus_PRT
-		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
-	default:
-		panic("unimplemented deployment type\n")
-	}
+	cobra.CheckErr(applyDeploymentResult(&application, result))
 
 	if applicationRegisterParam {
 		if verboseParam || !asJSONParam {
@@ -513,6 +483,59 @@ func buildApplicationOnlyDeployment(
 	return request, nil
 }
 
+// applyDeploymentResult fills the persisted application fields from the deployment
+// result. The consensus type always comes from the deployment variant: the
+// self-hosted factory creates an Authority, a --prt deployment creates a Dave
+// consensus, and an --consensus deployment carries the type detected before the
+// broadcast. There is deliberately no default type.
+func applyDeploymentResult(
+	application *model.Application,
+	result ethutil.IApplicationDeploymentResult,
+) error {
+	switch res := result.(type) {
+	case *ethutil.SelfhostedApplicationDeploymentResult:
+		application.IApplicationAddress = res.ApplicationAddress
+		application.IConsensusAddress = res.AuthorityAddress
+		application.IInputBoxAddress = res.Deployment.InputBoxAddress
+		application.TemplateHash = res.Deployment.TemplateHash
+		application.EpochLength = res.Deployment.EpochLength
+		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
+		application.IInputBoxBlock = res.Deployment.IInputBoxBlock
+		application.ConsensusType = model.Consensus_Authority
+		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
+
+	case *ethutil.ApplicationDeploymentResult:
+		application.IApplicationAddress = res.ApplicationAddress
+		application.IConsensusAddress = res.Deployment.Consensus
+		application.IInputBoxAddress = res.Deployment.InputBoxAddress
+		application.TemplateHash = res.Deployment.TemplateHash
+		application.EpochLength = res.Deployment.EpochLength
+		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
+		application.IInputBoxBlock = res.Deployment.IInputBoxBlock
+		if res.Deployment.ConsensusType == "" {
+			// Never fall back to Authority: an empty type means the detection result
+			// was lost, and storing Authority would select the wrong claim path.
+			return errors.New("consensus type of the deployed application was not detected")
+		}
+		application.ConsensusType = model.Consensus(res.Deployment.ConsensusType)
+		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
+
+	case *ethutil.PRTApplicationDeploymentResult:
+		application.IApplicationAddress = res.ApplicationAddress
+		application.IConsensusAddress = res.DaveConsensusAddress
+		application.IInputBoxAddress = res.InputBoxAddress
+		application.TemplateHash = res.Deployment.TemplateHash
+		application.EpochLength = res.Deployment.EpochLength
+		application.ClaimStagingPeriod = res.Deployment.ClaimStagingPeriod
+		application.IInputBoxBlock = res.IInputBoxBlock
+		application.ConsensusType = model.Consensus_PRT
+		application.WithdrawalConfig = model.WithdrawalConfig(res.Deployment.WithdrawalConfig)
+	default:
+		panic("unimplemented deployment type\n")
+	}
+	return nil
+}
+
 func deploymentInputBox(ctx context.Context, client *ethclient.Client) (common.Address, uint64, error) {
 	inputBoxAddress, err := config.GetContractsInputBoxAddress()
 	if err != nil {
@@ -600,34 +623,39 @@ func customConsensus(
 		return common.Address{}, 0, 0, "", err
 	}
 
-	consensus, err := iconsensus.NewIConsensus(consensusAddress, client)
+	callOpts := &bind.CallOpts{Context: ctx}
+	detected, version, err := cli.DetectConsensusType(ctx, client, consensusAddress)
 	if err != nil {
 		return common.Address{}, 0, 0, "", err
 	}
+	if detected == ethutil.ConsensusPRT {
+		return common.Address{}, 0, 0, "", errors.New(
+			"PRT (Dave) consensus; use --prt to deploy a new PRT application (without --consensus)")
+	}
+	if detected == ethutil.ConsensusQuorum {
+		if err := cli.ValidateQuorumConsensus(ctx, client, consensusAddress); err != nil {
+			return common.Address{}, 0, 0, "", err
+		}
+	}
+	if err := ethutil.ValidateConsensusVersion(detected, version); err != nil {
+		return common.Address{}, 0, 0, "", fmt.Errorf("consensus %s: %w", consensusAddress, err)
+	}
 
-	callOpts := &bind.CallOpts{Context: ctx}
-	epochLengthBig, err := consensus.GetEpochLength(callOpts)
+	consensusCaller, err := iconsensus.NewIConsensusCaller(consensusAddress, client)
+	if err != nil {
+		return common.Address{}, 0, 0, "", fmt.Errorf(
+			"consensus %s: bind IConsensus: %w", consensusAddress, err)
+	}
+
+	epochLengthBig, err := consensusCaller.GetEpochLength(callOpts)
 	if err != nil {
 		return common.Address{}, 0, 0, "", fmt.Errorf("failed to retrieve consensus epoch length: %w", err)
 	}
 
-	claimStagingPeriodBig, err := consensus.GetClaimStagingPeriod(callOpts)
+	claimStagingPeriodBig, err := consensusCaller.GetClaimStagingPeriod(callOpts)
 	if err != nil {
 		return common.Address{}, 0, 0, "", fmt.Errorf("failed to retrieve consensus claim staging period: %w", err)
 	}
 
-	consensusType := model.Consensus_Authority
-	quorum, err := iquorum.NewIQuorum(consensusAddress, client)
-	if err != nil {
-		return common.Address{}, 0, 0, "", err
-	}
-	numOfValidators, err := quorum.NumOfValidators(callOpts)
-	if err == nil {
-		if numOfValidators.Sign() == 0 {
-			return common.Address{}, 0, 0, "", fmt.Errorf("quorum consensus reports zero validators")
-		}
-		consensusType = model.Consensus_Quorum
-	}
-
-	return consensusAddress, epochLengthBig.Uint64(), claimStagingPeriodBig.Uint64(), consensusType, nil
+	return consensusAddress, epochLengthBig.Uint64(), claimStagingPeriodBig.Uint64(), detected.ToModel(), nil
 }

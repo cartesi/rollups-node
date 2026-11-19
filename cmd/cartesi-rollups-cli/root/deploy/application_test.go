@@ -46,6 +46,8 @@ func TestApplicationDeploymentValidatesBeforeRunning(t *testing.T) {
 		register     bool
 		noWait       bool
 		templateHash bool
+		prt          bool
+		consensus    string
 		args         []string
 		wantError    string
 	}{
@@ -56,17 +58,31 @@ func TestApplicationDeploymentValidatesBeforeRunning(t *testing.T) {
 		{name: "no wait with template hash", noWait: true, templateHash: true},
 		{name: "registered template hash", register: true, templateHash: true, args: []string{"example"}},
 		{name: "positional template", register: true, args: []string{"example", "applications/example"}},
+		{name: "prt with consensus is refused", templateHash: true, prt: true,
+			consensus: "0x1000000000000000000000000000000000000001",
+			wantError: "--prt and --consensus are mutually exclusive"},
+		{name: "prt with consensus is refused even without a template", prt: true,
+			consensus: "0x1000000000000000000000000000000000000001",
+			wantError: "--prt and --consensus are mutually exclusive"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cmd := &cobra.Command{}
 			cmd.Flags().Bool("register", test.register, "")
 			cmd.Flags().String("template-hash", "", "")
+			cmd.Flags().Bool("prt", false, "")
+			cmd.Flags().String("consensus", "", "")
 			cli.AddTransactionFlags(cmd)
 			if test.noWait {
 				require.NoError(t, cmd.Flags().Set("no-wait", "true"))
 			}
 			if test.templateHash {
 				require.NoError(t, cmd.Flags().Set("template-hash", "0x01"))
+			}
+			if test.prt {
+				require.NoError(t, cmd.Flags().Set("prt", "true"))
+			}
+			if test.consensus != "" {
+				require.NoError(t, cmd.Flags().Set("consensus", test.consensus))
 			}
 			// Invoke the actual command hook. The test must fail if the argument
 			// validation is removed from the command's pre-run path.
