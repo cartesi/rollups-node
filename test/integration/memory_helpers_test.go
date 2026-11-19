@@ -38,11 +38,14 @@ func parseProcessRSS(data []byte) (uint64, error) {
 // memory limit shared by all descendants and no swap. Each multiprocess service
 // gets a separate container. CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES overrides the
 // limit; 0 runs directly without Docker. External nodes are unaffected.
+// Compose sets CARTESI_TEST_NODE_IN_CONTAINER=1 and applies the limit to the
+// enclosing test container. In that mode the node runs directly and shares the
+// limit with the test runner and all other managed services.
 // CARTESI_TEST_NODE_IMAGE selects the runtime image (default:
 // cartesi/rollups-node:tester, built with make tester-image). The image must
 // provide the binary's runtime libraries. Host networking preserves localhost
 // endpoints. Bind mounts require a local Linux Docker daemon with access to the
-// runner's paths; a runner inside Docker must expose its paths to that daemon.
+// runner's paths.
 func limitedNodeCommand(binary string, log io.Writer, env []string, workDir string) (*exec.Cmd, error) {
 	value := os.Getenv("CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES")
 	if value == "" {
@@ -54,6 +57,12 @@ func limitedNodeCommand(binary string, log io.Writer, env []string, workDir stri
 	}
 	if limit == 0 {
 		fmt.Fprintf(log, "%s: memory limit disabled\n", binary)
+		cmd := exec.Command(binary) //nolint:gosec
+		cmd.Env, cmd.Dir = env, workDir
+		return cmd, nil
+	}
+	if os.Getenv("CARTESI_TEST_NODE_IN_CONTAINER") == "1" {
+		fmt.Fprintf(log, "%s: using enclosing test container memory limit %d bytes (shared with test runner), swap disabled\n", binary, limit)
 		cmd := exec.Command(binary) //nolint:gosec
 		cmd.Env, cmd.Dir = env, workDir
 		return cmd, nil

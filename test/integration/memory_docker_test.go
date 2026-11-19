@@ -15,11 +15,46 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestLimitedNodeCommand(t *testing.T) {
+	for _, limit := range []string{"", "0", "1073741824"} {
+		t.Run("container_limit_"+limit, func(t *testing.T) {
+			t.Setenv("CARTESI_TEST_NODE_IN_CONTAINER", "1")
+			t.Setenv("CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES", limit)
+			// The Compose tester image deliberately has no Docker CLI.
+			dir := t.TempDir()
+			t.Setenv("PATH", dir)
+			env := []string{"NODE_PROBE_VALUE=container environment"}
+			var log bytes.Buffer
+			cmd, err := limitedNodeCommand("/bin/sh", &log, env, dir)
+			require.NoError(t, err)
+			cmd.Args = append(cmd.Args, "-c", `printf '%s\n%s\n' "$NODE_PROBE_VALUE" "$PWD"`)
+			output, err := cmd.CombinedOutput()
+			require.NoError(t, err, "%s", output)
+			require.Equal(t, "container environment\n"+dir+"\n", string(output))
+			require.Empty(t, nodeContainerName(cmd))
+			if limit == "0" {
+				require.Contains(t, log.String(), "memory limit disabled")
+			} else {
+				require.Contains(t, log.String(), "enclosing test container memory limit 1073741824 bytes")
+			}
+		})
+	}
+	t.Run("invalid_limit", func(t *testing.T) {
+		t.Setenv("CARTESI_TEST_NODE_IN_CONTAINER", "1")
+		t.Setenv("CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES", "invalid")
+		_, err := limitedNodeCommand("/bin/sh", io.Discard, nil, "")
+		require.ErrorContains(t, err, "invalid CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES")
+	})
+}
+
 // Opt in because this test needs a local Docker daemon and an existing runtime
 // image. It also runs without the endtoendtests tag or blockchain services.
 func TestLimitedNodeDocker(t *testing.T) {
 	if os.Getenv("CARTESI_TEST_NODE_DOCKER_TEST") != "1" {
 		t.Skip("set CARTESI_TEST_NODE_DOCKER_TEST=1 to validate the Docker launcher")
+	}
+	if os.Getenv("CARTESI_TEST_NODE_IN_CONTAINER") == "1" {
+		t.Skip("Docker launcher smoke test requires a host runner")
 	}
 	t.Setenv("CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES", "1073741824")
 	dir := t.TempDir()

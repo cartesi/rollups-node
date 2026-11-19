@@ -684,7 +684,7 @@ INTEGRATION_SHARD_basic      := ^Test(EchoAuthority|RejectException|TerminalMach
 INTEGRATION_SHARD_quorum     := ^Test(EchoQuorum|SameBlockInputs)$$
 INTEGRATION_SHARD_prt        := ^Test(EchoPrt|RejectExceptionPrt|ForeclosePrt|PrtPassiveDisputeObserver|PrtRecoveryFixtureConfig|ReaderConfigClearsSignerAndCanRestoreExactSubmittingRecord|RecoveryFixturePreservesFinalizedProfileAndParentLimits|SparseDisputeCommitment(MatchesDenseTrees|CanonicalGeometry|RejectsOutOfRangeRequests)|PassiveObserver(CleanupPreservesRestoreOrder|Config(PreservesOriginalAndUnrelatedFields|RejectsMissingFieldsAndInvalidJSON))|PrtCommitmentMatchesMachineCLI)$$
 INTEGRATION_SHARD_replay     := ^Test(Foreclose|ForecloseReplay|DivergentClaim|IndependentClaimWatch|IndependentClaimObserverCorrectClaims)$$
-INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess|LimitedNodeDocker|ManagedNodeDeadlineStopsChildrenBeforeProcessExit)$$
+INTEGRATION_SHARD_restart    := ^Test(Restart|SnapshotPolicy|NodeSubprocess|LimitedNodeDocker|LimitedNodeCommand|ManagedNodeDeadlineStopsChildrenBeforeProcessExit)$$
 INTEGRATION_SHARD_withdrawal := ^Test(WithdrawalLifecycle|RefundLifecycle|AccountsDriveStartIndex_MemoryRanges_ReturnsStartIndex)$$
 INTEGRATION_SHARD_awskms     := ^TestLocalStackAWSIntegration$$
 

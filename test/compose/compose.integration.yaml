@@ -116,6 +116,10 @@ services:
   # run with the same infrastructure in both local and CI environments.
   integration-test:
     image: cartesi/rollups-node:tester
+    # Node subprocesses share this budget with the test runner. Equal memory
+    # and memory+swap limits disable swap without requiring nested Docker.
+    mem_limit: ${CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES:-1073741824}
+    memswap_limit: ${CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES:-1073741824}
     profiles: [integration-test]
     init: true
     entrypoint: ["bash"]
@@ -146,6 +150,8 @@ services:
       # Node topology: standalone (all-in-one) or multiprocess (per-service
       # subprocesses). TestMain starts and manages either in this container.
       NODE_TOPOLOGY: ${NODE_TOPOLOGY:-standalone}
+      CARTESI_TEST_NODE_IN_CONTAINER: "1"
+      CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES: ${CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES:-1073741824}
       # testdox prints one line per completed test; standard-verbose streams
       # go test -v output live (VERBOSE=true in the Makefile selects it).
       GOTESTSUM_FORMAT: ${GOTESTSUM_FORMAT:-testdox}

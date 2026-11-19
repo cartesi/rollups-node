@@ -33,6 +33,7 @@ import (
 // allocation with five independent HTTP requests (not a sequential RPC batch).
 // Run against a test-managed node to enforce the default 1 GiB cgroup memory
 // limit with swap disabled. CARTESI_TEST_NODE_MEMORY_LIMIT_BYTES overrides it.
+// With Compose, the test runner and managed node share the container's limit.
 // An externally managed node must have its memory limit configured separately.
 // Before incremental list encoding, these requests can exhaust the API process
 // before it can return the response-size error. A transport failure is a test
