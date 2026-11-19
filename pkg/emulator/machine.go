@@ -97,7 +97,16 @@ func (m *Machine) Create(config, runtimeConfig, dir string) error {
 			cDir = C.CString(dir)
 			defer C.free(unsafe.Pointer(cDir))
 		}
-		err = newError(C.cm_create_new(cConfig, cRuntime, cDir, &m.ptr))
+		err = newError(C.cm_create_new(cConfig, cRuntime, cDir, SharingNone, &m.ptr))
+	})
+	return err
+}
+
+// clear_hash_tree
+func (m *Machine) ClearHashTree() error {
+	var err error
+	m.callCAPI(func() {
+		err = newError(C.cm_clear_hash_tree(m.ptr))
 	})
 	return err
 }

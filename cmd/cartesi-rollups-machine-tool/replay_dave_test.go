@@ -78,7 +78,7 @@ io.write(tostring(c.MARCHID), "\n", tostring(package.searchpath("cartesi", packa
 	require.NoError(t, err, "%s", output)
 	module := strings.Split(strings.TrimSpace(string(output)), "\n")
 	require.Len(t, module, 2)
-	require.Equal(t, "22", module[0], "this fixture requires the pinned emulator module")
+	require.Equal(t, "23", module[0], "this fixture requires the pinned emulator module")
 	require.NotEqual(t, "nil", module[1])
 
 	tmp := t.TempDir()
@@ -95,20 +95,20 @@ end
 local script=table.remove(arg, 1)
 dofile(script)
 `), 0600))
-	for _, marchID := range []string{"22", "21"} {
+	for _, marchID := range []string{"23", "21"} {
 		t.Run(marchID, func(t *testing.T) {
 			cmd := exec.CommandContext(ctx, lua, shim, script,
 				"--template", "unused-template", "--store", "unused-store",
 				"--inputs-manifest", "unused-inputs", "--marchid", marchID)
 			cmd.Env = env
 			output, err := cmd.CombinedOutput()
-			if marchID == "22" {
+			if marchID == "23" {
 				require.NoError(t, err, "%s", output)
 				require.Equal(t, "REPLAY_MACHINE_CREATION_REACHED\n", string(output))
 				return
 			}
 			require.Error(t, err, "an incompatible module must be refused before machine creation")
-			require.Contains(t, string(output), "module MARCHID 22")
+			require.Contains(t, string(output), "module MARCHID 23")
 			require.Contains(t, string(output), "required MARCHID 21")
 			require.Contains(t, string(output), module[1])
 			require.NotContains(t, string(output), "REPLAY_MACHINE_CREATION_REACHED")

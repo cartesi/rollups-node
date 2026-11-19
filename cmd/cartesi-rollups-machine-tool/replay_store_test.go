@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const replayStoredRootOffset = int64(0x60)
+const replayStoredRootOffset = int64(0x5c)
 
 // The guest accepts one input and changes registers and RX memory. The reference
 // uses a separate real machine, so reading its root cannot refresh the replay.
@@ -86,7 +86,7 @@ func TestReplayDaveLua_StoreKeepsFinalRoot(t *testing.T) {
 		t.Skipf("cartesi Lua module is unavailable: %s", output)
 	}
 	require.NoError(t, err, "%s", output)
-	require.Equal(t, "22", strings.TrimSpace(string(output)))
+	require.Equal(t, "23", strings.TrimSpace(string(output)))
 
 	tmp := t.TempDir()
 	fixture := filepath.Join(tmp, "fixture.lua")

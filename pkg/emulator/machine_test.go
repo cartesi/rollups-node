@@ -24,6 +24,10 @@ type mcycleRootHashesResult struct {
 }
 
 func createLoopMachine(t *testing.T) *Machine {
+	return createLoopMachineWithRuntime(t, "")
+}
+
+func createLoopMachineWithRuntime(t *testing.T, runtimeConfig string) *Machine {
 	t.Helper()
 
 	const ramLength = 4096
@@ -43,7 +47,7 @@ func createLoopMachine(t *testing.T) *Machine {
 	})
 	require.NoError(t, err)
 
-	machine, err := CreateMachine(string(config), "", "")
+	machine, err := CreateMachine(string(config), runtimeConfig, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		assert.NoError(t, machine.Destroy())

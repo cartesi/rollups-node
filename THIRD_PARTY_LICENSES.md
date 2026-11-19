@@ -30,8 +30,8 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## github.com/cartesi/machine-emulator
 
 * Name: github.com/cartesi/machine-emulator
-* Version: 0.22.0
-* License: [LGPL-3.0](https://github.com/cartesi/machine-emulator/blob/v0.22.0/COPYING)
+* Version: 0.23.0-test3
+* License: [LGPL-3.0](https://github.com/cartesi/machine-emulator/blob/v0.23.0-test3/COPYING)
 
 ## github.com/cartesi/rollups-contracts
 
@@ -43,8 +43,8 @@ repositories are Apache-2.0. They are listed below for attribution.
 ## github.com/cartesi/dave
 
 * Name: github.com/cartesi/dave
-* Version: 3.0.0-alpha.6
-* License: [Apache-2.0](https://github.com/cartesi/dave/blob/v3.0.0-alpha.6/LICENSE)
+* Version: 3.0.0-alpha.8-test1
+* License: [Apache-2.0](https://github.com/cartesi/dave/blob/v3.0.0-alpha.8-test1/LICENSE)
 * Note: source of the generated PRT contract bindings under pkg/contracts/.
 
 ## github.com/BurntSushi/toml
