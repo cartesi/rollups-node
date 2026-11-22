@@ -138,12 +138,12 @@ func (m *prtRepositoryMock) HasUnreconciledClaimsBeforeBlock(
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *prtRepositoryMock) UpdateEpochWithForeclosedClaim(
+func (m *prtRepositoryMock) ForeclosePRTEpoch(
 	ctx context.Context,
 	applicationID int64,
-	index uint64,
+	index, observedHead uint64,
 ) error {
-	args := m.Called(ctx, applicationID, index)
+	args := m.Called(ctx, applicationID, index, observedHead)
 	return args.Error(0)
 }
 

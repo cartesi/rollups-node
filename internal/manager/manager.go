@@ -699,16 +699,14 @@ func getMachineApplications(ctx context.Context, repo MachineRepository) ([]*mod
 			apps = append(apps, app)
 			continue
 		}
-		if app.ConsensusType == model.Consensus_Authority || app.ConsensusType == model.Consensus_Quorum {
-			// Accepted inputs can precede reader closure or a failed IP write.
-			// Keep the runtime only through proof publication; IP needs no VM.
-			unpublished, err := repo.HasUnpublishedEpochBeforeBlock(ctx, app.ID, app.ForecloseBlock)
-			if err != nil {
-				return nil, err
-			}
-			if unpublished {
-				apps = append(apps, app)
-			}
+		// All inputs can be durable while a healthy CLOSED epoch still needs
+		// its runtime for finalization. IP and later stages need only the DB.
+		unpublished, err := repo.HasUnpublishedEpochBeforeBlock(ctx, app.ID, app.ForecloseBlock)
+		if err != nil {
+			return nil, err
+		}
+		if unpublished {
+			apps = append(apps, app)
 		}
 	}
 	return apps, nil

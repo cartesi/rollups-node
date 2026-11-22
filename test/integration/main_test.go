@@ -17,7 +17,7 @@ import (
 
 // TestMain manages the node and enforces sequential test execution.
 //
-// Unless a node is already running on port 10000, TestMain starts the
+// Unless a node is already running at the configured telemetry address, TestMain starts the
 // test-managed node — the all-in-one process (standalone) or the service
 // subprocesses (multiprocess, NODE_TOPOLOGY=multiprocess) — waits for health,
 // and stops it after all tests complete. This keeps the node lifecycle
@@ -71,7 +71,7 @@ func TestMain(m *testing.M) {
 
 	// The node is started here by TestMain (the Compose integration service runs
 	// this same test binary) unless a developer already has one running on
-	// :10000, in which case we attach and the restart tests are skipped. The
+	// the configured telemetry address, in which case restart tests are skipped. The
 	// multiprocess topology starts the services as subprocesses — host or inside
 	// the test container — so the lifecycle tests can restart them too.
 	nodeTopology = envOrDefault("NODE_TOPOLOGY", "standalone")
@@ -114,8 +114,8 @@ func TestMain(m *testing.M) {
 			fmt.Fprintf(os.Stderr, "Starting node (log: %s)...\n", logPath)
 			bringUp(startNodeWithLog(logPath))
 		} else {
-			fmt.Fprintln(os.Stderr,
-				"Node already running on :10000 (external). Restart tests will be skipped.")
+			fmt.Fprintf(os.Stderr,
+				"Node already running on %s (external). Restart tests will be skipped.\n", nodeTelemetryAddress())
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "unknown NODE_TOPOLOGY %q (expected standalone or multiprocess)\n",

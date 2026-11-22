@@ -17,21 +17,10 @@ import (
 
 func deploymentDrainSQL(request repository.DeploymentDrainRequest) (string, []any) {
 	predicate := deploymentIdentityPredicate(request.Identity).
-		AND(table.Application.ConsensusType.EQ(enum.Consensus.Prt)).
 		AND(table.Epoch.ApplicationID.EQ(postgres.Int64(request.Identity.ApplicationID))).
 		AND(table.Epoch.Index.EQ(uint64Expr(request.EpochIndex))).
-		AND(table.Epoch.FirstBlock.LT_EQ(table.Application.ForecloseBlock)).
-		AND(table.Epoch.Status.IN(nonTerminalEpochStatusExpressions...)).
-		AND(table.Application.ID.EQ(table.Epoch.ApplicationID)).
-		AND(table.Application.ForecloseBlock.GT(uint64Expr(0))).
-		AND(table.Epoch.Status.IN(enum.EpochStatus.ClaimComputed, enum.EpochStatus.ClaimSubmitted, enum.EpochStatus.ClaimStaged).
-			OR(table.Application.Enabled.EQ(postgres.Bool(true)).
-				AND(table.Application.Status.IN(
-					append([]postgres.Expression{enum.ApplicationStatus.Ok}, executionStopStatusExpressions...)...)).
-				AND(table.Epoch.Status.NOT_EQ(enum.EpochStatus.InputsProcessed).
-					OR(table.Epoch.LastBlock.GT_EQ(table.Application.ForecloseBlock)).
-					OR(table.Application.Status.IN(executionStopStatusExpressions...).
-						AND(table.Epoch.Index.GT_EQ(table.Application.ProblemEpochIndex))))))
+		AND(prtForeclosureCondition()).
+		AND(prtComputedCondition().OR(prtUncomputedExitCondition()).OR(prtTerminalObservationCondition()))
 	return table.Epoch.UPDATE(table.Epoch.Status).SET(enum.EpochStatus.ClaimForeclosed).
 		FROM(table.Application).WHERE(predicate).Sql()
 }

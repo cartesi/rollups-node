@@ -2346,6 +2346,7 @@ type MockMachineInstance struct {
 	machineImpl               *MockMachineImpl
 	createSnapshotError       error
 	destroyAfterSnapshotError bool
+	createSnapshotHook        func()
 	closeError                error
 	closeCalls                int
 	advanceCalls              int
@@ -2383,6 +2384,9 @@ func (m *MockMachineInstance) StateProof(_ context.Context) (*StateProof, error)
 
 // CreateSnapshot implements the MachineInstance interface for testing
 func (m *MockMachineInstance) CreateSnapshot(_ context.Context, _ uint64, _ string) error {
+	if m.createSnapshotHook != nil {
+		m.createSnapshotHook()
+	}
 	if m.createSnapshotError != nil && m.destroyAfterSnapshotError {
 		m.machineImpl.AdvanceError = manager.ErrMachineClosed
 		return errors.Join(manager.ErrMachineClosed, m.createSnapshotError)
@@ -2434,6 +2438,7 @@ type MockRepository struct {
 	StoredResults               []*AdvanceResult
 	StoredAppIDs                []int64
 	ApplicationStatusUpdates    int
+	ApplicationStatusRequests   int
 	LastApplicationStatus       ApplicationStatus
 	LastApplicationStatusReason *string
 	PublishedStateProof         *StateProof
@@ -2587,6 +2592,7 @@ func (mock *MockRepository) UpdateEpochInputsProcessed(
 }
 
 func (mock *MockRepository) UpdateApplicationStatus(ctx context.Context, _ int64, status ApplicationStatus, reason *string) error {
+	mock.ApplicationStatusRequests++
 	// Check for context cancellation
 	if ctx.Err() != nil {
 		return ctx.Err()

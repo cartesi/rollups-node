@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
@@ -31,7 +32,7 @@ type nodeExitChecker interface {
 }
 
 // sharedNode is the test-managed node, started by TestMain unless an external
-// node is already running on :10000. All suites share it; lifecycle tests stop
+// node is already running on its configured telemetry address. All suites share it; lifecycle tests stop
 // and restart it via stopSharedNode/startSharedNode. nil when externally
 // managed. Its concrete type follows nodeTopology.
 var sharedNode nodeHandle
@@ -103,9 +104,18 @@ func startSharedNodeWithEnv(t testing.TB, extraEnv ...string) {
 	sharedNode = h
 }
 
-// nodePortAvailable returns true if the node's telemetry port (10000) is free.
+// nodeTelemetryAddress also lets an isolated test run use another telemetry port.
+func nodeTelemetryAddress() string {
+	address := envOrDefault("CARTESI_NODE_TELEMETRY_ADDRESS", ":10000")
+	if strings.HasPrefix(address, ":") {
+		return "localhost" + address
+	}
+	return address
+}
+
+// nodePortAvailable returns true if the node's configured telemetry address is free.
 func nodePortAvailable() bool {
-	conn, err := net.DialTimeout("tcp", "localhost:10000", time.Second)
+	conn, err := net.DialTimeout("tcp", nodeTelemetryAddress(), time.Second)
 	if err != nil {
 		return true
 	}
@@ -196,7 +206,7 @@ func (n *nodeProcess) waitForHealth(ctx context.Context, t testing.TB) error {
 			return false, err
 		}
 		req, err := http.NewRequestWithContext(
-			ctx, "GET", "http://localhost:10000/readyz", nil)
+			ctx, "GET", "http://"+nodeTelemetryAddress()+"/readyz", nil)
 		if err != nil {
 			return false, nil
 		}

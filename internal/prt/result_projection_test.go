@@ -45,7 +45,7 @@ func TestFailedRootRepeatedObservationAndForeclosure(t *testing.T) {
 		&model.Tournament{Address: *epoch.TournamentAddress, Snapshot: model.TournamentSnapshot{
 			AsOfBlock: 100, FinishedAtBlock: 90, Standing: model.TournamentStandingRootFailed,
 		}}, nil).Once()
-	repo.On("UpdateEpochWithForeclosedClaim", mock.Anything, app.ID, epoch.Index).Return(nil).Once()
+	repo.On("ForeclosePRTEpoch", mock.Anything, app.ID, epoch.Index, mock.Anything).Return(nil).Once()
 
 	require.NoError(t, service.drainForeclosedClaims(t.Context(), app, []*model.Epoch{epoch}, nil, 100))
 	require.Equal(t, model.ApplicationStatus_OK, app.Status)

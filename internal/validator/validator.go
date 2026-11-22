@@ -215,7 +215,9 @@ func (s *Service) validateApplication(ctx context.Context, app *Application) (er
 		if epoch.Status != EpochStatus_InputsProcessed {
 			continue
 		}
-		if app.ForecloseBlock != 0 && epoch.LastBlock >= app.ForecloseBlock {
+		if app.ForecloseBlock != 0 &&
+			(app.ConsensusType != Consensus_PRT && epoch.LastBlock >= app.ForecloseBlock ||
+				app.ConsensusType == Consensus_PRT && (epoch.TournamentAddress == nil || epoch.FirstBlock > app.ForecloseBlock)) {
 			s.Logger.Info("Skipping foreclosed epoch that cannot be accepted",
 				"application", appAddress,
 				"epoch_index", epoch.Index,
