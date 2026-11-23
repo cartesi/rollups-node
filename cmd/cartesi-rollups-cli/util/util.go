@@ -5,6 +5,7 @@ package util
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +16,11 @@ import (
 
 	"github.com/cartesi/rollups-node/internal/cli"
 	"github.com/cartesi/rollups-node/internal/config"
+)
+
+const (
+	machineArchiveVersion uint64 = 9           // archive format of emulator 0.23
+	storedRootHashOffset         = int64(0x5c) // root hash offset in hash_tree.sht
 )
 
 // ResolveApplicationAddress returns the IApplication address corresponding
@@ -56,10 +62,39 @@ func ResolveApplicationAddress(ctx context.Context, nameOrAddress string) (commo
 	return app.IApplicationAddress, nil
 }
 
+// ReadArchiveVersion reads the archive version from the stored machine's
+// config.json.
+func ReadArchiveVersion(machineDir string) (uint64, error) {
+	configPath := path.Join(machineDir, "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return 0, fmt.Errorf("read machine config: %w", err)
+	}
+
+	var config struct {
+		ArchiveVersion uint64 `json:"archive_version"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return 0, fmt.Errorf("decode machine config: %w", err)
+	}
+	return config.ArchiveVersion, nil
+}
+
 // Reads the Cartesi Machine hash from machineDir. Returns it as a commonHash
 // or an error
 func ReadRootHash(machineDir string) (common.Hash, error) {
 	zero := common.Hash{}
+
+	// assert compatible archive version before reading root hash
+	archiveVersion, err := ReadArchiveVersion(machineDir)
+	if err != nil {
+		return zero, err
+	}
+	if archiveVersion != machineArchiveVersion {
+		return zero, fmt.Errorf("unsupported machine archive version %d; expected %d",
+			archiveVersion, machineArchiveVersion)
+	}
+
 	path := path.Join(machineDir, "hash_tree.sht")
 	f, err := os.Open(path)
 	if err != nil {
@@ -67,9 +102,7 @@ func ReadRootHash(machineDir string) (common.Hash, error) {
 	}
 	defer f.Close()
 
-	// root hash is located at this offset (0x5c). Double check its value
-	// with the cartesi-machine-stored-hash tool.
-	_, err = f.Seek(0x5c, io.SeekStart) //nolint:mnd // Fixed root-hash offset in the machine image header.
+	_, err = f.Seek(storedRootHashOffset, io.SeekStart)
 	if err != nil {
 		return zero, err
 	}

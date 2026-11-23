@@ -5,6 +5,8 @@ package util //nolint:revive // Tests intentionally exercise unexported package 
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -20,6 +22,69 @@ import (
 // CARTESI_DATABASE_CONNECTION. These tests pin the invariant by setting the
 // DB env to something deliberately broken — a real DB lookup against this
 // value would fail loudly, so a passing test means the 0x branch ran first.
+
+func writeMachineConfig(t *testing.T, dir, config string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.json"), []byte(config), 0o600))
+}
+
+func TestReadArchiveVersion(t *testing.T) {
+	cases := []struct {
+		name    string
+		config  string
+		want    uint64
+		wantErr string
+	}{
+		{
+			name:   "current version",
+			config: `{"archive_version":9}`,
+			want:   9,
+		},
+		{
+			name:   "old version",
+			config: `{"archive_version":8}`,
+			want:   8,
+		},
+		{
+			name:   "missing version",
+			config: `{}`,
+			want:   0,
+		},
+		{
+			name:    "invalid JSON",
+			config:  `{"archive_version":`,
+			wantErr: "decode machine config",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeMachineConfig(t, dir, tc.config)
+
+			got, err := ReadArchiveVersion(dir)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				require.Equal(t, tc.want, got)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
+}
+
+func TestReadArchiveVersion_MissingConfig(t *testing.T) {
+	_, err := ReadArchiveVersion(t.TempDir())
+	require.ErrorContains(t, err, "read machine config")
+}
+
+func TestReadRootHash_RejectsUnsupportedArchive(t *testing.T) {
+	dir := t.TempDir()
+	writeMachineConfig(t, dir, `{"archive_version":8}`)
+
+	_, err := ReadRootHash(dir)
+	require.ErrorContains(t, err, "unsupported machine archive version 8; expected 9")
+}
 
 func TestResolveApplicationAddress_HexBypassesDB(t *testing.T) {
 	t.Setenv("CARTESI_DATABASE_CONNECTION", "postgres://nobody@nowhere:1/nodb")
