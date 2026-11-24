@@ -4,7 +4,7 @@
 [![Build](https://github.com/cartesi/rollups-node/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/cartesi/rollups-node/actions/workflows/build.yml)
 [![License](https://img.shields.io/github/license/cartesi/rollups-node)](LICENSE)
 
-The Cartesi Rollups Node is the middleware that connects the Rollups smart contracts, the application back-end running inside the Cartesi Machine, and the front-end.
+The Cartesi Rollups Node is the middleware that connects the Rollups smart contracts, the application back-end running inside the Cartesi Machine, and application clients.
 
 > [!NOTE]
 > This README covers the 2.0 line, which is currently published as alpha pre-releases on [GitHub Releases](https://github.com/cartesi/rollups-node/releases). The 1.x line is developed on the `release/1.x` branches; the most recent is [`release/1.5.x`](https://github.com/cartesi/rollups-node/tree/release/1.5.x).
@@ -67,7 +67,10 @@ make build
 sudo make install
 ```
 
-`make install` copies the binaries to `/usr/bin` on Linux and `/opt/cartesi/bin` on macOS; set `PREFIX` to change this.
+`make install` copies the binaries to `/usr/bin`; set `PREFIX` to change this.
+
+> [!NOTE]
+> `make install` rebuilds the binaries, so `go` must be on the `PATH` that `sudo` uses. On many Linux distributions, including Debian and Ubuntu, `sudo` replaces `PATH` with a fixed list that excludes `/usr/local/go/bin`, where the official Go installer puts it. In that case, run `sudo env "PATH=$PATH" make install` instead.
 
 ### Running a node
 
@@ -82,14 +85,14 @@ export CARTESI_BLOCKCHAIN_HTTP_ENDPOINT="${ETHEREUM_RPC_URL:?set ETHEREUM_RPC_UR
 export CARTESI_BLOCKCHAIN_ID="${CHAIN_ID:?set CHAIN_ID}"
 export CARTESI_DATABASE_CONNECTION="${DATABASE_URL:?set DATABASE_URL}"
 export CARTESI_AUTH_KIND=mnemonic
-export CARTESI_AUTH_MNEMONIC_FILE=/run/secrets/cartesi_mnemonic
+export CARTESI_AUTH_MNEMONIC_FILE="${MNEMONIC_FILE:?set MNEMONIC_FILE}"
 export CARTESI_PRT_AUTH_KIND=mnemonic
-export CARTESI_PRT_AUTH_MNEMONIC_FILE=/run/secrets/cartesi_mnemonic
+export CARTESI_PRT_AUTH_MNEMONIC_FILE="${MNEMONIC_FILE:?set MNEMONIC_FILE}"
 
 cartesi-rollups-cli db init
 ```
 
-The claimer and PRT signers can share one mnemonic file because they derive different accounts from it: index `0` for the claimer and index `6` for PRT by default (`CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX`, `CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX`). Use distinct addresses for the two signers, and fund both. See [Transaction delivery](docs/transaction-delivery.md) for signer setup, limits, recovery, and removal.
+`MNEMONIC_FILE` is the path to a file containing the signer mnemonic; it must be readable by the user running the node. The claimer and PRT signers can share one mnemonic file because they derive different accounts from it: index `0` for the claimer and index `6` for PRT by default (`CARTESI_AUTH_MNEMONIC_ACCOUNT_INDEX`, `CARTESI_PRT_AUTH_MNEMONIC_ACCOUNT_INDEX`). Use distinct addresses for the two signers, and fund both. See [Transaction delivery](docs/transaction-delivery.md) for signer setup, limits, recovery, and removal.
 
 > [!IMPORTANT]
 > `CARTESI_FEATURE_CLAIM_SUBMISSION_ENABLED` and `CARTESI_BLOCKCHAIN_DEFAULT_BLOCK` are saved in the database when the node first starts. Starting later with a different value fails; changing them on an existing database is not supported.
@@ -281,7 +284,7 @@ The first containerized run downloads Cartesi Machine test images. Run `make hel
 
 ### Local stack with Docker Compose
 
-`make image` builds a local node image tagged `cartesi/rollups-node:devel`; it is not a published release image. The repository's [`compose.yaml`](compose.yaml) uses it, together with the devnet image built by `make devnet`, to start an Anvil development chain, PostgreSQL 18, a database migration job, and the standalone node. Both images are built from source, so the first run takes a while. The stack publishes host ports 8545 (Anvil), 5432 (PostgreSQL), 10000, 10011, and 10012; free them first, for example by stopping a local PostgreSQL server. Then run:
+`make image` builds a local node image tagged `cartesi/rollups-node:devel`; it is not a published release image. The repository's [`compose.yaml`](compose.yaml) uses it, together with the devnet image built by `make devnet`, to start an Anvil development chain, PostgreSQL 18, a database migration job, and the standalone node. Both images are built from source, so the first run takes a while:
 
 ```sh
 make image
