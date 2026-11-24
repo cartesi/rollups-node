@@ -261,6 +261,7 @@ func (r *PostgresRepository) ListWithdrawals(
 	defer rows.Close()
 
 	var withdrawals []*model.Withdrawal
+	budget := pageByteBudget{max: p.MaxBytes}
 	for rows.Next() {
 		var w model.Withdrawal
 		var txHashBytes []byte
@@ -281,6 +282,9 @@ func (r *PostgresRepository) ListWithdrawals(
 		}
 		copy(w.TransactionHash[:], txHashBytes)
 		w.LogIndex = uint(logIndex)
+		if !budget.add(w) {
+			return nil, 0, repository.ErrPageTooLarge
+		}
 		withdrawals = append(withdrawals, &w)
 	}
 	if err := rows.Err(); err != nil {

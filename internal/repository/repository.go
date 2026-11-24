@@ -38,7 +38,6 @@ var (
 	// ErrTournamentEventConflict means an observation contradicts an already
 	// stored immutable tournament fact or would replace a newer snapshot.
 	ErrTournamentEventConflict = errors.New("tournament observation conflicts with stored data")
-
 	// ErrInputLogIdentityConflict indicates an input insert conflicted with a
 	// stored row on the L1 log identity (transaction_hash, log_index) under a
 	// different input index. On a canonical chain this cannot happen; it means
@@ -46,11 +45,17 @@ var (
 	// the input cursor). Retrying cannot succeed — callers should treat the
 	// application state as corrupted.
 	ErrInputLogIdentityConflict = errors.New("input L1 log identity conflicts with stored data")
+	// ErrPageTooLarge is returned when the bytes of a page exceed
+	// Pagination.MaxBytes; no partial page is returned.
+	ErrPageTooLarge = errors.New("page exceeds the byte limit")
 )
 
 type Pagination struct {
 	Limit  uint64
 	Offset uint64
+	// MaxBytes, when nonzero, bounds the total estimated size of the
+	// rows materialized for one page.
+	MaxBytes uint64
 }
 
 type ApplicationFilter struct {

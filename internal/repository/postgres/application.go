@@ -973,6 +973,7 @@ func (r *PostgresRepository) listApplications(
 	defer rows.Close()
 
 	var apps []*model.Application
+	budget := pageByteBudget{max: p.MaxBytes}
 	for rows.Next() {
 		var app model.Application
 		err := rows.Scan(
@@ -1029,6 +1030,9 @@ func (r *PostgresRepository) listApplications(
 		)
 		if err != nil {
 			return nil, 0, err
+		}
+		if !budget.add(app) {
+			return nil, 0, repository.ErrPageTooLarge
 		}
 		apps = append(apps, &app)
 	}

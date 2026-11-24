@@ -311,6 +311,7 @@ func (r *PostgresRepository) ListInputs(
 	defer rows.Close()
 
 	var inputs []*model.Input
+	budget := pageByteBudget{max: p.MaxBytes}
 	for rows.Next() {
 		var in model.Input
 		err := rows.Scan(
@@ -331,6 +332,9 @@ func (r *PostgresRepository) ListInputs(
 		)
 		if err != nil {
 			return nil, 0, err
+		}
+		if !budget.add(in) {
+			return nil, 0, repository.ErrPageTooLarge
 		}
 		inputs = append(inputs, &in)
 	}

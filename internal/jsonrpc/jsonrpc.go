@@ -35,9 +35,11 @@ var discoverSpec embed.FS
 const (
 	// Maximum allowed body size (1 MB).
 	MAX_BODY_SIZE = 1 << 20 //nolint: revive
-	// Maximum response size for a single request or cumulative response size for
-	// all entries in a batch (10 MB).
+	// Serialization budget for a single response or all batch entries (10 MiB).
 	MAX_RESPONSE_SIZE = 10 << 20 //nolint: revive
+	// Budget for estimated Go row size (5 MiB). A list can exceed this budget
+	// even when its encoded response would fit in MAX_RESPONSE_SIZE.
+	MAX_LIST_RESP_SIZE = MAX_RESPONSE_SIZE / 2
 	// Maximum amount of request in a batch (100)
 	MAX_BATCH_SIZE = 100 //nolint: revive
 	// Maximum amount of items to list (10,000).
@@ -229,6 +231,9 @@ func (s *Service) repositoryError(ctx context.Context, message string, err error
 	if errors.Is(err, context.DeadlineExceeded) && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return err
 	}
+	if errors.Is(err, repository.ErrPageTooLarge) {
+		return err
+	}
 	s.requestLogger(ctx).Error(message, "err", err)
 	return newRPCError(JSONRPC_INTERNAL_ERROR, "Internal server error")
 }
@@ -252,7 +257,7 @@ func (s *Service) handleRequest(w io.Writer, r *http.Request, req RPCRequest) er
 	if err == nil {
 		return writeRPCResult(w, req.ID, result)
 	}
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, repository.ErrPageTooLarge) {
 		return err
 	}
 	if errors.Is(err, context.DeadlineExceeded) && errors.Is(r.Context().Err(), context.DeadlineExceeded) {
@@ -317,6 +322,9 @@ func (s *Service) dispatchOneRequest(
 		return s.handleWriteResponse(r.Context(), buffer.Flush())
 	case errors.Is(err, context.Canceled):
 		return false
+	case errors.Is(err, repository.ErrPageTooLarge):
+		budgetResp.closed = true // avoid further writes to the response
+		fallthrough
 	case errors.Is(err, io.ErrShortBuffer):
 		return s.writeRPCError(r.Context(), w, req.ID, JSONRPC_RESPONSE_SIZE_LIMIT_EXCEEDED, "Response size limit exceeded")
 	default:
@@ -462,8 +470,9 @@ func handleListApplications(s *Service, r *http.Request, req RPCRequest) (any, e
 	}
 
 	apps, total, err := s.repository.ListApplications(r.Context(), repository.ApplicationFilter{}, repository.Pagination{
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Limit:    params.Limit,
+		Offset:   params.Offset,
+		MaxBytes: MAX_LIST_RESP_SIZE,
 	}, params.Descending)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve applications from repository", err)
@@ -551,8 +560,9 @@ func handleListEpochs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	}
 
 	epochs, total, err := s.repository.ListEpochs(r.Context(), params.Application, epochFilter, repository.Pagination{
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Limit:    params.Limit,
+		Offset:   params.Offset,
+		MaxBytes: MAX_LIST_RESP_SIZE,
 	}, params.Descending)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve epochs from repository", err)
@@ -746,8 +756,9 @@ func handleListInputs(s *Service, r *http.Request, req RPCRequest) (any, error) 
 	}
 
 	inputs, total, err := s.repository.ListInputs(r.Context(), params.Application, inputFilter, repository.Pagination{
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Limit:    params.Limit,
+		Offset:   params.Offset,
+		MaxBytes: MAX_LIST_RESP_SIZE,
 	}, params.Descending)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve inputs from repository", err)
@@ -973,8 +984,9 @@ func handleListOutputs(s *Service, r *http.Request, req RPCRequest) (any, error)
 	}
 
 	outputs, total, err := s.repository.ListOutputs(r.Context(), params.Application, outputFilter, repository.Pagination{
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Limit:    params.Limit,
+		Offset:   params.Offset,
+		MaxBytes: MAX_LIST_RESP_SIZE,
 	}, params.Descending)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve outputs from repository", err)
@@ -1079,8 +1091,9 @@ func handleListReports(s *Service, r *http.Request, req RPCRequest) (any, error)
 	}
 
 	reports, total, err := s.repository.ListReports(r.Context(), params.Application, reportFilter, repository.Pagination{
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Limit:    params.Limit,
+		Offset:   params.Offset,
+		MaxBytes: MAX_LIST_RESP_SIZE,
 	}, params.Descending)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve reports from repository", err)
@@ -1168,7 +1181,7 @@ func handleListWithdrawals(s *Service, r *http.Request, req RPCRequest) (any, er
 
 	withdrawals, total, err := s.repository.ListWithdrawals(
 		r.Context(), params.Application, withdrawalFilter,
-		repository.Pagination{Limit: params.Limit, Offset: params.Offset},
+		repository.Pagination{Limit: params.Limit, Offset: params.Offset, MaxBytes: MAX_LIST_RESP_SIZE},
 		params.Descending,
 	)
 	if err != nil {
@@ -1283,8 +1296,9 @@ func handleListTournaments(s *Service, r *http.Request, req RPCRequest) (any, er
 	}
 
 	tournaments, total, err := s.repository.ListTournaments(r.Context(), params.Application, tournamentFilter, repository.Pagination{
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Limit:    params.Limit,
+		Offset:   params.Offset,
+		MaxBytes: MAX_LIST_RESP_SIZE,
 	}, params.Descending)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve tournaments from repository", err)
@@ -1381,8 +1395,9 @@ func handleListCommitments(s *Service, r *http.Request, req RPCRequest) (any, er
 	}
 
 	commitments, total, err := s.repository.ListCommitments(r.Context(), params.Application, commitmentFilter, repository.Pagination{
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Limit:    params.Limit,
+		Offset:   params.Offset,
+		MaxBytes: MAX_LIST_RESP_SIZE,
 	}, params.Descending)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve commitments from repository", err)
@@ -1490,8 +1505,9 @@ func handleListMatches(s *Service, r *http.Request, req RPCRequest) (any, error)
 	}
 
 	matches, total, err := s.repository.ListMatches(r.Context(), params.Application, matchFilter, repository.Pagination{
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Limit:    params.Limit,
+		Offset:   params.Offset,
+		MaxBytes: MAX_LIST_RESP_SIZE,
 	}, params.Descending)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve matches from repository", err)
@@ -1584,8 +1600,9 @@ func handleListMatchAdvances(s *Service, r *http.Request, req RPCRequest) (any, 
 	}
 
 	pagination := repository.Pagination{
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Limit:    params.Limit,
+		Offset:   params.Offset,
+		MaxBytes: MAX_LIST_RESP_SIZE,
 	}
 	matchAdvances, total, err := s.repository.ListMatchAdvances(r.Context(), params.Application,
 		epochIndex, params.TournamentAddress, params.IDHash, pagination, params.Descending)
@@ -1721,7 +1738,7 @@ func handleListBondEvents(s *Service, r *http.Request, req RPCRequest) (any, err
 		return nil, err
 	}
 	filter := repository.BondEventFilter{EpochIndex: epochIndex, TournamentAddress: tournamentAddress}
-	pagination := repository.Pagination{Limit: params.Limit, Offset: params.Offset}
+	pagination := repository.Pagination{Limit: params.Limit, Offset: params.Offset, MaxBytes: MAX_LIST_RESP_SIZE}
 	events, total, err := s.repository.ListBondEvents(r.Context(), params.Application, filter, pagination, params.Descending)
 	if err != nil {
 		return nil, s.repositoryError(r.Context(), "Unable to retrieve bond events from repository", err)
@@ -1793,8 +1810,9 @@ func handleListStandingChanges(s *Service, r *http.Request, req RPCRequest) (any
 	}
 
 	pagination := repository.Pagination{
-		Limit:  params.Limit,
-		Offset: params.Offset,
+		Limit:    params.Limit,
+		Offset:   params.Offset,
+		MaxBytes: MAX_LIST_RESP_SIZE,
 	}
 	standingChanges, total, err := s.repository.ListStandingChanges(r.Context(), params.Application,
 		epochIndex, params.TournamentAddress, pagination, params.Descending)

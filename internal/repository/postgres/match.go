@@ -97,10 +97,14 @@ func (r *PostgresRepository) ListMatches(
 	}
 	defer rows.Close()
 	var values []*model.Match
+	budget := pageByteBudget{max: p.MaxBytes}
 	for rows.Next() {
 		value, err := scanMatch(rows)
 		if err != nil {
 			return nil, 0, err
+		}
+		if !budget.add(*value) {
+			return nil, 0, repository.ErrPageTooLarge
 		}
 		values = append(values, value)
 	}

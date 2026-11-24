@@ -250,14 +250,22 @@ Each admitted request pins its body buffer for the full request lifetime
 `CARTESI_INSPECT_MAX_INFLIGHT × 2 MiB = 128 MiB` for inspect and
 `CARTESI_JSONRPC_MAX_INFLIGHT × 1 MiB = 64 MiB` for JSON-RPC request bodies.
 
-The dominant JSON-RPC term is response buffering: each of the 64 admitted
-requests has a 10 MiB response budget, for up to `64 × 10 MiB = 640 MiB` of
-response buffers under saturation, or approximately 704 MiB including request
-bodies. The budget is enforced while encoding the response, after repository
-rows and decoded response objects have already been materialized; that working
-set is additional and is not bounded by the 10 MiB serialized-response limit.
-Operators should size process RAM headroom accordingly, on top of machine
-state, database connections, and other working memory.
+JSON-RPC applies a 10 MiB serialization budget to each request, shared across
+entries in a batch. At the default concurrency of 64 requests, this amounts
+to `64 × 10 MiB = 640 MiB` of serialized response data, or approximately
+704 MiB including request bodies.
+
+List methods also apply a 5 MiB budget to the estimated size of the Go rows
+they load from PostgreSQL. The repository checks the running estimate as it
+scans and rejects the page if the estimate exceeds the budget. The estimate
+includes Go struct overhead and referenced data, so the effective list
+response limit depends on the rows. A page can return JSON-RPC error
+`-31003` (`Response size limit exceeded`) even if its encoded response
+would fit within 10 MiB.
+
+Database scan buffers, decoded response objects, and encoding allocations
+also consume memory. Operators should allow headroom for that working
+memory, machine state, and database connections.
 
 ## PostgreSQL pool sizing
 

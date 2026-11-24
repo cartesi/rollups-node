@@ -154,6 +154,7 @@ func (r *PostgresRepository) ListReports(
 	defer rows.Close()
 
 	var reports []*model.Report
+	budget := pageByteBudget{max: p.MaxBytes}
 	for rows.Next() {
 		var rp model.Report
 		err := rows.Scan(
@@ -167,6 +168,9 @@ func (r *PostgresRepository) ListReports(
 		)
 		if err != nil {
 			return nil, 0, err
+		}
+		if !budget.add(rp) {
+			return nil, 0, repository.ErrPageTooLarge
 		}
 		reports = append(reports, &rp)
 	}

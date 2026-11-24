@@ -374,6 +374,7 @@ func (r *PostgresRepository) ListOutputs(
 	defer rows.Close()
 
 	var outputs []*model.Output
+	budget := pageByteBudget{max: p.MaxBytes}
 	for rows.Next() {
 		var out model.Output
 		err := rows.Scan(
@@ -390,6 +391,9 @@ func (r *PostgresRepository) ListOutputs(
 		)
 		if err != nil {
 			return nil, 0, err
+		}
+		if !budget.add(out) {
+			return nil, 0, repository.ErrPageTooLarge
 		}
 		outputs = append(outputs, &out)
 	}

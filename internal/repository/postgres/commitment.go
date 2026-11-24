@@ -101,10 +101,14 @@ func (r *PostgresRepository) ListCommitments(
 	}
 	defer rows.Close()
 	var values []*Commitment
+	budget := pageByteBudget{max: p.MaxBytes}
 	for rows.Next() {
 		value, err := scanCommitment(rows)
 		if err != nil {
 			return nil, 0, err
+		}
+		if !budget.add(*value) {
+			return nil, 0, repository.ErrPageTooLarge
 		}
 		values = append(values, value)
 	}

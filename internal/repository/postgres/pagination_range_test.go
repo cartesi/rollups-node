@@ -32,6 +32,16 @@ func TestApplicationAndEpochPaginationIntegerBounds(t *testing.T) {
 		}},
 	} {
 		t.Run(method.name, func(t *testing.T) {
+			count, total, err := method.list(repository.Pagination{MaxBytes: 1})
+			require.ErrorIs(t, err, repository.ErrPageTooLarge)
+			require.Zero(t, count)
+			require.Zero(t, total)
+
+			count, total, err = method.list(repository.Pagination{MaxBytes: 1, Offset: 1})
+			require.NoError(t, err)
+			require.Zero(t, count)
+			require.Equal(t, uint64(1), total)
+
 			for _, p := range []repository.Pagination{{Limit: math.MaxInt64}, {Offset: math.MaxInt64}} {
 				count, total, err := method.list(p)
 				require.NoError(t, err)

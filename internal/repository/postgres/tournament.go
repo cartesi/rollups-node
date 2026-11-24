@@ -105,10 +105,14 @@ func (r *PostgresRepository) ListTournaments(
 	}
 	defer rows.Close()
 	var values []*Tournament
+	budget := pageByteBudget{max: p.MaxBytes}
 	for rows.Next() {
 		value, err := scanTournament(rows)
 		if err != nil {
 			return nil, 0, err
+		}
+		if !budget.add(*value) {
+			return nil, 0, repository.ErrPageTooLarge
 		}
 		values = append(values, value)
 	}

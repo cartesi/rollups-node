@@ -1089,6 +1089,7 @@ func (r *PostgresRepository) ListEpochs(
 	defer rows.Close()
 
 	var epochs []*model.Epoch
+	budget := pageByteBudget{max: p.MaxBytes}
 	for rows.Next() {
 		var ep model.Epoch
 		err := rows.Scan(
@@ -1113,6 +1114,9 @@ func (r *PostgresRepository) ListEpochs(
 		)
 		if err != nil {
 			return nil, 0, err
+		}
+		if !budget.add(ep) {
+			return nil, 0, repository.ErrPageTooLarge
 		}
 		epochs = append(epochs, &ep)
 	}

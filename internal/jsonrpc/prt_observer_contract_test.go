@@ -265,7 +265,7 @@ func TestTournamentEventAPIListFilters(t *testing.T) {
 			params["limit"], params["offset"], params["descending"] = 20000, 3, true
 			_, err = observerAPIRequest(t, repo, method, params)
 			require.NoError(t, err)
-			require.Equal(t, repository.Pagination{Limit: LIST_ITEM_LIMIT, Offset: 3}, repo.pagination)
+			require.Equal(t, repository.Pagination{Limit: LIST_ITEM_LIMIT, Offset: 3, MaxBytes: MAX_LIST_RESP_SIZE}, repo.pagination)
 			require.True(t, repo.descending)
 			if method == observerListBondEventsMethod {
 				require.Equal(t, repository.BondEventFilter{EpochIndex: new(uint64(7)), TournamentAddress: &tournament}, repo.bondFilter)
@@ -564,7 +564,7 @@ func TestStandingChangesScopeAndPagination(t *testing.T) {
 			require.Equal(t, observerTestApplication, repo.application)
 			require.Equal(t, tournament.Hex(), repo.tournamentAddress)
 			require.Equal(t, test.epochValue, repo.epochIndex)
-			require.Equal(t, repository.Pagination{Limit: test.wantLimit, Offset: math.MaxInt64}, repo.pagination)
+			require.Equal(t, repository.Pagination{Limit: test.wantLimit, Offset: math.MaxInt64, MaxBytes: MAX_LIST_RESP_SIZE}, repo.pagination)
 			require.True(t, repo.descending)
 			require.Zero(t, repo.appLookups, "nonempty results need no application lookup")
 			var decoded api.ListResponse[*StandingChanged]
@@ -733,7 +733,7 @@ func TestStandingChangesEmptyPageKeepsScopedTotal(t *testing.T) {
 		[]any{observerTestApplication, "0x0", common.HexToAddress("0x12").Hex(), 1, 100, true})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"data":[],"pagination":{"total_count":3,"limit":1,"offset":100}}`, string(response))
-	require.Equal(t, repository.Pagination{Limit: 1, Offset: 100}, repo.pagination)
+	require.Equal(t, repository.Pagination{Limit: 1, Offset: 100, MaxBytes: MAX_LIST_RESP_SIZE}, repo.pagination)
 	require.True(t, repo.descending)
 	require.Equal(t, 1, repo.appLookups)
 }
