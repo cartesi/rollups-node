@@ -414,7 +414,7 @@ func (s *AdvancerSuite) TestGetUnprocessedInputs() {
 		}
 
 		result, count, err := getUnprocessedInputs(
-			context.Background(), repo, app1.Application.IApplicationAddress.String(), 0, 500)
+			context.Background(), repo, app1.Application.IApplicationAddress.String(), &Epoch{Index: 0}, 500)
 		require.Nil(err)
 		require.Equal(uint64(2), count)
 		require.Equal(inputs, result)
@@ -429,10 +429,51 @@ func (s *AdvancerSuite) TestGetUnprocessedInputs() {
 		}
 
 		_, _, err := getUnprocessedInputs(
-			context.Background(), repo, app1.Application.IApplicationAddress.String(), 0, 500)
+			context.Background(), repo, app1.Application.IApplicationAddress.String(), &Epoch{Index: 0}, 500)
 		require.Error(err)
 		require.Contains(err.Error(), "list inputs error")
 	})
+}
+
+func (s *AdvancerSuite) TestGetUnprocessedInputsBoundsToEpochRange() {
+	require := s.Require()
+
+	app := newMockMachine(1)
+	inputs := []*Input{
+		newInput(app.Application.ID, 0, 0, marshal(randomAdvanceResult(0))),
+		newInput(app.Application.ID, 0, 1, marshal(randomAdvanceResult(1))),
+		newInput(app.Application.ID, 0, 2, marshal(randomAdvanceResult(2))),
+	}
+	address := app.Application.IApplicationAddress
+	repo := &MockRepository{
+		GetInputsReturn: map[common.Address][]*Input{address: inputs},
+	}
+	epoch := &Epoch{
+		Index:                0,
+		Status:               EpochStatus_Closed,
+		InputIndexLowerBound: 0,
+		InputIndexUpperBound: 2,
+	}
+
+	result, total, err := getUnprocessedInputs(
+		context.Background(), repo, address.String(), epoch, 500)
+	require.NoError(err)
+	require.Equal(uint64(2), total,
+		"an input above the sealed upper bound must not be visible to the advancer")
+	require.Len(result, 2)
+	require.Equal(uint64(0), result[0].Index)
+	require.Equal(uint64(1), result[1].Index)
+	require.Len(repo.InputFilters, 1)
+	require.NotNil(repo.InputFilters[0].IndexRange)
+	require.Equal(repository.Range{Start: 0, End: 1}, *repo.InputFilters[0].IndexRange)
+
+	// An empty epoch has no positive range to express as a closed interval.
+	epoch.InputIndexUpperBound = 0
+	_, _, err = getUnprocessedInputs(
+		context.Background(), repo, address.String(), epoch, 500)
+	require.NoError(err)
+	require.Len(repo.InputFilters, 2)
+	require.Nil(repo.InputFilters[1].IndexRange)
 }
 
 func (s *AdvancerSuite) TestProcess() {
@@ -667,7 +708,7 @@ func (s *AdvancerSuite) TestProcess() {
 			require.Equal(1, env.mm.Map[env.app.Application.ID].closeCalls)
 
 			unprocessed, _, listErr := getUnprocessedInputs(
-				context.Background(), env.repo, address.String(), pending.EpochIndex, 500,
+				context.Background(), env.repo, address.String(), &Epoch{Index: pending.EpochIndex}, 500,
 			)
 			require.NoError(listErr)
 			require.Empty(unprocessed,
@@ -2406,6 +2447,7 @@ func (m *MockMachineInstance) Close() error {
 
 type MockRepository struct {
 	EpochFilters                 []repository.EpochFilter
+	InputFilters                 []repository.InputFilter
 	Tournaments                  map[common.Address]*Tournament
 	TournamentReadError          error
 	TournamentReads              []common.Address
@@ -2486,6 +2528,10 @@ func (mock *MockRepository) ListInputs(
 		return nil, 0, ctx.Err()
 	}
 
+	mock.mu.Lock()
+	mock.InputFilters = append(mock.InputFilters, f)
+	mock.mu.Unlock()
+
 	address := common.HexToAddress(nameOrAddress)
 	inputs := mock.GetInputsReturn[address]
 
@@ -2494,6 +2540,15 @@ func (mock *MockRepository) ListInputs(
 		var filtered []*Input
 		for _, inp := range inputs {
 			if inp.EpochIndex == *f.EpochIndex {
+				filtered = append(filtered, inp)
+			}
+		}
+		inputs = filtered
+	}
+	if f.IndexRange != nil {
+		var filtered []*Input
+		for _, inp := range inputs {
+			if inp.Index >= f.IndexRange.Start && inp.Index <= f.IndexRange.End {
 				filtered = append(filtered, inp)
 			}
 		}

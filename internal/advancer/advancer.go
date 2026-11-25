@@ -52,14 +52,23 @@ func getUnprocessedEpochs(ctx context.Context, er AdvancerRepository, address st
 }
 
 // getUnprocessedInputs retrieves inputs that haven't been processed yet with pagination support.
+// The query is bounded by the epoch's attributed index range, so an input that
+// was observed but left outside the seal is never executed under that epoch.
 func getUnprocessedInputs(
 	ctx context.Context,
 	repo AdvancerRepository,
 	appAddress string,
-	epochIndex uint64,
+	epoch *Epoch,
 	batchSize uint64,
 ) ([]*Input, uint64, error) {
+	epochIndex := epoch.Index
 	f := repository.InputFilter{Status: Pointer(InputCompletionStatus_None), EpochIndex: &epochIndex}
+	if epoch.InputIndexLowerBound < epoch.InputIndexUpperBound {
+		f.IndexRange = &repository.Range{
+			Start: epoch.InputIndexLowerBound,
+			End:   epoch.InputIndexUpperBound - 1,
+		}
+	}
 	return repo.ListInputs(ctx, appAddress, f, repository.Pagination{Limit: batchSize}, false)
 }
 
@@ -134,7 +143,7 @@ func (s *Service) stepApp(ctx context.Context, app *Application) (bool, error) {
 	budgetRemaining := s.inputBatchSize
 	for _, epoch := range epochs {
 		moreInputs, processed, terminal, err := s.processEpochInputs(
-			ctx, app, epoch.Index, budgetRemaining,
+			ctx, app, epoch, budgetRemaining,
 		)
 		if err != nil {
 			return false, err
@@ -208,10 +217,10 @@ func (s *Service) finalizeEpoch(ctx context.Context, app *Application, epoch *Ep
 // for an epoch. Returns whether more unprocessed inputs remain in this epoch
 // and the number of inputs actually processed.
 func (s *Service) processEpochInputs(
-	ctx context.Context, app *Application, epochIndex uint64, budget uint64,
+	ctx context.Context, app *Application, epoch *Epoch, budget uint64,
 ) (bool, uint64, bool, error) {
 	appAddress := app.IApplicationAddress.String()
-	inputs, total, err := getUnprocessedInputs(ctx, s.repository, appAddress, epochIndex, budget)
+	inputs, total, err := getUnprocessedInputs(ctx, s.repository, appAddress, epoch, budget)
 	if err != nil {
 		return false, 0, false, err
 	}
@@ -219,7 +228,7 @@ func (s *Service) processEpochInputs(
 		return false, 0, false, nil
 	}
 	s.Logger.Debug("Processing inputs",
-		"application", app.Name, "epoch_index", epochIndex,
+		"application", app.Name, "epoch_index", epoch.Index,
 		"count", len(inputs), "total", total)
 	processed, terminal, err := s.processInputs(ctx, app, inputs)
 	if err != nil {
