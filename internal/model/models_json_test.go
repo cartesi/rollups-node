@@ -221,6 +221,52 @@ func TestInputJSONDistinguishesMissingAndEmptyExceptionData(t *testing.T) {
 	require.Contains(t, string(data), `"exception_data":"0x"`)
 }
 
+func TestUnattributedInputJSONOmitsEpochAndTimestamps(t *testing.T) {
+	input := Input{Index: 7, BlockNumber: 90, RawData: []byte{1}, LogIndex: 2, Unattributed: true}
+	data, err := json.Marshal(&input)
+	require.NoError(t, err)
+	require.NotContains(t, string(data), `"epoch_index"`)
+	require.NotContains(t, string(data), `"created_at"`)
+	require.NotContains(t, string(data), `"updated_at"`)
+	require.Contains(t, string(data), `"index":"0x7"`)
+	require.Contains(t, string(data), `"raw_data":"0x01"`)
+
+	input.Unattributed = false
+	data, err = json.Marshal(&input)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"epoch_index":"0x0"`)
+	require.Contains(t, string(data), `"created_at"`)
+	require.Contains(t, string(data), `"updated_at"`)
+}
+
+func TestUnattributedInputJSONRoundtrip(t *testing.T) {
+	original := Input{
+		Index:           7,
+		BlockNumber:     90,
+		RawData:         []byte{0xde, 0xad},
+		TransactionHash: common.HexToHash("0x5678"),
+		LogIndex:        11,
+		Unattributed:    true,
+	}
+
+	data, err := json.Marshal(&original)
+	require.NoError(t, err)
+	require.NotContains(t, string(data), `"epoch_index"`)
+
+	var decoded Input
+	require.NoError(t, json.Unmarshal(data, &decoded))
+
+	require.True(t, decoded.Unattributed)
+	require.Zero(t, decoded.EpochIndex)
+	require.Equal(t, original.Index, decoded.Index)
+	require.Equal(t, original.BlockNumber, decoded.BlockNumber)
+	require.Equal(t, original.RawData, decoded.RawData)
+	require.Equal(t, original.TransactionHash, decoded.TransactionHash)
+	require.Equal(t, original.LogIndex, decoded.LogIndex)
+	require.Zero(t, decoded.CreatedAt)
+	require.Zero(t, decoded.UpdatedAt)
+}
+
 func TestInputUnmarshalJSONInvalidHex(t *testing.T) {
 	validJSON := `{"epoch_index":"0x0","index":"0x0","block_number":"0x0","raw_data":"0x","log_index":"0x0"}`
 	tests := []struct {

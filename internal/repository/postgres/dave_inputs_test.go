@@ -249,6 +249,91 @@ func TestAttributeSealedEpochRejectsExecutedSurplus(t *testing.T) {
 	require.Equal(t, model.InputCompletionStatus_Accepted, stored[2].Status)
 }
 
+func TestHistoricalInputLookupsIncludeObservedSurplus(t *testing.T) {
+	ctx, repo, app := setupDaveInputRepository(t)
+	address := app.IApplicationAddress.Hex()
+
+	observed := []*model.Input{
+		daveInput(0, 90),
+		daveInput(1, 90),
+		daveInput(2, 90),
+	}
+	require.NoError(t, repo.ObserveDaveInputs(ctx, address, 90, 3, observed))
+
+	// A by-index lookup must find an input that has no epoch yet.
+	got, err := repo.GetInput(ctx, address, 2)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.True(t, got.Unattributed)
+	require.Equal(t, uint64(2), got.Index)
+	require.Equal(t, model.InputCompletionStatus_None, got.Status)
+	require.True(t, got.CreatedAt.IsZero())
+
+	// ListInputs unions attributed and observed rows without exposing a fake
+	// epoch on the observed one.
+	all, total, err := repo.ListInputs(ctx, address, repository.InputFilter{},
+		repository.Pagination{Limit: 10}, false)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), total)
+	require.Len(t, all, 3)
+	require.True(t, all[0].Unattributed)
+	require.True(t, all[2].Unattributed)
+
+	descending, total, err := repo.ListInputs(ctx, address, repository.InputFilter{},
+		repository.Pagination{Limit: 1}, true)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), total)
+	require.Len(t, descending, 1)
+	require.Equal(t, uint64(2), descending[0].Index)
+	require.True(t, descending[0].Unattributed)
+
+	// An epoch filter cannot match observed rows.
+	_, total, err = repo.ListInputs(ctx, address, repository.InputFilter{
+		EpochIndex: new(uint64),
+	}, repository.Pagination{Limit: 10}, false)
+	require.NoError(t, err)
+	require.Zero(t, total)
+
+	// Status filters treat an observed row as NONE.
+	none := model.InputCompletionStatus_None
+	_, total, err = repo.ListInputs(ctx, address, repository.InputFilter{Status: &none},
+		repository.Pagination{Limit: 10}, false)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), total)
+
+	accepted := model.InputCompletionStatus_Accepted
+	_, total, err = repo.ListInputs(ctx, address, repository.InputFilter{Status: &accepted},
+		repository.Pagination{Limit: 10}, false)
+	require.NoError(t, err)
+	require.Zero(t, total)
+
+	// Once the prefix is attributed, the surplus remains queryable next to it.
+	sealed := &model.Epoch{
+		Index:                0,
+		FirstBlock:           10,
+		LastBlock:            100,
+		InputIndexLowerBound: 0,
+		InputIndexUpperBound: 2,
+		Status:               model.EpochStatus_Closed,
+	}
+	require.NoError(t, repo.AttributeSealedEpoch(ctx, address, sealed, observed[:2]))
+
+	all, total, err = repo.ListInputs(ctx, address, repository.InputFilter{},
+		repository.Pagination{Limit: 10}, false)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), total)
+	require.Len(t, all, 3)
+	require.False(t, all[0].Unattributed)
+	require.False(t, all[1].Unattributed)
+	require.True(t, all[2].Unattributed, "the observed surplus stays queryable")
+
+	got, err = repo.GetInput(ctx, address, 1)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.False(t, got.Unattributed)
+	require.Equal(t, uint64(0), got.EpochIndex)
+}
+
 func TestDaveInputObservationIsMonotonic(t *testing.T) {
 	ctx, repo, app := setupDaveInputRepository(t)
 	address := app.IApplicationAddress.Hex()

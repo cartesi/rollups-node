@@ -227,11 +227,13 @@ type EpochRepository interface {
 	AttributeSealedEpoch(ctx context.Context, nameOrAddress string, epoch *Epoch, inputs []*Input) error
 
 	// ProjectDaveOpenInputs stores the current OPEN Dave epoch and exactly the
-	// observed inputs in its [lower, upper) index range, removes them from
-	// observed_input, and advances LastInputCheckBlock to throughBlock in the
-	// same transaction. It is the single writer of LastInputCheckBlock on the
-	// Dave path. A stale projection into an epoch that is no longer OPEN is
-	// rejected with ErrNoUpdate.
+	// newly grown prefix of observed inputs in [previousUpper, upper), where
+	// previousUpper is the stored upper bound (or lower on first projection). It
+	// removes those rows from observed_input and advances LastInputCheckBlock to
+	// throughBlock in the same transaction. It is the single writer of
+	// LastInputCheckBlock on the Dave path. The stored range may grow but never
+	// narrow; a stale projection into an epoch that is no longer OPEN is rejected
+	// with ErrNoUpdate, and a shrinking range with ErrEpochInputRangeConflict.
 	ProjectDaveOpenInputs(ctx context.Context, nameOrAddress string, epoch *Epoch, inputs []*Input, throughBlock uint64) error
 
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
@@ -293,9 +295,16 @@ type EpochRepository interface {
 }
 
 type InputRepository interface {
+	// GetInput returns an attributed input or, for a Dave application, an
+	// observed-but-unattributed one. The latter has Unattributed set and no
+	// epoch; execution lookups must restrict themselves to attributed rows.
 	GetInput(ctx context.Context, nameOrAddress string, inputIndex uint64) (*Input, error)
+	// GetLastInput is an execution lookup and only sees attributed inputs.
 	GetLastInput(ctx context.Context, appAddress string, epochIndex uint64) (*Input, error)
 	GetLastProcessedInput(ctx context.Context, appAddress string) (*Input, error)
+	// ListInputs returns attributed inputs plus observed-but-unattributed
+	// inputs. An EpochIndex or non-NONE Status filter excludes the latter, so
+	// execution callers that set an epoch never see them.
 	ListInputs(ctx context.Context, nameOrAddress string, f InputFilter, p Pagination, descending bool) ([]*Input, uint64, error)
 	GetNumberOfInputs(ctx context.Context, nameOrAddress string) (uint64, error)
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
@@ -317,10 +326,6 @@ type InputRepository interface {
 	// closed index range [lower, upper), ordered by index. Epoch fields are
 	// unset because these rows have no epoch yet.
 	ListObservedInputs(ctx context.Context, nameOrAddress string, lower, upper uint64) ([]*Input, error)
-
-	// CountObservedInputs returns the number of observed-but-not-yet-attributed
-	// inputs for the application.
-	CountObservedInputs(ctx context.Context, nameOrAddress string) (uint64, error)
 }
 
 const MaxOutputRangeRows uint64 = 65_536

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
@@ -23,7 +24,7 @@ func (r *PostgresRepository) GetInput(
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
-	sel := table.Input.
+	attributed := table.Input.
 		SELECT(
 			table.Input.EpochApplicationID,
 			table.Input.EpochIndex,
@@ -39,6 +40,7 @@ func (r *PostgresRepository) GetInput(
 			table.Input.SnapshotURI,
 			table.Input.CreatedAt,
 			table.Input.UpdatedAt,
+			postgres.Bool(false),
 		).
 		FROM(
 			table.Input.
@@ -51,10 +53,40 @@ func (r *PostgresRepository) GetInput(
 				AND(table.Input.Index.EQ(uint64Expr(inputIndex))),
 		)
 
-	sqlStr, args := sel.Sql()
+	observed := table.ObservedInput.
+		SELECT(
+			table.Application.ID,
+			uint64Expr(0),
+			table.ObservedInput.Index,
+			table.ObservedInput.BlockNumber,
+			table.ObservedInput.RawData,
+			postgres.NewEnumValue(model.InputCompletionStatus_None.String()),
+			postgres.NULL,
+			postgres.NULL,
+			postgres.NULL,
+			table.ObservedInput.TransactionHash,
+			table.ObservedInput.LogIndex,
+			postgres.NULL,
+			postgres.NULL,
+			postgres.NULL,
+			postgres.Bool(true),
+		).
+		FROM(
+			table.ObservedInput.
+				INNER_JOIN(table.Application,
+					table.ObservedInput.ApplicationID.EQ(table.Application.ID),
+				),
+		).
+		WHERE(
+			whereClause.
+				AND(table.ObservedInput.Index.EQ(uint64Expr(inputIndex))),
+		)
+
+	sqlStr, args := postgres.UNION_ALL(attributed, observed).LIMIT(1).Sql()
 	row := r.db.QueryRow(ctx, sqlStr, args...)
 
 	var inp model.Input
+	var createdAt, updatedAt *time.Time
 	err := row.Scan(
 		&inp.EpochApplicationID,
 		&inp.EpochIndex,
@@ -68,8 +100,9 @@ func (r *PostgresRepository) GetInput(
 		&inp.TransactionHash,
 		&inp.LogIndex,
 		&inp.SnapshotURI,
-		&inp.CreatedAt,
-		&inp.UpdatedAt,
+		&createdAt,
+		&updatedAt,
+		&inp.Unattributed,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -77,6 +110,7 @@ func (r *PostgresRepository) GetInput(
 	if err != nil {
 		return nil, err
 	}
+	setInputTimestamps(&inp, createdAt, updatedAt)
 	return &inp, nil
 }
 
@@ -213,6 +247,11 @@ func (r *PostgresRepository) GetLastProcessedInput(
 	return &inp, nil
 }
 
+const (
+	inputSenderOffset = 81
+	inputSenderLength = 20
+)
+
 func (r *PostgresRepository) ListInputs(
 	ctx context.Context,
 	nameOrAddress string,
@@ -246,13 +285,22 @@ func (r *PostgresRepository) ListInputs(
 	}
 	if f.Sender != nil {
 		conditions = append(conditions,
-			SubstrBytea(table.Input.RawData, 81, 20).EQ(postgres.Bytea(f.Sender.Bytes())),
+			SubstrBytea(table.Input.RawData, inputSenderOffset, inputSenderLength).EQ(postgres.Bytea(f.Sender.Bytes())),
 		)
 	}
 	if f.TransactionHash != nil {
 		conditions = append(conditions,
 			table.Input.TransactionHash.EQ(postgres.Bytea(f.TransactionHash.Bytes())),
 		)
+	}
+
+	observedFromClause := table.ObservedInput.
+		INNER_JOIN(table.Application,
+			table.ObservedInput.ApplicationID.EQ(table.Application.ID),
+		)
+	observedConditions, includeObserved := observedInputConditions(whereClause, f)
+	if !includeObserved {
+		observedConditions = []postgres.BoolExpression{postgres.Bool(false)}
 	}
 
 	tx, err := beginReadTx(ctx, r.db)
@@ -267,11 +315,20 @@ func (r *PostgresRepository) ListInputs(
 	if err != nil {
 		return nil, 0, err
 	}
+	if includeObserved {
+		observedCountStmt := table.ObservedInput.SELECT(postgres.COUNT(postgres.STAR)).
+			FROM(observedFromClause).WHERE(postgres.AND(observedConditions...))
+		observedTotal, err := countFromTx(ctx, tx, observedCountStmt)
+		if err != nil {
+			return nil, 0, err
+		}
+		total += observedTotal
+	}
 	if total == 0 {
 		return nil, 0, nil
 	}
 
-	sel := table.Input.
+	attributedSel := table.Input.
 		SELECT(
 			table.Input.EpochApplicationID,
 			table.Input.EpochIndex,
@@ -287,10 +344,33 @@ func (r *PostgresRepository) ListInputs(
 			table.Input.SnapshotURI,
 			table.Input.CreatedAt,
 			table.Input.UpdatedAt,
+			postgres.Bool(false),
 		).
 		FROM(fromClause).
 		WHERE(postgres.AND(conditions...))
 
+	observedSel := table.ObservedInput.
+		SELECT(
+			table.Application.ID,
+			uint64Expr(0),
+			table.ObservedInput.Index,
+			table.ObservedInput.BlockNumber,
+			table.ObservedInput.RawData,
+			postgres.NewEnumValue(model.InputCompletionStatus_None.String()),
+			postgres.NULL,
+			postgres.NULL,
+			postgres.NULL,
+			table.ObservedInput.TransactionHash,
+			table.ObservedInput.LogIndex,
+			postgres.NULL,
+			postgres.NULL,
+			postgres.NULL,
+			postgres.Bool(true),
+		).
+		FROM(observedFromClause).
+		WHERE(postgres.AND(observedConditions...))
+
+	sel := postgres.UNION_ALL(attributedSel, observedSel)
 	if descending {
 		sel = sel.ORDER_BY(table.Input.Index.DESC())
 	} else {
@@ -313,6 +393,7 @@ func (r *PostgresRepository) ListInputs(
 	var inputs []*model.Input
 	for rows.Next() {
 		var in model.Input
+		var createdAt, updatedAt *time.Time
 		err := rows.Scan(
 			&in.EpochApplicationID,
 			&in.EpochIndex,
@@ -326,18 +407,66 @@ func (r *PostgresRepository) ListInputs(
 			&in.TransactionHash,
 			&in.LogIndex,
 			&in.SnapshotURI,
-			&in.CreatedAt,
-			&in.UpdatedAt,
+			&createdAt,
+			&updatedAt,
+			&in.Unattributed,
 		)
 		if err != nil {
 			return nil, 0, err
 		}
+		setInputTimestamps(&in, createdAt, updatedAt)
 		inputs = append(inputs, &in)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
 	}
 	return inputs, total, nil
+}
+
+// observedInputConditions mirrors the attributed-input filters for the
+// observed-but-unattributed rows. An epoch filter cannot match these rows, and
+// their status is always NONE until they are attributed.
+func observedInputConditions(
+	whereClause postgres.BoolExpression,
+	f repository.InputFilter,
+) ([]postgres.BoolExpression, bool) {
+	if f.EpochIndex != nil {
+		return nil, false
+	}
+	if f.Status != nil && *f.Status != model.InputCompletionStatus_None {
+		return nil, false
+	}
+	if f.NotStatus != nil && *f.NotStatus == model.InputCompletionStatus_None {
+		return nil, false
+	}
+
+	conditions := []postgres.BoolExpression{whereClause}
+	if f.IndexRange != nil {
+		conditions = append(conditions,
+			table.ObservedInput.Index.GT_EQ(uint64Expr(f.IndexRange.Start)),
+			table.ObservedInput.Index.LT_EQ(uint64Expr(f.IndexRange.End)),
+		)
+	}
+	if f.Sender != nil {
+		conditions = append(conditions,
+			SubstrBytea(table.ObservedInput.RawData, inputSenderOffset, inputSenderLength).EQ(postgres.Bytea(f.Sender.Bytes())),
+		)
+	}
+	if f.TransactionHash != nil {
+		conditions = append(conditions,
+			table.ObservedInput.TransactionHash.EQ(postgres.Bytea(f.TransactionHash.Bytes())),
+		)
+	}
+	return conditions, true
+}
+
+func setInputTimestamps(input *model.Input, createdAt, updatedAt *time.Time) {
+	if createdAt != nil {
+		input.CreatedAt = *createdAt
+	}
+	if updatedAt != nil {
+		input.UpdatedAt = *updatedAt
+	}
 }
 
 func (r *PostgresRepository) GetNumberOfInputs(

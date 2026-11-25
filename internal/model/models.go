@@ -75,7 +75,13 @@ func (a *Application) NeedsL1Observation() bool {
 // DaveConsensus has two independent scans: sealed epochs advance
 // last_epoch_check_block, while inputs in the current open epoch advance
 // last_input_check_block. Both must reach the foreclosure boundary before its
-// historical state is complete. This is the single definition of
+// historical state is complete. For Dave, last_input_check_block is the OPEN
+// projection cursor: it is published only after the L1 observation frontier
+// has committed through that block, so projection coverage also proves that
+// the observed history is complete. Inputs observed above the capped OPEN
+// projection are deliberately outside this obligation: they belong to no
+// epoch, and after foreclosure no further EpochSealed can cover them, so they
+// must not keep the machine alive. This is the single definition of
 // drain-readiness shared by the claimer, PRT, and manager.
 //
 // Only meaningful for a foreclosed app (foreclose_block != 0).
@@ -926,6 +932,11 @@ type Input struct {
 	SnapshotURI        *string               `json:"-"`
 	CreatedAt          time.Time             `json:"created_at"`
 	UpdatedAt          time.Time             `json:"updated_at"`
+	// Unattributed marks an input that the node observed on L1 but that no
+	// EpochSealed event has assigned to a Dave epoch yet. Such a row has no
+	// epoch, completion status, or execution metadata; it is only visible to
+	// historical lookups.
+	Unattributed bool `json:"-"`
 }
 
 func (i *Input) MarshalJSON() ([]byte, error) {
@@ -937,21 +948,34 @@ func (i *Input) MarshalJSON() ([]byte, error) {
 		encoded := hexutil.Encode(i.ExceptionData)
 		exceptionData = &encoded
 	}
+	// An observed-but-unattributed input has no epoch and no timestamps. Omit
+	// those fields instead of exposing a misleading zero epoch or year-1 time.
+	var epochIndex string
+	var createdAt, updatedAt *time.Time
+	if !i.Unattributed {
+		epochIndex = fmt.Sprintf("0x%x", i.EpochIndex)
+		createdAt = &i.CreatedAt
+		updatedAt = &i.UpdatedAt
+	}
 	aux := &struct {
-		EpochIndex    string  `json:"epoch_index"`
-		Index         string  `json:"index"`
-		BlockNumber   string  `json:"block_number"`
-		RawData       string  `json:"raw_data"`
-		ExceptionData *string `json:"exception_data"`
-		LogIndex      string  `json:"log_index"`
+		EpochIndex    string     `json:"epoch_index,omitempty"`
+		Index         string     `json:"index"`
+		BlockNumber   string     `json:"block_number"`
+		RawData       string     `json:"raw_data"`
+		ExceptionData *string    `json:"exception_data"`
+		LogIndex      string     `json:"log_index"`
+		CreatedAt     *time.Time `json:"created_at,omitempty"`
+		UpdatedAt     *time.Time `json:"updated_at,omitempty"`
 		*Alias
 	}{
-		EpochIndex:    fmt.Sprintf("0x%x", i.EpochIndex),
+		EpochIndex:    epochIndex,
 		Index:         fmt.Sprintf("0x%x", i.Index),
 		BlockNumber:   fmt.Sprintf("0x%x", i.BlockNumber),
 		RawData:       "0x" + hex.EncodeToString(i.RawData),
 		ExceptionData: exceptionData,
 		LogIndex:      fmt.Sprintf("0x%x", i.LogIndex),
+		CreatedAt:     createdAt,
+		UpdatedAt:     updatedAt,
 		Alias:         (*Alias)(i),
 	}
 	return json.Marshal(aux)
@@ -959,8 +983,10 @@ func (i *Input) MarshalJSON() ([]byte, error) {
 
 func (i *Input) UnmarshalJSON(in []byte) error {
 	type Alias Input
+	// A pointer distinguishes an absent epoch_index, which marks an observed
+	// but unattributed input, from a present but invalid one.
 	aux := &struct {
-		EpochIndex    string  `json:"epoch_index"`
+		EpochIndex    *string `json:"epoch_index"`
 		Index         string  `json:"index"`
 		BlockNumber   string  `json:"block_number"`
 		RawData       string  `json:"raw_data"`
@@ -974,9 +1000,15 @@ func (i *Input) UnmarshalJSON(in []byte) error {
 		return err
 	}
 
-	i.EpochIndex, err = ParseHexUint64(aux.EpochIndex)
-	if err != nil {
-		return fmt.Errorf("error on EpochIndex: %w", err)
+	if aux.EpochIndex == nil {
+		i.EpochIndex = 0
+		i.Unattributed = true
+	} else {
+		i.EpochIndex, err = ParseHexUint64(*aux.EpochIndex)
+		if err != nil {
+			return fmt.Errorf("error on EpochIndex: %w", err)
+		}
+		i.Unattributed = false
 	}
 
 	i.Index, err = ParseHexUint64(aux.Index)
