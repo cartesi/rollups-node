@@ -12,7 +12,6 @@ import (
 	"github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -41,8 +40,6 @@ func TestDaveInputStoreErrorClassification(t *testing.T) {
 		} {
 			t.Run(path+"/"+test.name, func(t *testing.T) {
 				repo := newMockRepository()
-				inputBox := newMockInputBox()
-				dave := newMockDaveConsensus()
 				r := &Service{repository: repo}
 				r.Logger = testLogger(t)
 				app := appContracts{
@@ -51,14 +48,24 @@ func TestDaveInputStoreErrorClassification(t *testing.T) {
 						IApplicationAddress: app1Addr, IConsensusAddress: consensusAddr,
 						IInputBoxBlock: head, LastEpochCheckBlock: head - 1, LastInputCheckBlock: head - 1,
 					},
-					inputSource: inputBox, daveConsensus: dave,
 				}
-				checkpoint := head
+				inputEvent := makeInputEvent(app1Addr, 0, head)
+				input := &model.Input{
+					Index:           0,
+					BlockNumber:     head,
+					RawData:         inputEvent.Input,
+					Status:          model.InputCompletionStatus_None,
+					TransactionHash: inputEvent.Raw.TxHash,
+				}
+				storeErr := fmt.Errorf("insert inputs: %w", test.cause)
+
 				if sealed {
-					checkpoint--
 					tournament := common.HexToAddress("0x1234")
+					dave := newMockDaveConsensus()
+					app.daveConsensus = dave
 					app.application.LastEpochCheckBlock = 0
-					dave.On("GetDeploymentBlockNumber", blockRange(head, head+1)).Return(new(big.Int).SetUint64(head), nil).Once()
+					dave.On("GetDeploymentBlockNumber", blockRange(head, head+1)).
+						Return(new(big.Int).SetUint64(head), nil).Once()
 					repo.On("GetEpoch", t.Context(), app1Addr.Hex(), uint64(0)).Return(nil, nil).Once()
 					dave.On("GetCurrentSealedEpoch", blockRange(head, head+1)).
 						Return(makeSealedEpochResult(0, 0, 1, tournament), nil).Twice()
@@ -67,6 +74,10 @@ func TestDaveInputStoreErrorClassification(t *testing.T) {
 					})).Return([]*idaveconsensus.IDaveConsensusEpochSealed{
 						makeSealedEpochEvent(0, 0, 1, head, tournament),
 					}, nil).Once()
+					repo.On("ListObservedInputs", t.Context(), app1Addr.Hex(), uint64(0), uint64(1)).
+						Return([]*model.Input{input}, nil).Once()
+					repo.On("AttributeSealedEpoch", t.Context(), app1Addr.Hex(),
+						mock.Anything, mock.Anything).Return(storeErr).Once()
 				} else {
 					repo.On("GetLastNonOpenEpoch", t.Context(), app1Addr.Hex()).Return(&model.Epoch{
 						Index: 0, LastBlock: head - 1, Status: model.EpochStatus_Closed,
@@ -74,16 +85,13 @@ func TestDaveInputStoreErrorClassification(t *testing.T) {
 					repo.On("GetEpoch", t.Context(), app1Addr.Hex(), uint64(1)).Return(nil, nil).Once()
 					repo.On("GetEventLastCheckBlock", t.Context(), app.application.ID, model.MonitoredEvent_InputAdded).
 						Return(head-1, nil).Once()
-					repo.On("GetNumberOfInputs", t.Context(), app1Addr.Hex()).Return(uint64(0), nil).Once()
+					repo.On("GetInputObservation", t.Context(), app1Addr.Hex()).
+						Return(&model.InputObservation{ThroughBlock: head, NextInputIndex: 1}, nil).Once()
+					repo.On("ListObservedInputs", t.Context(), app1Addr.Hex(), uint64(0), uint64(1)).
+						Return([]*model.Input{input}, nil).Once()
+					repo.On("ProjectDaveOpenInputs", t.Context(), app1Addr.Hex(),
+						mock.Anything, mock.Anything, head).Return(storeErr).Once()
 				}
-				inputBox.On("GetNumberOfInputs", blockRange(head, head+1), app1Addr).Return(big.NewInt(1), nil).Once()
-				inputBox.On("RetrieveInputs", mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-					return opts.Start == head && opts.End != nil && *opts.End == head
-				}), []common.Address{app1Addr}, mock.Anything).
-					Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 0, head)}, nil).Once()
-				storeErr := fmt.Errorf("insert inputs: %w", test.cause)
-				repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, checkpoint).
-					Return(storeErr).Once()
 				if test.corrupt {
 					repo.On("UpdateApplicationStatus", t.Context(), app.application.ID,
 						model.ApplicationStatus_Corrupted, mock.Anything).Return(nil).Once()
@@ -93,7 +101,9 @@ func TestDaveInputStoreErrorClassification(t *testing.T) {
 				if sealed {
 					err = r.processApplicationSealedEpochs(t.Context(), app, head)
 				} else {
-					err = r.processApplicationOpenEpoch(t.Context(), app, head)
+					observation, obsErr := repo.GetInputObservation(t.Context(), app1Addr.Hex())
+					require.NoError(t, obsErr)
+					err = r.projectDaveOpenEpoch(t.Context(), app, head, observation)
 				}
 				require.ErrorContains(t, err, storeErr.Error())
 				if test.corrupt {
@@ -113,8 +123,9 @@ func TestDaveInputStoreErrorClassification(t *testing.T) {
 				require.Equal(t, head-1, app.application.LastInputCheckBlock)
 				repo.AssertNotCalled(t, "UpdateEventLastCheckBlock", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 				repo.AssertExpectations(t)
-				inputBox.AssertExpectations(t)
-				dave.AssertExpectations(t)
+				if sealed {
+					app.daveConsensus.(*MockDaveConsensus).AssertExpectations(t)
+				}
 			})
 		}
 	}
@@ -154,36 +165,46 @@ func TestDaveRecordedIntegrityFaultKeepsOtherApplicationsScanning(t *testing.T) 
 				good.application.LastEpochCheckBlock = head
 				good.application.LastInputCheckBlock = head - 1
 
-				checkpoint := head
+				// Observation already covers the head for both applications and
+				// finds nothing pending. The fault is in the epoch store.
+				repo.On("GetInputObservation", t.Context(), app1Addr.Hex()).
+					Return(&model.InputObservation{ThroughBlock: head, NextInputIndex: 0}, nil).Once()
+				repo.On("GetInputObservation", t.Context(), app2Addr.Hex()).
+					Return(&model.InputObservation{ThroughBlock: head, NextInputIndex: 0}, nil).Once()
+
 				if path == daveSealedScan {
-					checkpoint--
-					bad.application.LastEpochCheckBlock = 0
 					tournament := common.HexToAddress("0x1234")
-					dave.On("GetDeploymentBlockNumber", blockRange(head, head+1)).Return(new(big.Int).SetUint64(head), nil).Once()
+					bad.application.LastEpochCheckBlock = 0
+					dave.On("GetDeploymentBlockNumber", blockRange(head, head+1)).
+						Return(new(big.Int).SetUint64(head), nil).Once()
 					dave.On("GetCurrentSealedEpoch", blockRange(head, head+1)).
 						Return(makeSealedEpochResult(0, 0, 0, tournament), nil).Twice()
 					dave.On("RetrieveSealedEpochs", mock.Anything).Return([]*idaveconsensus.IDaveConsensusEpochSealed{
 						makeSealedEpochEvent(0, 0, 0, head, tournament),
 					}, nil).Once()
 					repo.On("GetEpoch", t.Context(), app1Addr.Hex(), uint64(0)).Return(nil, nil).Once()
-				}
-				for _, app := range []appContracts{bad, good} {
-					if app.application.ID == bad.application.ID && path == daveSealedScan {
-						continue
-					}
-					address := app.application.IApplicationAddress
-					repo.On("GetLastNonOpenEpoch", t.Context(), address.Hex()).Return(&model.Epoch{
+					repo.On("AttributeSealedEpoch", t.Context(), app1Addr.Hex(),
+						mock.Anything, mock.Anything).Return(repository.ErrInputLogIdentityConflict).Once()
+				} else {
+					repo.On("GetLastNonOpenEpoch", t.Context(), app1Addr.Hex()).Return(&model.Epoch{
 						Index: 0, LastBlock: head - 1, Status: model.EpochStatus_Closed,
 					}, nil).Once()
-					repo.On("GetEpoch", t.Context(), address.Hex(), uint64(1)).Return(nil, nil).Once()
-					repo.On("GetEventLastCheckBlock", t.Context(), app.application.ID, model.MonitoredEvent_InputAdded).
+					repo.On("GetEpoch", t.Context(), app1Addr.Hex(), uint64(1)).Return(nil, nil).Once()
+					repo.On("GetEventLastCheckBlock", t.Context(), bad.application.ID, model.MonitoredEvent_InputAdded).
 						Return(head-1, nil).Once()
-					repo.On("GetNumberOfInputs", t.Context(), address.Hex()).Return(uint64(0), nil).Once()
-					inputBox.On("GetNumberOfInputs", blockRange(head, head+1), address).Return(new(big.Int), nil).Once()
+					repo.On("ProjectDaveOpenInputs", t.Context(), app1Addr.Hex(),
+						mock.Anything, mock.Anything, head).Return(repository.ErrInputLogIdentityConflict).Once()
 				}
-				repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, checkpoint).
-					Return(repository.ErrInputLogIdentityConflict).Once()
-				repo.On("CreateEpochsAndInputs", t.Context(), app2Addr.Hex(), mock.Anything, head).Return(nil).Once()
+
+				repo.On("GetLastNonOpenEpoch", t.Context(), app2Addr.Hex()).Return(&model.Epoch{
+					Index: 0, LastBlock: head - 1, Status: model.EpochStatus_Closed,
+				}, nil).Once()
+				repo.On("GetEpoch", t.Context(), app2Addr.Hex(), uint64(1)).Return(nil, nil).Once()
+				repo.On("GetEventLastCheckBlock", t.Context(), good.application.ID, model.MonitoredEvent_InputAdded).
+					Return(head-1, nil).Once()
+				repo.On("ProjectDaveOpenInputs", t.Context(), app2Addr.Hex(),
+					mock.Anything, mock.Anything, head).Return(nil).Once()
+
 				integrityRecorded := test.status == model.ApplicationStatus_Corrupted || test.status == model.ApplicationStatus_Diverged
 				if !integrityRecorded {
 					repo.On("UpdateApplicationStatus", t.Context(), bad.application.ID, model.ApplicationStatus_Corrupted, mock.Anything).
@@ -201,7 +222,6 @@ func TestDaveRecordedIntegrityFaultKeepsOtherApplicationsScanning(t *testing.T) 
 				require.Equal(t, head-1, bad.application.LastInputCheckBlock)
 				repo.AssertNotCalled(t, "UpdateEventLastCheckBlock", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 				repo.AssertExpectations(t)
-				inputBox.AssertExpectations(t)
 				dave.AssertExpectations(t)
 			})
 		}

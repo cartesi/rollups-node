@@ -686,7 +686,10 @@ func getMachineApplications(ctx context.Context, repo MachineRepository) ([]*mod
 		// incomplete, so HasUndrainedEpochsBeforeBlock would return false on an
 		// empty table and the machine would be torn down before the pre-
 		// foreclosure inputs it still needs to advance are even ingested. Keep
-		// the machine until the scan has caught up.
+		// the machine until the scan has caught up. Inputs observed above Dave's
+		// capped OPEN projection are not part of any epoch and, after
+		// foreclosure, can never be sealed; they therefore do not keep the
+		// machine alive.
 		if !app.ForeclosureScanCaughtUp() {
 			apps = append(apps, app)
 			continue

@@ -8,7 +8,6 @@ import (
 
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -131,13 +130,10 @@ func (s *SealedEpochsSuite) TestSealedEpochsEndToEndTwoTransitions() {
 	).Return(nil)
 
 	var storedEpochs []*Epoch
-	s.repository.On("CreateEpochsAndInputs",
+	s.repository.On("AttributeSealedEpoch",
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 	).Run(func(args mock.Arguments) {
-		epochInputMap := args.Get(2).(map[*Epoch][]*Input)
-		for epoch := range epochInputMap {
-			storedEpochs = append(storedEpochs, epoch)
-		}
+		storedEpochs = append(storedEpochs, args.Get(2).(*Epoch))
 	}).Return(nil)
 
 	s.repository.On("UpdateEventLastCheckBlock",
@@ -168,75 +164,56 @@ func (s *SealedEpochsSuite) TestSealedEpochsEndToEndTwoTransitions() {
 	s.Require().Equal(EpochStatus_Closed, storedEpochs[1].Status)
 	s.Require().Equal(&tournamentAddr1, storedEpochs[1].TournamentAddress)
 
-	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 2)
+	s.repository.AssertNumberOfCalls(s.T(), "AttributeSealedEpoch", 2)
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 1)
 }
 
 // --- Test 2: Open epoch happy path — new epoch with 1 input ---
-// Exercises processApplicationOpenEpoch creating a new open epoch and fetching inputs.
+// Exercises projectDaveOpenEpoch creating a new open epoch and fetching inputs.
 func (s *SealedEpochsSuite) TestOpenEpochHappyPathCreatesNewEpoch() {
 	const (
-		sealBlock       uint64 = 100
+		sealBlock       uint64 = 150
 		mostRecentBlock uint64 = 200
 	)
 
 	app := newDaveAppContracts(s.inputBox, s.dave)
 	app.application.IInputBoxAddress = inputBoxAddr
 	app.application.IInputBoxBlock = 10
+	app.application.LastInputCheckBlock = sealBlock
 
-	// Last sealed epoch
 	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
 		Return(&Epoch{
 			Index: 0, FirstBlock: 10, LastBlock: sealBlock,
 			InputIndexLowerBound: 0, InputIndexUpperBound: 3,
 		}, nil)
-
-	// Open epoch (index 1) doesn't exist yet
 	s.repository.On("GetEpoch", mock.Anything, mock.Anything, uint64(1)).
 		Return(nil, nil)
-
-	// Last input check block
 	s.repository.On("GetEventLastCheckBlock",
 		mock.Anything, int64(1), MonitoredEvent_InputAdded,
 	).Return(sealBlock, nil)
+	s.repository.On("GetInputObservation", mock.Anything, app1Addr.Hex()).
+		Return(&InputObservation{ThroughBlock: mostRecentBlock, NextInputIndex: 4}, nil)
 
-	// DB has 3 inputs
-	s.repository.On("GetNumberOfInputs", mock.Anything, mock.Anything).
-		Return(uint64(3), nil)
-
-	// On-chain: 3 inputs before block 150, 4 from block 150
-	s.inputBox.On("GetNumberOfInputs",
-		mock.MatchedBy(func(opts *bind.CallOpts) bool {
-			return opts.BlockNumber.Uint64() < 150
-		}),
-		mock.Anything,
-	).Return(big.NewInt(3), nil)
-	s.inputBox.On("GetNumberOfInputs",
-		mock.MatchedBy(func(opts *bind.CallOpts) bool {
-			return opts.BlockNumber.Uint64() >= 150
-		}),
-		mock.Anything,
-	).Return(big.NewInt(4), nil)
-
-	// Input 3 at block 150
-	s.inputBox.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 150 }),
-		mock.Anything, mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 3, 150)}, nil)
+	event := makeInputEvent(app1Addr, 3, sealBlock)
+	observed := &Input{
+		Index: 3, BlockNumber: sealBlock, RawData: event.Input,
+		Status: InputCompletionStatus_None, TransactionHash: event.Raw.TxHash,
+	}
+	s.repository.On("ListObservedInputs", mock.Anything, app1Addr.Hex(), uint64(3), uint64(4)).
+		Return([]*Input{observed}, nil)
 
 	var storedEpoch *Epoch
 	var storedInputs []*Input
-	s.repository.On("CreateEpochsAndInputs",
-		mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+	s.repository.On("ProjectDaveOpenInputs", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mostRecentBlock,
 	).Run(func(args mock.Arguments) {
-		epochInputMap := args.Get(2).(map[*Epoch][]*Input)
-		for epoch, inputs := range epochInputMap {
-			storedEpoch = epoch
-			storedInputs = inputs
-		}
+		storedEpoch = args.Get(2).(*Epoch)
+		storedInputs = args.Get(3).([]*Input)
 	}).Return(nil)
 
-	err := s.evmReader.processApplicationOpenEpoch(s.ctx, app, mostRecentBlock)
+	frontier, err := s.repository.GetInputObservation(s.ctx, app1Addr.Hex())
+	s.Require().NoError(err)
+	err = s.evmReader.projectDaveOpenEpoch(s.ctx, app, mostRecentBlock, frontier)
 	s.Require().NoError(err)
 
 	s.Require().NotNil(storedEpoch)
@@ -244,91 +221,68 @@ func (s *SealedEpochsSuite) TestOpenEpochHappyPathCreatesNewEpoch() {
 	s.Require().Equal(sealBlock, storedEpoch.FirstBlock) // PRT overlap
 	s.Require().Equal(mostRecentBlock, storedEpoch.LastBlock)
 	s.Require().Equal(uint64(3), storedEpoch.InputIndexLowerBound)
-	s.Require().Equal(uint64(4), storedEpoch.InputIndexUpperBound) // 3 + 1 new
+	s.Require().Equal(uint64(4), storedEpoch.InputIndexUpperBound)
 	s.Require().Equal(EpochStatus_Open, storedEpoch.Status)
-
 	s.Require().Len(storedInputs, 1)
 	s.Require().Equal(uint64(3), storedInputs[0].Index)
-	s.Require().Equal(uint64(150), storedInputs[0].BlockNumber)
+	s.Require().Equal(sealBlock, storedInputs[0].BlockNumber)
 }
 
-// --- Test 3: Open epoch with existing epoch accumulates inputs ---
-// When processApplicationOpenEpoch finds an existing open epoch in the DB,
-// it must reuse it and add new inputs (incrementing InputIndexUpperBound).
 func (s *SealedEpochsSuite) TestOpenEpochExistingEpochAccumulatesInputs() {
 	const mostRecentBlock uint64 = 300
 
 	app := newDaveAppContracts(s.inputBox, s.dave)
 	app.application.IInputBoxAddress = inputBoxAddr
 	app.application.IInputBoxBlock = 10
+	app.application.LastInputCheckBlock = 200
 
-	// Last sealed epoch
 	s.repository.On("GetLastNonOpenEpoch", mock.Anything, mock.Anything).
 		Return(&Epoch{
 			Index: 0, FirstBlock: 10, LastBlock: 100,
 			InputIndexLowerBound: 0, InputIndexUpperBound: 3,
 		}, nil)
-
-	// Open epoch already exists from a previous tick
 	s.repository.On("GetEpoch", mock.Anything, mock.Anything, uint64(1)).
 		Return(&Epoch{
 			Index: 1, FirstBlock: 100, LastBlock: 200,
 			InputIndexLowerBound: 3, InputIndexUpperBound: 4,
 			Status: EpochStatus_Open,
 		}, nil)
-
-	// Last input check at block 200
 	s.repository.On("GetEventLastCheckBlock",
 		mock.Anything, int64(1), MonitoredEvent_InputAdded,
 	).Return(uint64(200), nil)
+	s.repository.On("GetInputObservation", mock.Anything, app1Addr.Hex()).
+		Return(&InputObservation{ThroughBlock: mostRecentBlock, NextInputIndex: 5}, nil)
 
-	// DB has 4 inputs
-	s.repository.On("GetNumberOfInputs", mock.Anything, mock.Anything).
-		Return(uint64(4), nil)
-
-	// On-chain: 4 inputs before block 250, 5 from block 250
-	s.inputBox.On("GetNumberOfInputs",
-		mock.MatchedBy(func(opts *bind.CallOpts) bool {
-			return opts.BlockNumber.Uint64() < 250
-		}),
-		mock.Anything,
-	).Return(big.NewInt(4), nil)
-	s.inputBox.On("GetNumberOfInputs",
-		mock.MatchedBy(func(opts *bind.CallOpts) bool {
-			return opts.BlockNumber.Uint64() >= 250
-		}),
-		mock.Anything,
-	).Return(big.NewInt(5), nil)
-
-	// Input 4 at block 250
-	s.inputBox.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 250 }),
-		mock.Anything, mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 4, 250)}, nil)
+	observedEvent := makeInputEvent(app1Addr, 4, 250)
+	observed := &Input{
+		Index: 4, BlockNumber: 250, RawData: observedEvent.Input,
+		Status: InputCompletionStatus_None, TransactionHash: observedEvent.Raw.TxHash,
+	}
+	// Input 3 was stored and verified by the previous projection, so only the
+	// newly grown prefix [4, 5) is collected.
+	s.repository.On("ListObservedInputs", mock.Anything, app1Addr.Hex(), uint64(4), uint64(5)).
+		Return([]*Input{observed}, nil)
 
 	var storedEpoch *Epoch
 	var storedInputs []*Input
-	s.repository.On("CreateEpochsAndInputs",
-		mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+	s.repository.On("ProjectDaveOpenInputs", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mostRecentBlock,
 	).Run(func(args mock.Arguments) {
-		epochInputMap := args.Get(2).(map[*Epoch][]*Input)
-		for epoch, inputs := range epochInputMap {
-			storedEpoch = epoch
-			storedInputs = inputs
-		}
+		storedEpoch = args.Get(2).(*Epoch)
+		storedInputs = args.Get(3).([]*Input)
 	}).Return(nil)
 
-	err := s.evmReader.processApplicationOpenEpoch(s.ctx, app, mostRecentBlock)
+	frontier, err := s.repository.GetInputObservation(s.ctx, app1Addr.Hex())
+	s.Require().NoError(err)
+	err = s.evmReader.projectDaveOpenEpoch(s.ctx, app, mostRecentBlock, frontier)
 	s.Require().NoError(err)
 
-	// Existing epoch reused with accumulated inputs
 	s.Require().Equal(uint64(1), storedEpoch.Index)
 	s.Require().Equal(uint64(100), storedEpoch.FirstBlock)         // Preserved
 	s.Require().Equal(mostRecentBlock, storedEpoch.LastBlock)      // Updated
 	s.Require().Equal(uint64(3), storedEpoch.InputIndexLowerBound) // Preserved
 	s.Require().Equal(uint64(5), storedEpoch.InputIndexUpperBound) // 4 + 1 new
 	s.Require().Equal(EpochStatus_Open, storedEpoch.Status)
-
 	s.Require().Len(storedInputs, 1)
 	s.Require().Equal(uint64(4), storedInputs[0].Index)
 }
@@ -352,42 +306,34 @@ func (s *SealedEpochsSuite) TestOpenEpochScansBoundaryBlockAfterIntraTickCursorA
 			InputIndexLowerBound: 0,
 			InputIndexUpperBound: 4,
 		}, nil)
-
 	s.repository.On("GetEpoch", mock.Anything, mock.Anything, uint64(1)).
 		Return(nil, nil)
-
 	s.repository.On("GetEventLastCheckBlock",
 		mock.Anything, int64(1), MonitoredEvent_InputAdded,
 	).Return(mostRecentBlock-1, nil)
+	s.repository.On("GetInputObservation", mock.Anything, app1Addr.Hex()).
+		Return(&InputObservation{ThroughBlock: mostRecentBlock, NextInputIndex: 5}, nil)
 
-	s.repository.On("GetNumberOfInputs", mock.Anything, mock.Anything).
-		Return(uint64(4), nil)
-
-	s.inputBox.On("GetNumberOfInputs",
-		mock.MatchedBy(func(opts *bind.CallOpts) bool {
-			return opts.BlockNumber.Uint64() == mostRecentBlock
-		}),
-		mock.Anything,
-	).Return(big.NewInt(5), nil)
-
-	s.inputBox.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == mostRecentBlock }),
-		mock.Anything, mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{makeInputEvent(app1Addr, 4, mostRecentBlock)}, nil)
+	event := makeInputEvent(app1Addr, 4, mostRecentBlock)
+	observed := &Input{
+		Index: 4, BlockNumber: mostRecentBlock, RawData: event.Input,
+		Status: InputCompletionStatus_None, TransactionHash: event.Raw.TxHash,
+	}
+	s.repository.On("ListObservedInputs", mock.Anything, app1Addr.Hex(), uint64(4), uint64(5)).
+		Return([]*Input{observed}, nil)
 
 	var storedEpoch *Epoch
 	var storedInputs []*Input
-	s.repository.On("CreateEpochsAndInputs",
-		mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+	s.repository.On("ProjectDaveOpenInputs", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mostRecentBlock,
 	).Run(func(args mock.Arguments) {
-		epochInputMap := args.Get(2).(map[*Epoch][]*Input)
-		for epoch, inputs := range epochInputMap {
-			storedEpoch = epoch
-			storedInputs = inputs
-		}
+		storedEpoch = args.Get(2).(*Epoch)
+		storedInputs = args.Get(3).([]*Input)
 	}).Return(nil)
 
-	err := s.evmReader.processApplicationOpenEpoch(s.ctx, app, mostRecentBlock)
+	frontier, err := s.repository.GetInputObservation(s.ctx, app1Addr.Hex())
+	s.Require().NoError(err)
+	err = s.evmReader.projectDaveOpenEpoch(s.ctx, app, mostRecentBlock, frontier)
 	s.Require().NoError(err)
 
 	s.Require().NotNil(storedEpoch)
@@ -456,13 +402,10 @@ func (s *SealedEpochsSuite) TestMultipleSealedEpochsInOneBlock() {
 	).Return(nil)
 
 	var storedEpochs []*Epoch
-	s.repository.On("CreateEpochsAndInputs",
+	s.repository.On("AttributeSealedEpoch",
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 	).Run(func(args mock.Arguments) {
-		epochInputMap := args.Get(2).(map[*Epoch][]*Input)
-		for epoch := range epochInputMap {
-			storedEpochs = append(storedEpochs, epoch)
-		}
+		storedEpochs = append(storedEpochs, args.Get(2).(*Epoch))
 	}).Return(nil)
 
 	s.repository.On("UpdateEventLastCheckBlock",
@@ -485,7 +428,7 @@ func (s *SealedEpochsSuite) TestMultipleSealedEpochsInOneBlock() {
 	s.Require().Equal(sealBlock, storedEpochs[1].FirstBlock) // PRT overlap
 	s.Require().Equal(sealBlock, storedEpochs[1].LastBlock)  // Same block
 
-	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 2)
+	s.repository.AssertNumberOfCalls(s.T(), "AttributeSealedEpoch", 2)
 }
 
 // The deployment floor does not certify a successful scan or change its cursor.

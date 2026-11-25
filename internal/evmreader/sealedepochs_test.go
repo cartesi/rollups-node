@@ -13,9 +13,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/config"
 	. "github.com/cartesi/rollups-node/internal/model"
 	"github.com/cartesi/rollups-node/pkg/contracts/idaveconsensus"
-	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/cartesi/rollups-node/pkg/service"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
@@ -118,51 +116,25 @@ func (s *SealedEpochsSuite) TestProcessSealedEpochFindsInputAtOverlapBlock() {
 	s.repository.On("GetEpoch", mock.Anything, mock.Anything, uint64(1)).
 		Return(nil, nil)
 
-	// On-chain: 3 inputs at block 99, 4 inputs from block 100 onward
-	// (input 3 was added at block 100, same block as epoch 0 seal).
-	s.inputBox.Unset("GetNumberOfInputs")
-	s.inputBox.On("GetNumberOfInputs",
-		mock.MatchedBy(func(opts *bind.CallOpts) bool {
-			return opts.BlockNumber.Uint64() < sealBlock0
-		}),
-		mock.Anything,
-	).Return(big.NewInt(3), nil)
-	s.inputBox.On("GetNumberOfInputs",
-		mock.MatchedBy(func(opts *bind.CallOpts) bool {
-			return opts.BlockNumber.Uint64() >= sealBlock0
-		}),
-		mock.Anything,
-	).Return(big.NewInt(4), nil)
+	// Observation already recorded input 3 at the overlap block. Attribution
+	// must use the observed index range instead of searching by block window.
+	overlapEvent := makeInputEvent(app1Addr, 3, sealBlock0)
+	overlapInput := &Input{
+		Index:           3,
+		BlockNumber:     sealBlock0,
+		RawData:         overlapEvent.Input,
+		Status:          InputCompletionStatus_None,
+		TransactionHash: overlapEvent.Raw.TxHash,
+	}
+	s.repository.On("ListObservedInputs", mock.Anything, app1Addr.Hex(), uint64(3), uint64(4)).
+		Return([]*Input{overlapInput}, nil)
 
-	// Input 3 is at block 100 (the overlap block).
-	overlapInput := makeInputEvent(app1Addr, 3, sealBlock0)
-	s.inputBox.Unset("RetrieveInputs")
-	s.inputBox.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-			return opts.Start == sealBlock0
-		}),
-		mock.Anything,
-		mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{overlapInput}, nil)
-
-	// No inputs at other blocks in the range.
-	s.inputBox.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-			return opts.Start != sealBlock0
-		}),
-		mock.Anything,
-		mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{}, nil)
-
-	// CreateEpochsAndInputs captures what was stored.
+	// AttributeSealedEpoch captures what was stored.
 	var storedInputs []*Input
-	s.repository.On("CreateEpochsAndInputs",
+	s.repository.On("AttributeSealedEpoch",
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 	).Run(func(args mock.Arguments) {
-		epochInputMap := args.Get(2).(map[*Epoch][]*Input)
-		for _, inputs := range epochInputMap {
-			storedInputs = inputs
-		}
+		storedInputs = args.Get(3).([]*Input)
 	}).Return(nil)
 
 	err := s.evmReader.processSealedEpochEvent(s.ctx, app, sealedEvent)
@@ -237,20 +209,16 @@ func (s *SealedEpochsSuite) TestTerminalDaveConsensusAppProcessesOpenEpochToFore
 		Return(uint64(0), nil).Once()
 	s.inputBox.On("GetNumberOfInputs", mock.Anything, app.application.IApplicationAddress).
 		Return(big.NewInt(0), nil)
-	s.repository.On("CreateEpochsAndInputs",
+	s.repository.On("ProjectDaveOpenInputs",
 		mock.Anything,
 		app.application.IApplicationAddress.String(),
-		mock.MatchedBy(func(epochInputs map[*Epoch][]*Input) bool {
-			if len(epochInputs) != 1 {
-				return false
-			}
-			for epoch, inputs := range epochInputs {
-				return epoch.Status == EpochStatus_Open &&
-					epoch.Index == 3 &&
-					epoch.LastBlock == forecloseBlock &&
-					len(inputs) == 0
-			}
-			return false
+		mock.MatchedBy(func(epoch *Epoch) bool {
+			return epoch.Status == EpochStatus_Open &&
+				epoch.Index == 3 &&
+				epoch.LastBlock == forecloseBlock
+		}),
+		mock.MatchedBy(func(inputs []*Input) bool {
+			return len(inputs) == 0
 		}),
 		forecloseBlock,
 	).Return(nil).Once()
@@ -298,16 +266,12 @@ func (s *SealedEpochsSuite) TestSealedEpochAtFirstBlockPublishesZeroCursor() {
 	app := appContracts{application: &Application{IApplicationAddress: app1Addr, IInputBoxBlock: 1}}
 	event := makeSealedEpochEvent(0, 0, 0, 1, common.HexToAddress("0xAAAA"))
 	s.repository.On("GetEpoch", mock.Anything, app1Addr.Hex(), uint64(0)).Return(nil, nil).Once()
-	s.repository.On("CreateEpochsAndInputs", mock.Anything, app1Addr.Hex(),
-		mock.MatchedBy(func(epochs map[*Epoch][]*Input) bool {
-			if len(epochs) != 1 {
-				return false
-			}
-			for epoch, inputs := range epochs {
-				return epoch.FirstBlock == 1 && epoch.LastBlock == 1 && len(inputs) == 0
-			}
-			return false
-		}), uint64(0)).Return(nil).Once()
+	s.repository.On("AttributeSealedEpoch", mock.Anything, app1Addr.Hex(),
+		mock.MatchedBy(func(epoch *Epoch) bool {
+			return epoch.FirstBlock == 1 && epoch.LastBlock == 1
+		}), mock.MatchedBy(func(inputs []*Input) bool {
+			return len(inputs) == 0
+		})).Return(nil).Once()
 	s.Require().NoError(s.evmReader.processSealedEpochEvent(s.ctx, app, event))
 	s.repository.AssertExpectations(s.T())
 }

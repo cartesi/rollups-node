@@ -70,30 +70,6 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 
 	whereClause := getWhereClauseFromNameOrAddress(nameOrAddress)
 
-	epochInsertStmt := table.Epoch.INSERT(
-		table.Epoch.ApplicationID,
-		table.Epoch.Index,
-		table.Epoch.FirstBlock,
-		table.Epoch.LastBlock,
-		table.Epoch.InputIndexLowerBound,
-		table.Epoch.InputIndexUpperBound,
-		table.Epoch.TournamentAddress,
-		table.Epoch.Status,
-		table.Epoch.VirtualIndex,
-	)
-
-	inputInsertStmt := table.Input.
-		INSERT(
-			table.Input.EpochApplicationID,
-			table.Input.EpochIndex,
-			table.Input.Index,
-			table.Input.BlockNumber,
-			table.Input.RawData,
-			table.Input.Status,
-			table.Input.TransactionHash,
-			table.Input.LogIndex,
-		)
-
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -113,15 +89,7 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 	// transaction once PostgreSQL detects it (which a network failure can
 	// delay), and a PostgreSQL restart discards the uncommitted transaction
 	// during crash recovery. The lock is not persisted independently.
-	appLockStmt := table.Application.
-		SELECT(table.Application.ID).
-		WHERE(whereClause).
-		FOR(postgres.NO_KEY_UPDATE())
-	appLockSQL, appLockArgs := appLockStmt.Sql()
-	var appID int64
-	if err := tx.QueryRow(ctx, appLockSQL, appLockArgs...).Scan(&appID); errors.Is(err, pgx.ErrNoRows) {
-		return repository.ErrNotFound
-	} else if err != nil {
+	if _, err := lockApplicationRow(ctx, tx, whereClause); err != nil {
 		return err
 	}
 
@@ -129,122 +97,15 @@ func (r *PostgresRepository) CreateEpochsAndInputs(
 	for _, epoch := range epochs {
 		inputs := epochInputsMap[epoch]
 
-		nextVirtualIndex, err := getEpochNextVirtualIndex(ctx, tx, nameOrAddress)
-		if err != nil {
+		if err := upsertEpoch(ctx, tx, whereClause, nameOrAddress, epoch); err != nil {
 			return err
 		}
-
-		var tournamentAddress postgres.ByteaExpression
-		if epoch.TournamentAddress != nil {
-			tournamentAddress = postgres.Bytea(epoch.TournamentAddress.Bytes())
-		} else {
-			tournamentAddress = postgres.ByteaExp(postgres.NULL)
-		}
-		epochSelectQuery := table.Application.SELECT(
-			table.Application.ID,
-			uint64Expr(epoch.Index),
-			uint64Expr(epoch.FirstBlock),
-			uint64Expr(epoch.LastBlock),
-			uint64Expr(epoch.InputIndexLowerBound),
-			uint64Expr(epoch.InputIndexUpperBound),
-			tournamentAddress,
-			postgres.NewEnumValue(epoch.Status.String()),
-			uint64Expr(nextVirtualIndex),
-		).WHERE(
-			whereClause,
-		)
-
-		// Guard: only update epoch fields when the existing row is still OPEN.
-		// Once an epoch is sealed (CLOSED) or beyond, its status, block range,
-		// input bounds, and tournament address are finalized and must not be
-		// overwritten by crash-recovery re-processing.
-		isOpen := table.Epoch.Status.EQ(
-			postgres.NewEnumValue(model.EpochStatus_Open.String()),
-		)
-
-		sqlStr, args := epochInsertStmt.QUERY(epochSelectQuery).
-			ON_CONFLICT(table.Epoch.ApplicationID, table.Epoch.Index).
-			DO_UPDATE(postgres.SET(
-				table.Epoch.Status.SET(postgres.StringExp(
-					postgres.CASE().
-						WHEN(isOpen).THEN(table.Epoch.EXCLUDED.Status).
-						ELSE(table.Epoch.Status),
-				)),
-				table.Epoch.LastBlock.SET(postgres.FloatExp(
-					postgres.CASE().
-						WHEN(isOpen).THEN(table.Epoch.EXCLUDED.LastBlock).
-						ELSE(table.Epoch.LastBlock),
-				)),
-				table.Epoch.InputIndexUpperBound.SET(postgres.FloatExp(
-					postgres.CASE().
-						WHEN(isOpen).THEN(table.Epoch.EXCLUDED.InputIndexUpperBound).
-						ELSE(table.Epoch.InputIndexUpperBound),
-				)),
-				table.Epoch.TournamentAddress.SET(postgres.ByteaExp(
-					postgres.CASE().
-						WHEN(isOpen).THEN(table.Epoch.EXCLUDED.TournamentAddress).
-						ELSE(table.Epoch.TournamentAddress),
-				)),
-			)).Sql()
-		_, err = tx.Exec(ctx, sqlStr, args...)
-
-		if err != nil {
+		if err := insertEpochInputs(ctx, tx, whereClause, epoch, inputs); err != nil {
 			return err
-		}
-
-		if len(inputs) > 0 {
-			batch := &pgx.Batch{}
-			for _, input := range inputs {
-				inputSelectQuery := table.Application.SELECT(
-					table.Application.ID,
-					uint64Expr(epoch.Index),
-					uint64Expr(input.Index),
-					uint64Expr(input.BlockNumber),
-					postgres.Bytea(input.RawData),
-					postgres.NewEnumValue(input.Status.String()),
-					postgres.Bytea(input.TransactionHash.Bytes()),
-					uint64Expr(input.LogIndex),
-				).WHERE(
-					whereClause,
-				)
-
-				sqlStr, args := inputInsertStmt.QUERY(inputSelectQuery).
-					ON_CONFLICT(table.Input.EpochApplicationID, table.Input.Index).
-					DO_NOTHING().Sql()
-				batch.Queue(sqlStr, args...)
-			}
-
-			br := tx.SendBatch(ctx, batch)
-			for range inputs {
-				_, err := br.Exec()
-				if err != nil {
-					br.Close()
-					return wrapInputLogIdentityConflict(err)
-				}
-			}
-			if err := br.Close(); err != nil {
-				return wrapInputLogIdentityConflict(err)
-			}
 		}
 	}
 
-	// Update the input cursor monotonically. Dave sealed-epoch catch-up may
-	// revisit an older block after open-epoch ingestion has already scanned
-	// farther ahead; that historical write must not rewind drain readiness.
-	appUpdateStmt := table.Application.
-		UPDATE(
-			table.Application.LastInputCheckBlock,
-		).
-		SET(
-			uint64Expr(blockNumber),
-		).
-		WHERE(whereClause.AND(
-			table.Application.LastInputCheckBlock.LT(uint64Expr(blockNumber)),
-		))
-
-	sqlStr, args := appUpdateStmt.Sql()
-	_, err = tx.Exec(ctx, sqlStr, args...)
-	if err != nil {
+	if err := advanceInputCheckBlock(ctx, tx, whereClause, blockNumber); err != nil {
 		return err
 	}
 
@@ -259,6 +120,10 @@ const sqlstateUniqueViolation = "23505"
 // identity of an input; see the input table in the initial schema migration.
 const inputLogIdentityConstraint = "input_application_id_tx_hash_log_index_unique"
 
+// observedInputLogIdentityConstraint is the same identity rule while an input
+// is still waiting for its epoch.
+const observedInputLogIdentityConstraint = "observed_input_application_id_tx_hash_log_index_unique"
+
 // wrapInputLogIdentityConflict tags unique violations of the input L1 log
 // identity constraint with repository.ErrInputLogIdentityConflict so callers
 // can distinguish stored-state divergence (unrecoverable by retry) from
@@ -268,7 +133,8 @@ func wrapInputLogIdentityConflict(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) &&
 		pgErr.Code == sqlstateUniqueViolation &&
-		pgErr.ConstraintName == inputLogIdentityConstraint {
+		(pgErr.ConstraintName == inputLogIdentityConstraint ||
+			pgErr.ConstraintName == observedInputLogIdentityConstraint) {
 		return fmt.Errorf("%w: %w", repository.ErrInputLogIdentityConflict, err)
 	}
 	return err

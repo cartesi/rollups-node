@@ -101,17 +101,15 @@ func (r *sealedEpochReplayRepository) GetEpoch(_ context.Context, _ string, inde
 	return nil, nil
 }
 
-func (r *sealedEpochReplayRepository) CreateEpochsAndInputs(
-	_ context.Context, _ string, epochs map[*model.Epoch][]*model.Input, _ uint64,
+func (r *sealedEpochReplayRepository) AttributeSealedEpoch(
+	_ context.Context, _ string, epoch *model.Epoch, _ []*model.Input,
 ) error {
-	for epoch := range epochs {
-		if epoch.Index == r.failEpoch && r.storeErr != nil {
-			return r.storeErr
-		}
-		copyEpoch := *epoch
-		r.epochs[epoch.Index] = &copyEpoch
-		r.stores = append(r.stores, epoch.Index)
+	if epoch.Index == r.failEpoch && r.storeErr != nil {
+		return r.storeErr
 	}
+	copyEpoch := *epoch
+	r.epochs[epoch.Index] = &copyEpoch
+	r.stores = append(r.stores, epoch.Index)
 	return nil
 }
 
@@ -224,7 +222,7 @@ func TestSealedEpochReplayRejectsConflictingStoredFields(t *testing.T) {
 			err := r.processSealedEpochEvent(t.Context(), app, makeSealedEpochEvent(0, 0, 0, block, tournament))
 			require.ErrorContains(t, err, "data mismatch with replayed event")
 			require.Equal(t, before, *epoch)
-			repo.AssertNotCalled(t, "CreateEpochsAndInputs", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			repo.AssertNotCalled(t, "AttributeSealedEpoch", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			repo.AssertExpectations(t)
 		})
 	}
@@ -271,7 +269,7 @@ func TestSealedEpochDisappearingTransitionRetriesWithoutProgress(t *testing.T) {
 	repo.On("GetEpoch", t.Context(), app1Addr.Hex(), uint64(0)).Return(previous, nil).Once()
 	repo.On("UpdateEpochClaimTransactionHash", t.Context(), app1Addr.Hex(), previous).Return(nil).Once()
 	repo.On("GetEpoch", t.Context(), app1Addr.Hex(), uint64(1)).Return(nil, nil).Once()
-	repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, block-1).Return(nil).Once()
+	repo.On("AttributeSealedEpoch", t.Context(), app1Addr.Hex(), mock.Anything, mock.Anything).Return(nil).Once()
 	repo.On("UpdateEventLastCheckBlock", t.Context(), []int64{app.application.ID}, model.MonitoredEvent_EpochSealed, block).
 		Return(nil).Once()
 	require.NoError(t, r.processApplicationSealedEpochs(t.Context(), app, block))

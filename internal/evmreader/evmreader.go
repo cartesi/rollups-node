@@ -67,6 +67,12 @@ type EvmReaderRepository interface {
 		ctx context.Context, nameOrAddress string,
 		epochInputMap map[*Epoch][]*Input, blockNumber uint64,
 	) error
+	ObserveDaveInputs(ctx context.Context, nameOrAddress string,
+		throughBlock, nextInputIndex uint64, inputs []*Input) error
+	GetInputObservation(ctx context.Context, nameOrAddress string) (*InputObservation, error)
+	ListObservedInputs(ctx context.Context, nameOrAddress string, lower, upper uint64) ([]*Input, error)
+	AttributeSealedEpoch(ctx context.Context, nameOrAddress string, epoch *Epoch, inputs []*Input) error
+	ProjectDaveOpenInputs(ctx context.Context, nameOrAddress string, epoch *Epoch, inputs []*Input, throughBlock uint64) error
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	ListEpochs(ctx context.Context, nameOrAddress string, f repository.EpochFilter,
 		p repository.Pagination, descending bool) ([]*Epoch, uint64, error)
@@ -74,6 +80,8 @@ type EvmReaderRepository interface {
 	GetLastNonOpenEpoch(ctx context.Context, nameOrAddress string) (*Epoch, error)
 
 	GetNumberOfInputs(ctx context.Context, nameOrAddress string) (uint64, error)
+	ListInputs(ctx context.Context, nameOrAddress string, f repository.InputFilter,
+		p repository.Pagination, descending bool) ([]*Input, uint64, error)
 
 	// Output execution monitor
 	GetOutput(ctx context.Context, nameOrAddress string, indexKey uint64) (*Output, error)

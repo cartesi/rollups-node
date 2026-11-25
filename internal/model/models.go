@@ -903,6 +903,14 @@ func (e EpochStatus) String() string {
 	return string(e)
 }
 
+// InputObservation is the persisted L1 input observation frontier for a Dave
+// application. It is independent of the attributed input rows: the frontier
+// may run ahead while a seal's surplus waits for the next epoch.
+type InputObservation struct {
+	ThroughBlock   uint64 `json:"through_block"`
+	NextInputIndex uint64 `json:"next_input_index"`
+}
+
 type Input struct {
 	EpochApplicationID int64                 `sql:"primary_key" json:"-"`
 	EpochIndex         uint64                `json:"epoch_index"`

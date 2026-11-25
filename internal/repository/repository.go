@@ -46,6 +46,13 @@ var (
 	// the input cursor). Retrying cannot succeed — callers should treat the
 	// application state as corrupted.
 	ErrInputLogIdentityConflict = errors.New("input L1 log identity conflicts with stored data")
+	// ErrInputObservationConflict means a new observation would rewind or
+	// disagree with the stored L1 observation frontier. Retrying cannot fix it.
+	ErrInputObservationConflict = errors.New("input observation conflicts with stored frontier")
+	// ErrEpochInputRangeConflict means an epoch write does not match the
+	// stored epoch's input range or status, so attributing inputs to it would
+	// make execution see rows outside the epoch.
+	ErrEpochInputRangeConflict = errors.New("epoch input range conflicts with stored epoch")
 )
 
 type Pagination struct {
@@ -211,6 +218,22 @@ type EpochRepository interface {
 	// FIXME move to BulkOperationsRepository
 	CreateEpochsAndInputs(ctx context.Context, nameOrAddress string, epochInputMap map[*Epoch][]*Input, blockNumber uint64) error
 
+	// AttributeSealedEpoch stores a sealed Dave epoch and exactly the inputs in
+	// its [lower, upper) index range, then removes those rows from
+	// observed_input. It does not advance the input cursor: the projection of
+	// the OPEN epoch publishes LastInputCheckBlock after all seals up to the
+	// same block have been attributed. The epoch and its inputs are one
+	// transaction, and replay is idempotent.
+	AttributeSealedEpoch(ctx context.Context, nameOrAddress string, epoch *Epoch, inputs []*Input) error
+
+	// ProjectDaveOpenInputs stores the current OPEN Dave epoch and exactly the
+	// observed inputs in its [lower, upper) index range, removes them from
+	// observed_input, and advances LastInputCheckBlock to throughBlock in the
+	// same transaction. It is the single writer of LastInputCheckBlock on the
+	// Dave path. A stale projection into an epoch that is no longer OPEN is
+	// rejected with ErrNoUpdate.
+	ProjectDaveOpenInputs(ctx context.Context, nameOrAddress string, epoch *Epoch, inputs []*Input, throughBlock uint64) error
+
 	GetEpoch(ctx context.Context, nameOrAddress string, index uint64) (*Epoch, error)
 	GetEpochCompletionState(ctx context.Context, nameOrAddress string, index uint64) (*EpochCompletionState, error)
 	StoreInvalidOutputsRoot(ctx context.Context, appID int64, epochIndex uint64, reason string) error
@@ -276,6 +299,28 @@ type InputRepository interface {
 	ListInputs(ctx context.Context, nameOrAddress string, f InputFilter, p Pagination, descending bool) ([]*Input, uint64, error)
 	GetNumberOfInputs(ctx context.Context, nameOrAddress string) (uint64, error)
 	UpdateInputSnapshotURI(ctx context.Context, appId int64, inputIndex uint64, snapshotURI string) error
+
+	// ObserveDaveInputs records the inputs whose InputAdded logs were observed
+	// through throughBlock and advances the observation frontier to
+	// (throughBlock, nextInputIndex). The rows and the frontier are committed
+	// together, so an interrupted tick resumes without a gap or duplicate. The
+	// frontier is monotonic: a lower block or index is rejected with
+	// ErrInputObservationConflict. Inputs are not visible to execution until an
+	// epoch write attributes them.
+	ObserveDaveInputs(ctx context.Context, nameOrAddress string, throughBlock, nextInputIndex uint64, inputs []*Input) error
+
+	// GetInputObservation returns the stored frontier, or nil when the
+	// application has not observed any block yet.
+	GetInputObservation(ctx context.Context, nameOrAddress string) (*InputObservation, error)
+
+	// ListObservedInputs returns observed-but-not-yet-attributed inputs in the
+	// closed index range [lower, upper), ordered by index. Epoch fields are
+	// unset because these rows have no epoch yet.
+	ListObservedInputs(ctx context.Context, nameOrAddress string, lower, upper uint64) ([]*Input, error)
+
+	// CountObservedInputs returns the number of observed-but-not-yet-attributed
+	// inputs for the application.
+	CountObservedInputs(ctx context.Context, nameOrAddress string) (uint64, error)
 }
 
 const MaxOutputRangeRows uint64 = 65_536

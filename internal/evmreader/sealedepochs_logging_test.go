@@ -54,7 +54,8 @@ func TestDaveStatusWriteFailureRemainsVisibleAndRetryable(t *testing.T) {
 	repo.On("UpdateApplicationStatus", t.Context(), app.application.ID, model.ApplicationStatus_Corrupted, mock.Anything).
 		Return(writeErr).Twice()
 
-	err := r.processApplicationOpenEpoch(t.Context(), app, head)
+	err := r.projectDaveOpenEpoch(t.Context(), app, head,
+		&model.InputObservation{ThroughBlock: head})
 	require.ErrorIs(t, err, writeErr, "the marker must preserve the actual database error")
 	require.ErrorIs(t, err, errApplicationStatusReported)
 	require.Equal(t, model.ApplicationStatus_OK, app.application.Status)

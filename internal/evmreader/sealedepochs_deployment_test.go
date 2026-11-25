@@ -55,7 +55,7 @@ func (s *SealedEpochsSuite) TestDaveScanWaitsForDeploymentAndResumes() {
 	s.repository.On("GetNumberOfInputs", s.ctx, app2Addr.Hex()).Return(uint64(0), nil).Once()
 	otherInputBox.On("GetNumberOfInputs", blockRange(beforeDeployment, beforeDeployment+1), app2Addr).
 		Return(new(big.Int), nil).Once()
-	s.repository.On("CreateEpochsAndInputs", s.ctx, app2Addr.Hex(), mock.Anything, beforeDeployment).
+	s.repository.On("ProjectDaveOpenInputs", s.ctx, app2Addr.Hex(), mock.Anything, mock.Anything, beforeDeployment).
 		Return(nil).Once()
 
 	s.True(s.evmReader.scanDaveConsensusEpochsAndInputs(s.ctx, []appContracts{app, other}, beforeDeployment))
@@ -65,7 +65,7 @@ func (s *SealedEpochsSuite) TestDaveScanWaitsForDeploymentAndResumes() {
 	s.repository.AssertNotCalled(s.T(), "GetLastNonOpenEpoch", s.ctx, app1Addr.Hex())
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateApplicationStatus", 0)
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
-	s.repository.AssertCalled(s.T(), "CreateEpochsAndInputs", s.ctx, app2Addr.Hex(), mock.Anything, beforeDeployment)
+	s.repository.AssertCalled(s.T(), "ProjectDaveOpenInputs", s.ctx, app2Addr.Hex(), mock.Anything, mock.Anything, beforeDeployment)
 	s.Empty(s.inputBox.Calls)
 	s.NotContains(output.String(), "level=ERROR")
 	s.repository.AssertExpectations(s.T())
@@ -93,25 +93,19 @@ func (s *SealedEpochsSuite) TestDaveScanWaitsForDeploymentAndResumes() {
 	})).Return([]*idaveconsensus.IDaveConsensusEpochSealed{
 		makeSealedEpochEvent(0, 0, 0, deploymentBlock, tournament),
 	}, nil).Once()
-	s.repository.On("CreateEpochsAndInputs", s.ctx, app1Addr.Hex(),
-		mock.MatchedBy(func(epochs map[*model.Epoch][]*model.Input) bool {
-			for epoch := range epochs {
-				return len(epochs) == 1 && epoch.Index == 0 && epoch.Status == model.EpochStatus_Closed
-			}
-			return false
-		}), deploymentBlock-1).Return(nil).Once()
+	s.repository.On("AttributeSealedEpoch", s.ctx, app1Addr.Hex(),
+		mock.MatchedBy(func(epoch *model.Epoch) bool {
+			return epoch.Index == 0 && epoch.Status == model.EpochStatus_Closed
+		}), mock.Anything).Return(nil).Once()
 	s.repository.On("GetEventLastCheckBlock", s.ctx, app.application.ID, model.MonitoredEvent_InputAdded).
 		Return(deploymentBlock-1, nil).Once()
 	s.repository.On("GetNumberOfInputs", s.ctx, app1Addr.Hex()).Return(uint64(0), nil).Once()
 	s.inputBox.On("GetNumberOfInputs", blockRange(deploymentBlock, deploymentBlock+1), app1Addr).
 		Return(new(big.Int), nil).Once()
-	s.repository.On("CreateEpochsAndInputs", s.ctx, app1Addr.Hex(),
-		mock.MatchedBy(func(epochs map[*model.Epoch][]*model.Input) bool {
-			for epoch := range epochs {
-				return len(epochs) == 1 && epoch.Index == 1 && epoch.Status == model.EpochStatus_Open
-			}
-			return false
-		}), deploymentBlock).Return(nil).Once()
+	s.repository.On("ProjectDaveOpenInputs", s.ctx, app1Addr.Hex(),
+		mock.MatchedBy(func(epoch *model.Epoch) bool {
+			return epoch.Index == 1 && epoch.Status == model.EpochStatus_Open
+		}), mock.Anything, deploymentBlock).Return(nil).Once()
 
 	s.True(s.evmReader.scanDaveConsensusEpochsAndInputs(s.ctx, []appContracts{app}, deploymentBlock))
 	s.Equal(model.ApplicationStatus_OK, app.application.Status)
@@ -164,7 +158,7 @@ func TestFailedSealedInitializationWaitsForDeploymentAgain(t *testing.T) {
 				makeSealedEpochEvent(0, 0, 0, deploymentBlock, tournament),
 			}, nil).Once()
 			repo.On("GetEpoch", t.Context(), app1Addr.Hex(), uint64(0)).Return(nil, nil).Once()
-			repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, deploymentBlock-1).Return(nil).Once()
+			repo.On("AttributeSealedEpoch", t.Context(), app1Addr.Hex(), mock.Anything, mock.Anything).Return(nil).Once()
 			repo.On("UpdateEventLastCheckBlock", t.Context(), []int64{app.application.ID},
 				model.MonitoredEvent_EpochSealed, deploymentBlock).Return(nil).Once()
 			repo.On("GetLastNonOpenEpoch", t.Context(), app1Addr.Hex()).Return(&model.Epoch{
@@ -176,7 +170,7 @@ func TestFailedSealedInitializationWaitsForDeploymentAgain(t *testing.T) {
 			repo.On("GetNumberOfInputs", t.Context(), app1Addr.Hex()).Return(uint64(0), nil).Once()
 			inputBox.On("GetNumberOfInputs", blockRange(deploymentBlock, deploymentBlock+1), app1Addr).
 				Return(new(big.Int), nil).Once()
-			repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.Anything, deploymentBlock).Return(nil).Once()
+			repo.On("ProjectDaveOpenInputs", t.Context(), app1Addr.Hex(), mock.Anything, mock.Anything, deploymentBlock).Return(nil).Once()
 
 			require.True(t, r.scanDaveConsensusEpochsAndInputs(t.Context(), []appContracts{app}, deploymentBlock))
 			require.Equal(t, model.ApplicationStatus_OK, app.application.Status)

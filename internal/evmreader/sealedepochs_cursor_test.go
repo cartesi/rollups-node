@@ -40,7 +40,8 @@ func TestOpenEpochSkipsAlreadyScannedFreshCursor(t *testing.T) {
 			repo.On("GetEventLastCheckBlock", t.Context(), app.application.ID, model.MonitoredEvent_InputAdded).
 				Return(test.cursor, nil).Once()
 
-			require.NoError(t, r.processApplicationOpenEpoch(t.Context(), app, head))
+			require.NoError(t, r.projectDaveOpenEpoch(t.Context(), app, head,
+				&model.InputObservation{ThroughBlock: head}))
 			require.Equal(t, before, *open, "the stored epoch must not be rewritten to an older head")
 			require.Empty(t, inputBox.Calls)
 			repo.AssertNotCalled(t, "GetNumberOfInputs", mock.Anything, mock.Anything)
@@ -75,11 +76,10 @@ func TestForeclosureInputDrainRunsBelowSealedCursor(t *testing.T) {
 	repo.On("GetNumberOfInputs", t.Context(), app1Addr.Hex()).Return(uint64(0), nil).Once()
 	inputBox.On("GetNumberOfInputs", blockRange(inputCursor+1, foreclosure+1), app1Addr).
 		Return(new(big.Int), nil).Twice()
-	repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(), mock.MatchedBy(func(epochs map[*model.Epoch][]*model.Input) bool {
-		for epoch, inputs := range epochs {
-			return len(epochs) == 1 && epoch.LastBlock == foreclosure && epoch.Status == model.EpochStatus_Open && len(inputs) == 0
-		}
-		return false
+	repo.On("ProjectDaveOpenInputs", t.Context(), app1Addr.Hex(), mock.MatchedBy(func(epoch *model.Epoch) bool {
+		return epoch.LastBlock == foreclosure && epoch.Status == model.EpochStatus_Open
+	}), mock.MatchedBy(func(inputs []*model.Input) bool {
+		return len(inputs) == 0
 	}), foreclosure).Return(nil).Once()
 
 	require.True(t, r.scanDaveConsensusEpochsAndInputs(t.Context(), []appContracts{app}, sealedCursor+10))

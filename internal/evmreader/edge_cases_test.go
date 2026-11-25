@@ -380,14 +380,11 @@ func (s *SealedEpochsSuite) TestSealedEpochLowerBoundGreaterThanUpperBound() {
 
 	var storedEpoch *Epoch
 	var storedInputs []*Input
-	s.repository.On("CreateEpochsAndInputs",
+	s.repository.On("AttributeSealedEpoch",
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 	).Run(func(args mock.Arguments) {
-		epochInputMap := args.Get(2).(map[*Epoch][]*Input)
-		for epoch, inputs := range epochInputMap {
-			storedEpoch = epoch
-			storedInputs = inputs
-		}
+		storedEpoch = args.Get(2).(*Epoch)
+		storedInputs = args.Get(3).([]*Input)
 	}).Return(nil)
 
 	err := s.evmReader.processSealedEpochEvent(s.ctx, app, event)

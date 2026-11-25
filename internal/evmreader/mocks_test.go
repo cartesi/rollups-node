@@ -160,11 +160,18 @@ func (m *MockInputBox) Unset(methodName string) {
 	UnsetAll(&m.Mock, methodName)
 }
 
+func (m *MockInputBox) hasMatchingCall(method string, arguments ...any) bool {
+	return hasMatchingCall(&m.Mock, method, arguments...)
+}
+
 func (m *MockInputBox) RetrieveInputs(
 	opts *bind.FilterOpts,
 	appContract []common.Address,
 	index []*big.Int,
 ) ([]iinputbox.IInputBoxInputAdded, error) {
+	if !m.hasMatchingCall("RetrieveInputs", opts, appContract, index) {
+		return nil, nil
+	}
 	args := m.Called(opts, appContract, index)
 	return args.Get(0).([]iinputbox.IInputBoxInputAdded), args.Error(1)
 }
@@ -172,6 +179,9 @@ func (m *MockInputBox) RetrieveInputs(
 func (m *MockInputBox) GetNumberOfInputs(
 	opts *bind.CallOpts, appContract common.Address,
 ) (*big.Int, error) {
+	if !m.hasMatchingCall("GetNumberOfInputs", opts, appContract) {
+		return new(big.Int), nil
+	}
 	args := m.Called(opts, appContract)
 	return args.Get(0).(*big.Int), args.Error(1)
 }
@@ -191,6 +201,26 @@ func newMockRepository() *MockRepository {
 		mock.Anything,
 	).Return(uint64(1), nil).Maybe()
 	return m
+}
+
+// hasMatchingCall reports whether a method has an available expectation that
+// matches the actual arguments. Test doubles fall back to zero values when no
+// expectation matches, so tests unrelated to a newly added call path do not
+// need to mock it. Tests that care about the call set an explicit expectation.
+func hasMatchingCall(m *mock.Mock, method string, arguments ...any) bool {
+	for _, call := range m.ExpectedCalls {
+		if call.Method != method || call.Repeatability <= -1 {
+			continue
+		}
+		if _, diff := call.Arguments.Diff(arguments); diff == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *MockRepository) hasMatchingCall(method string, arguments ...any) bool {
+	return hasMatchingCall(&m.Mock, method, arguments...)
 }
 
 func (m *MockRepository) SetupDefaultBehavior() *MockRepository {
@@ -330,6 +360,66 @@ func (m *MockRepository) CreateEpochsAndInputs(
 	return args.Error(0)
 }
 
+func (m *MockRepository) ObserveDaveInputs(
+	ctx context.Context, nameOrAddress string, throughBlock, nextInputIndex uint64,
+	inputs []*Input,
+) error {
+	if !m.hasMatchingCall("ObserveDaveInputs", ctx, nameOrAddress, throughBlock, nextInputIndex, inputs) {
+		return nil
+	}
+	args := m.Called(ctx, nameOrAddress, throughBlock, nextInputIndex, inputs)
+	return args.Error(0)
+}
+
+func (m *MockRepository) GetInputObservation(
+	ctx context.Context, nameOrAddress string,
+) (*InputObservation, error) {
+	if !m.hasMatchingCall("GetInputObservation", ctx, nameOrAddress) {
+		return nil, nil
+	}
+	args := m.Called(ctx, nameOrAddress)
+	obj := args.Get(0)
+	if obj == nil {
+		return nil, args.Error(1)
+	}
+	return obj.(*InputObservation), args.Error(1)
+}
+
+func (m *MockRepository) ListObservedInputs(
+	ctx context.Context, nameOrAddress string, lower, upper uint64,
+) ([]*Input, error) {
+	if !m.hasMatchingCall("ListObservedInputs", ctx, nameOrAddress, lower, upper) {
+		return nil, nil
+	}
+	args := m.Called(ctx, nameOrAddress, lower, upper)
+	obj := args.Get(0)
+	if obj == nil {
+		return nil, args.Error(1)
+	}
+	return obj.([]*Input), args.Error(1)
+}
+
+func (m *MockRepository) AttributeSealedEpoch(
+	ctx context.Context, nameOrAddress string, epoch *Epoch, inputs []*Input,
+) error {
+	if !m.hasMatchingCall("AttributeSealedEpoch", ctx, nameOrAddress, epoch, inputs) {
+		return nil
+	}
+	args := m.Called(ctx, nameOrAddress, epoch, inputs)
+	return args.Error(0)
+}
+
+func (m *MockRepository) ProjectDaveOpenInputs(
+	ctx context.Context, nameOrAddress string, epoch *Epoch, inputs []*Input,
+	throughBlock uint64,
+) error {
+	if !m.hasMatchingCall("ProjectDaveOpenInputs", ctx, nameOrAddress, epoch, inputs, throughBlock) {
+		return nil
+	}
+	args := m.Called(ctx, nameOrAddress, epoch, inputs, throughBlock)
+	return args.Error(0)
+}
+
 func (m *MockRepository) GetEpoch(
 	ctx context.Context, nameOrAddress string, index uint64,
 ) (*Epoch, error) {
@@ -381,8 +471,26 @@ func (m *MockRepository) GetLastNonOpenEpoch(
 func (m *MockRepository) GetNumberOfInputs(
 	ctx context.Context, nameOrAddress string,
 ) (uint64, error) {
+	if !m.hasMatchingCall("GetNumberOfInputs", ctx, nameOrAddress) {
+		return 0, nil
+	}
 	args := m.Called(ctx, nameOrAddress)
 	return args.Get(0).(uint64), args.Error(1)
+}
+
+func (m *MockRepository) ListInputs(
+	ctx context.Context, nameOrAddress string, f repository.InputFilter,
+	p repository.Pagination, descending bool,
+) ([]*Input, uint64, error) {
+	if !m.hasMatchingCall("ListInputs", ctx, nameOrAddress, f, p, descending) {
+		return nil, 0, nil
+	}
+	args := m.Called(ctx, nameOrAddress, f, p, descending)
+	obj := args.Get(0)
+	if obj == nil {
+		return nil, args.Get(1).(uint64), args.Error(2)
+	}
+	return obj.([]*Input), args.Get(1).(uint64), args.Error(2)
 }
 
 func (m *MockRepository) GetNumberOfExecutedOutputs(

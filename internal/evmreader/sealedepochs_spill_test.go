@@ -18,9 +18,7 @@ import (
 	"github.com/cartesi/rollups-node/internal/repository"
 	"github.com/cartesi/rollups-node/internal/repository/factory"
 	"github.com/cartesi/rollups-node/internal/repository/repotest"
-	"github.com/cartesi/rollups-node/pkg/contracts/iinputbox"
 	"github.com/cartesi/rollups-node/test/tooling/db"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -41,17 +39,15 @@ func TestSealedPipelineAtProductionCap(t *testing.T) {
 	tournament := common.HexToAddress("0xAAAA")
 
 	repo := newMockRepository()
-	inputBox := newMockInputBox()
 	reader := &Service{repository: repo}
 	reader.Logger = testLogger(t)
 
-	app := newDaveAppContracts(inputBox, nil)
+	app := newDaveAppContracts(nil, nil)
 	app.application.IInputBoxBlock = inputBoxBlock
 	app.application.IInputBoxAddress = inputBoxAddr
 	app.application.LastInputCheckBlock = previousSealBlock
 
-	// Epoch A was sealed at block 100 and owns the first 2^24 inputs. Its
-	// seal is the next epoch's search floor.
+	// Epoch A was sealed at block 100 and owns the first 2^24 inputs.
 	previous := &Epoch{
 		Index:                0,
 		FirstBlock:           inputBoxBlock,
@@ -67,35 +63,31 @@ func TestSealedPipelineAtProductionCap(t *testing.T) {
 	repo.On("GetEpoch", t.Context(), app1Addr.Hex(), uint64(1)).
 		Return(nil, nil).Once()
 
-	// The spill input is in the InputBox before block 100: the counter is
-	// already 2^24+1 when the search starts, so the only transition is at the
-	// start block, which has no matching log.
-	inputBox.On("GetNumberOfInputs", blockRange(0, previousSealBlock+1), app1Addr).
-		Return(new(big.Int).SetUint64(productionCap+1), nil)
-	inputBox.On("GetNumberOfInputs", blockRange(previousSealBlock+1, sealBlock+1), app1Addr).
-		Return(new(big.Int).SetUint64(productionCap+1), nil)
-	inputBox.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-			return opts.Start == previousSealBlock && opts.End != nil && *opts.End == previousSealBlock
-		}),
-		[]common.Address{app1Addr},
-		mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{}, nil).Once()
+	// Observation already recorded the spill input at block 90, before the
+	// previous seal block. Attribution must not search by block window.
+	spill := &Input{
+		Index:           productionCap,
+		BlockNumber:     spillInputBlock,
+		RawData:         []byte{0xde, 0xad},
+		Status:          InputCompletionStatus_None,
+		TransactionHash: common.BigToHash(big.NewInt(1)),
+		LogIndex:        0,
+	}
+	repo.On("ListObservedInputs", t.Context(), app1Addr.Hex(), productionCap, productionCap+1).
+		Return([]*Input{spill}, nil).Once()
 
 	var storedInputs []*Input
-	repo.On("CreateEpochsAndInputs", t.Context(), app1Addr.Hex(),
-		mock.MatchedBy(func(epochs map[*Epoch][]*Input) bool {
-			for epoch, inputs := range epochs {
-				return len(epochs) == 1 && epoch.Index == 1 && len(inputs) == 1
-			}
-			return false
+	repo.On("AttributeSealedEpoch", t.Context(), app1Addr.Hex(),
+		mock.MatchedBy(func(epoch *Epoch) bool {
+			return epoch.Index == 1 &&
+				epoch.InputIndexLowerBound == productionCap &&
+				epoch.InputIndexUpperBound == productionCap+1 &&
+				epoch.LastBlock == sealBlock
 		}),
-		sealBlock-1,
+		mock.Anything,
 	).Run(func(args mock.Arguments) {
-		for _, inputs := range args.Get(2).(map[*Epoch][]*Input) {
-			storedInputs = inputs
-		}
-	}).Return(nil).Maybe()
+		storedInputs = args.Get(3).([]*Input)
+	}).Return(nil).Once()
 
 	event := makeSealedEpochEvent(1, productionCap, productionCap+1, sealBlock, tournament)
 	err := reader.processSealedEpochEvent(t.Context(), app, event)
@@ -105,7 +97,6 @@ func TestSealedPipelineAtProductionCap(t *testing.T) {
 	require.Equal(t, spillInputBlock, storedInputs[0].BlockNumber)
 
 	repo.AssertExpectations(t)
-	inputBox.AssertExpectations(t)
 }
 
 // TestSealedEpochDoesNotAttributeObservedSurplus reproduces the over-execution.
@@ -151,10 +142,8 @@ func TestSealedEpochDoesNotAttributeObservedSurplus(t *testing.T) {
 		Status:               EpochStatus_Open,
 	}
 	observed := make([]*Input, 0, 3)
-	events := make([]iinputbox.IInputBoxInputAdded, 0, 3)
 	for index := uint64(0); index < 3; index++ {
 		event := makeInputEvent(app.IApplicationAddress, index, inputBlock)
-		events = append(events, event)
 		observed = append(observed, &Input{
 			Index:           index,
 			Status:          InputCompletionStatus_None,
@@ -167,22 +156,9 @@ func TestSealedEpochDoesNotAttributeObservedSurplus(t *testing.T) {
 	require.NoError(t, repo.CreateEpochsAndInputs(ctx, address,
 		map[*Epoch][]*Input{openEpoch: observed}, inputBlock))
 
-	inputBox := newMockInputBox()
-	inputBox.On("GetNumberOfInputs", blockRange(0, inputBlock), app.IApplicationAddress).
-		Return(new(big.Int), nil)
-	inputBox.On("GetNumberOfInputs", blockFrom(inputBlock), app.IApplicationAddress).
-		Return(new(big.Int).SetUint64(3), nil)
-	inputBox.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-			return opts.Start == inputBlock && opts.End != nil && *opts.End == inputBlock
-		}),
-		[]common.Address{app.IApplicationAddress},
-		mock.Anything,
-	).Return(events, nil).Once()
-
 	reader := &Service{repository: repo}
 	reader.Logger = testLogger(t)
-	appContracts := appContracts{application: app, inputSource: inputBox}
+	appContracts := appContracts{application: app}
 	event := makeSealedEpochEvent(0, 0, 2, sealBlock, tournament)
 	require.NoError(t, reader.processSealedEpochEvent(ctx, appContracts, event))
 
@@ -205,10 +181,8 @@ func TestSealedEpochDoesNotAttributeObservedSurplus(t *testing.T) {
 		require.Equal(t, uint64(i), input.Index)
 	}
 
-	// The surplus remains observed and visible to index/count lookups.
-	count, err := repo.GetNumberOfInputs(ctx, address)
-	require.NoError(t, err)
-	require.Equal(t, uint64(3), count, "the observed surplus must remain visible to the input counter")
+	// The surplus remains observed for a later epoch.
+	observedCount := countObservedInputs(ctx, t, repo, address)
+	require.Equal(t, uint64(1), observedCount, "the observed surplus must remain unassigned")
 
-	inputBox.AssertExpectations(t)
 }

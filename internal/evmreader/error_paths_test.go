@@ -103,27 +103,13 @@ func (s *SealedEpochsSuite) TestSealedEpochInputCountMismatchReturnsError() {
 	s.repository.On("GetEpoch", mock.Anything, mock.Anything, uint64(1)).
 		Return(nil, nil)
 
-	// On-chain: only 4 inputs total (1 new instead of expected 2)
-	s.inputBox.On("GetNumberOfInputs",
-		mock.MatchedBy(func(opts *bind.CallOpts) bool {
-			return opts.BlockNumber.Uint64() < 150
-		}),
-		mock.Anything,
-	).Return(big.NewInt(3), nil)
-	s.inputBox.On("GetNumberOfInputs",
-		mock.MatchedBy(func(opts *bind.CallOpts) bool {
-			return opts.BlockNumber.Uint64() >= 150
-		}),
-		mock.Anything,
-	).Return(big.NewInt(4), nil)
-	s.inputBox.On("RetrieveInputs",
-		mock.MatchedBy(func(opts *bind.FilterOpts) bool {
-			return opts.Start == 150
-		}),
-		mock.Anything, mock.Anything,
-	).Return([]iinputbox.IInputBoxInputAdded{
-		makeInputEvent(app1Addr, 3, 150),
-	}, nil)
+	// Observation recorded only one of the two declared inputs.
+	one := makeInputEvent(app1Addr, 3, 150)
+	s.repository.On("ListObservedInputs", mock.Anything, app1Addr.Hex(), uint64(3), uint64(5)).
+		Return([]*Input{{
+			Index: 3, BlockNumber: 150, RawData: one.Input,
+			Status: InputCompletionStatus_None, TransactionHash: one.Raw.TxHash,
+		}}, nil).Once()
 
 	err := s.evmReader.processSealedEpochEvent(s.ctx, app, event)
 	s.Require().Error(err)
@@ -133,31 +119,29 @@ func (s *SealedEpochsSuite) TestSealedEpochInputCountMismatchReturnsError() {
 	s.Require().ErrorContains(err, "got 1")
 
 	// Epoch must NOT be stored
-	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 0)
+	s.repository.AssertNumberOfCalls(s.T(), "AttributeSealedEpoch", 0)
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
 
-	// A complete response to the same event can be committed on retry. No
-	// cursor was advanced past either missing input by the first attempt.
-	s.inputBox.Unset("GetNumberOfInputs")
-	s.inputBox.Unset("RetrieveInputs")
-	s.inputBox.On("GetNumberOfInputs", blockRange(0, 150), mock.Anything).Return(big.NewInt(3), nil)
-	s.inputBox.On("GetNumberOfInputs", blockFrom(150), mock.Anything).Return(big.NewInt(5), nil)
-	s.inputBox.On("RetrieveInputs", inputLogBlock(150), mock.Anything, mock.Anything).
-		Return([]iinputbox.IInputBoxInputAdded{
-			makeInputEvent(app1Addr, 3, 150), makeInputEvent(app1Addr, 4, 150),
-		}, nil).Once()
-	s.repository.On("CreateEpochsAndInputs", mock.Anything, app1Addr.Hex(), mock.Anything, sealBlock-1).
+	// A complete observation of the same range can be committed on retry.
+	s.repository.Unset("ListObservedInputs")
+	two := []*Input{
+		{Index: 3, BlockNumber: 150, RawData: one.Input,
+			Status: InputCompletionStatus_None, TransactionHash: one.Raw.TxHash},
+		{Index: 4, BlockNumber: 150, RawData: []byte{0x04},
+			Status: InputCompletionStatus_None, TransactionHash: common.HexToHash("0x44")},
+	}
+	s.repository.On("ListObservedInputs", mock.Anything, app1Addr.Hex(), uint64(3), uint64(5)).
+		Return(two, nil).Once()
+	s.repository.On("AttributeSealedEpoch", mock.Anything, app1Addr.Hex(), mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
-			epochs := args.Get(2).(map[*Epoch][]*Input)
-			s.Require().Len(epochs, 1)
-			for epoch, inputs := range epochs {
-				s.Require().Equal(uint64(1), epoch.Index)
-				s.Require().Equal(EpochStatus_Closed, epoch.Status)
-				s.Require().Len(inputs, 2)
-			}
+			epoch := args.Get(2).(*Epoch)
+			inputs := args.Get(3).([]*Input)
+			s.Require().Equal(uint64(1), epoch.Index)
+			s.Require().Equal(EpochStatus_Closed, epoch.Status)
+			s.Require().Len(inputs, 2)
 		}).Return(nil).Once()
 	s.Require().NoError(s.evmReader.processSealedEpochEvent(s.ctx, app, event))
-	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
+	s.repository.AssertNumberOfCalls(s.T(), "AttributeSealedEpoch", 1)
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
 }
 
@@ -205,7 +189,7 @@ func (s *SealedEpochsSuite) TestSealedEpochFirstBlockMismatchReturnsError() {
 }
 
 // --- Priority 4: GetLastNonOpenEpoch nil → app set corrupted ---
-// When processApplicationOpenEpoch finds no non-open epoch, the application
+// When projectDaveOpenEpoch finds no non-open epoch, the application
 // must be set corrupted. This is an invariant of the DaveConsensus protocol.
 func (s *SealedEpochsSuite) TestOpenEpochWithNoNonOpenEpochSetsCorrupted() {
 	app := appContracts{
@@ -223,7 +207,8 @@ func (s *SealedEpochsSuite) TestOpenEpochWithNoNonOpenEpochSetsCorrupted() {
 		mock.Anything, int64(1), ApplicationStatus_Corrupted, mock.Anything,
 	).Return(nil).Once()
 
-	err := s.evmReader.processApplicationOpenEpoch(s.ctx, app, 200)
+	err := s.evmReader.projectDaveOpenEpoch(s.ctx, app, 200,
+		&InputObservation{ThroughBlock: 200})
 	s.Require().Error(err)
 	s.Require().ErrorContains(err, "no non open epochs found")
 
@@ -600,8 +585,8 @@ func (s *SealedEpochsSuite) TestSealedEpochDBFailurePreventsCheckpointAdvance() 
 	s.repository.On("GetEpoch", mock.Anything, mock.Anything, uint64(0)).
 		Return(nil, nil)
 
-	// CreateEpochsAndInputs FAILS
-	s.repository.On("CreateEpochsAndInputs",
+	// AttributeSealedEpoch FAILS
+	s.repository.On("AttributeSealedEpoch",
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything,
 	).Return(errors.New("database connection lost"))
 
@@ -609,8 +594,8 @@ func (s *SealedEpochsSuite) TestSealedEpochDBFailurePreventsCheckpointAdvance() 
 	s.Require().Error(err)
 	s.Require().ErrorContains(err, "database connection lost")
 
-	// CreateEpochsAndInputs was attempted
-	s.repository.AssertNumberOfCalls(s.T(), "CreateEpochsAndInputs", 1)
+	// AttributeSealedEpoch was attempted
+	s.repository.AssertNumberOfCalls(s.T(), "AttributeSealedEpoch", 1)
 	// Checkpoint must NOT be advanced (error prevented reaching UpdateEventLastCheckBlock)
 	s.repository.AssertNumberOfCalls(s.T(), "UpdateEventLastCheckBlock", 0)
 }

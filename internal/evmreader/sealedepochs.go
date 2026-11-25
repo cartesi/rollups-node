@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 
 	. "github.com/cartesi/rollups-node/internal/model"
@@ -86,7 +85,42 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 			"consensus_address", app.application.IConsensusAddress)
 
 		observationEndBlock := foreclosureBoundedEndBlock(app.application, mostRecentBlockNumber)
-		err := r.processApplicationSealedEpochs(ctx, app, observationEndBlock)
+
+		// Observation is independent of epoch attribution and may run ahead.
+		// Seals below consume the observed rows; the OPEN projection then
+		// publishes the input cursor after those seals were stored.
+		observed, err := r.observeDaveInputs(ctx, app, observationEndBlock)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return false // shutting down
+			}
+			if errors.Is(err, repository.ErrInputLogIdentityConflict) ||
+				errors.Is(err, repository.ErrInputObservationConflict) {
+				err = r.setApplicationCorrupted(ctx, app.application,
+					"input observation conflicts with stored data; operator reset required: %v", err)
+			}
+			if errors.Is(err, errApplicationStatusReported) {
+				if app.application.Status != ApplicationStatus_Corrupted && app.application.Status != ApplicationStatus_Diverged {
+					success = false
+				}
+				continue
+			}
+			success = false
+			if errors.Is(err, errInconclusiveInputView) {
+				r.Logger.Warn("Input observation reads disagree; retrying from the saved frontier",
+					"application", app.application.Name, "address", app.application.IApplicationAddress,
+					"consensus_address", app.application.IConsensusAddress,
+					"to_block", observationEndBlock, "error", err)
+				continue
+			}
+			r.Logger.Error("Error observing application inputs",
+				"application", app.application.Name,
+				"consensus_address", app.application.IConsensusAddress,
+				"error", err)
+			continue
+		}
+
+		err = r.processApplicationSealedEpochs(ctx, app, observationEndBlock)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return false // shutting down
@@ -122,7 +156,7 @@ func (r *Service) scanDaveConsensusEpochsAndInputs(
 		// Open-epoch input ingestion is L1 observation, not machine execution.
 		// Keep it active for non-executing applications and bound it at the
 		// foreclosure block just like the sealed-epoch scan above.
-		err = r.processApplicationOpenEpoch(ctx, app, observationEndBlock)
+		err = r.projectDaveOpenEpoch(ctx, app, observationEndBlock, observed)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return false // shutting down
@@ -407,51 +441,32 @@ func (r *Service) processSealedEpochEvent(
 		epoch.Status = EpochStatus_Closed // Sealed epochs are closed
 	}
 
-	// Fetch inputs for this epoch from the InputBox.
-	// Always search from epoch.FirstBlock (not lastInputCheckBlock+1) because with
-	// PRT's overlapping block boundaries (sealed epoch's LastBlock = next epoch's
-	// FirstBlock), inputs for this epoch may exist at the overlap block — added in
-	// a later transaction than the previous epoch's seal within the same block.
-	// Use InputIndexLowerBound as prevValue rather than the DB input count, since
-	// the open epoch may have already stored some of these inputs ahead of us.
-	var inputs []*Input
-	if epoch.InputIndexUpperBound > epoch.InputIndexLowerBound {
-		var err error
-		prevValue := new(big.Int).SetUint64(epoch.InputIndexLowerBound)
-		inputs, _, err = r.fetchInputs(ctx, app,
-			epoch.FirstBlock, epoch.LastBlock,
-			prevValue,
-			epoch.InputIndexLowerBound, epoch.InputIndexUpperBound)
-		if err != nil {
-			return fmt.Errorf("failed to fetch inputs for epoch %d: %w", epoch.Index, err)
-		}
-
-		expectedCount := epoch.InputIndexUpperBound - epoch.InputIndexLowerBound
-		if uint64(len(inputs)) != expectedCount {
-			return fmt.Errorf(
-				"%w: epoch %d input count mismatch: expected %d (indices %d to %d), got %d",
-				errInconclusiveEpochView, epoch.Index, expectedCount,
-				epoch.InputIndexLowerBound, epoch.InputIndexUpperBound,
-				len(inputs))
-		}
-	}
-	// The seal covers every input before its transaction, but later inputs in
-	// the same block belong to the next epoch. Publish only complete blocks;
-	// the open-epoch scan must finish this boundary block before drain is safe.
-	epochInputMap := map[*Epoch][]*Input{epoch: inputs}
-
-	r.Logger.Debug("Storing sealed epoch", "application", app.application.Name, "epoch_number", epoch.Index)
-
-	err = r.repository.CreateEpochsAndInputs(
-		ctx,
-		app.application.IApplicationAddress.String(),
-		epochInputMap,
-		event.Raw.BlockNumber-1,
-	)
+	inputs, err := r.collectDaveEpochInputs(ctx, app, epoch)
 	if err != nil {
 		if errors.Is(err, repository.ErrInputLogIdentityConflict) {
 			return r.setApplicationCorrupted(ctx, app.application,
 				"sealed epoch %d input L1 log identity conflicts with stored data; operator reset required: %v", epoch.Index, err)
+		}
+		return fmt.Errorf("failed to collect inputs for epoch %d: %w", epoch.Index, err)
+	}
+
+	// The seal covers every input before its transaction, but later inputs in
+	// the same block belong to the next epoch. Attribution does not publish the
+	// input cursor; the OPEN projection publishes it after all seals up to the
+	// same block were stored.
+	r.Logger.Debug("Storing sealed epoch", "application", app.application.Name, "epoch_number", epoch.Index)
+
+	err = r.repository.AttributeSealedEpoch(
+		ctx,
+		app.application.IApplicationAddress.String(),
+		epoch,
+		inputs,
+	)
+	if err != nil {
+		if errors.Is(err, repository.ErrInputLogIdentityConflict) ||
+			errors.Is(err, repository.ErrEpochInputRangeConflict) {
+			return r.setApplicationCorrupted(ctx, app.application,
+				"sealed epoch %d input range or L1 identity conflicts with stored data; operator reset required: %v", epoch.Index, err)
 		}
 		return fmt.Errorf("failed to store epoch and inputs: %w", err)
 	}
@@ -465,10 +480,11 @@ func (r *Service) processSealedEpochEvent(
 	return nil
 }
 
-func (r *Service) processApplicationOpenEpoch(
+func (r *Service) projectDaveOpenEpoch(
 	ctx context.Context,
 	app appContracts,
 	mostRecentBlockNumber uint64,
+	observed *InputObservation,
 ) error {
 	// The input cursor covers complete blocks. A sealed batch in this tick
 	// can advance it only to the block before its seal.
@@ -528,49 +544,71 @@ func (r *Service) processApplicationOpenEpoch(
 		return nil
 	}
 
-	// Fetch inputs for this epoch from the InputBox
-	inputCount, err := r.repository.GetNumberOfInputs(
-		ctx, app.application.IApplicationAddress.String())
-	if err != nil {
-		return fmt.Errorf(
-			"failed to get number of inputs from repository: %w", err)
-	}
-	prevValue := new(big.Int).SetUint64(inputCount)
-	inputs, endCount, err := r.fetchInputs(ctx, app,
-		lastInputCheckBlock+1, mostRecentBlockNumber,
-		prevValue,
-		openEpoch.InputIndexLowerBound, math.MaxUint64)
-	if err != nil {
-		return fmt.Errorf("failed to fetch inputs for epoch %d: %w", openEpoch.Index, err)
-	}
-	if endCount < inputCount || endCount-inputCount != uint64(len(inputs)) {
-		return fmt.Errorf("%w: open epoch %d input count mismatch: stored %d, on-chain %d, got %d",
-			errInconclusiveInputView, openEpoch.Index, inputCount, endCount, len(inputs))
+	if observed == nil {
+		return fmt.Errorf("%w: open epoch %d has no input observation frontier",
+			errInconclusiveInputView, openEpoch.Index)
 	}
 
-	// increase the upper bound according to the number of fetched inputs
-	openEpoch.InputIndexUpperBound += uint64(len(inputs))
+	lower := lastEpoch.InputIndexUpperBound
+	if openEpoch.InputIndexLowerBound != lower {
+		return fmt.Errorf("open epoch %d lower bound %d does not match last sealed upper bound %d",
+			openEpoch.Index, openEpoch.InputIndexLowerBound, lower)
+	}
+	if observed.NextInputIndex < lower {
+		return fmt.Errorf("%w: open epoch %d observed next input %d is below lower bound %d",
+			errInconclusiveInputView, openEpoch.Index,
+			observed.NextInputIndex, lower)
+	}
+
+	// Project at most one protocol epoch worth of observed inputs. The surplus
+	// stays in observed_input for a later EpochSealed event. After foreclosure
+	// no further seal can arrive, so a surplus left at the cap is never
+	// executed; it remains queryable as unattributed history and deliberately
+	// does not block machine teardown. Only the newly grown prefix is collected;
+	// rows below the stored upper bound were already inserted and
+	// identity-verified by an earlier projection.
+	previousUpper := openEpoch.InputIndexUpperBound
+	pending := observed.NextInputIndex - lower
+	newUpper := lower + min(pending, MaxAdvanceStatesPerEpoch)
+	if newUpper < previousUpper {
+		return fmt.Errorf("%w: open epoch %d would narrow [%d, %d) to [%d, %d)",
+			repository.ErrEpochInputRangeConflict, openEpoch.Index,
+			openEpoch.InputIndexLowerBound, previousUpper,
+			openEpoch.InputIndexLowerBound, newUpper)
+	}
+	openEpoch.InputIndexUpperBound = newUpper
 	openEpoch.LastBlock = mostRecentBlockNumber
+
+	inputs, err := r.collectDaveEpochInputRange(ctx, app, openEpoch, previousUpper, newUpper)
+	if err != nil {
+		if errors.Is(err, repository.ErrInputLogIdentityConflict) {
+			return r.setApplicationCorrupted(ctx, app.application,
+				"open epoch %d input L1 log identity conflicts with stored data; operator reset required: %v", openEpoch.Index, err)
+		}
+		return fmt.Errorf("failed to collect inputs for epoch %d: %w", openEpoch.Index, err)
+	}
 
 	r.Logger.Debug("Storing open epoch",
 		"application", app.application.Name,
 		"epoch_number", openEpoch.Index,
 		"new_inputs", len(inputs),
+		"input_lower_bound", openEpoch.InputIndexLowerBound,
+		"input_previous_upper_bound", previousUpper,
+		"observed_next_input", observed.NextInputIndex,
 	)
-	// Store epoch and inputs
-	epochInputMap := map[*Epoch][]*Input{openEpoch: inputs}
 
-	err = r.repository.CreateEpochsAndInputs(
+	err = r.repository.ProjectDaveOpenInputs(
 		ctx,
 		app.application.IApplicationAddress.String(),
-		epochInputMap,
+		openEpoch,
+		inputs,
 		mostRecentBlockNumber,
 	)
-
 	if err != nil {
-		if errors.Is(err, repository.ErrInputLogIdentityConflict) {
+		if errors.Is(err, repository.ErrInputLogIdentityConflict) ||
+			errors.Is(err, repository.ErrEpochInputRangeConflict) {
 			return r.setApplicationCorrupted(ctx, app.application,
-				"open epoch %d input L1 log identity conflicts with stored data; operator reset required: %v", openEpoch.Index, err)
+				"open epoch %d input range or L1 identity conflicts with stored data; operator reset required: %v", openEpoch.Index, err)
 		}
 		return fmt.Errorf("failed to store epoch and inputs: %w", err)
 	}

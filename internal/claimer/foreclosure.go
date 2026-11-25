@@ -87,7 +87,10 @@ func (s *Service) processForeclosedApps(
 		// may record foreclose_block before it has scanned old InputAdded
 		// events. Until the input scanner reaches foreclose_block, the DB may
 		// look empty even though old inputs still exist on chain. Wait until
-		// that scan catches up before trusting the drain queries below.
+		// that scan catches up before trusting the drain queries below. Dave
+		// inputs observed above the capped OPEN projection are intentionally not
+		// part of the drain: no later EpochSealed can cover them after
+		// foreclosure.
 		if !app.ForeclosureScanCaughtUp() {
 			s.Logger.Info(
 				"Foreclosed application still ingesting pre-foreclosure inputs",
