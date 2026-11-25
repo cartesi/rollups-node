@@ -589,6 +589,42 @@ CREATE TRIGGER "input_completion_immutability_check"
 CREATE TRIGGER "input_set_updated_at" BEFORE UPDATE ON "input"
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Inputs observed from L1 but not yet attributed to a Dave epoch. Since Dave
+-- alpha.7 a seal is capped at 2^24 pending inputs, so an input of a later
+-- epoch can be published before the block where the previous epoch was
+-- sealed. Observation keeps those inputs with their L1 identity until an
+-- EpochSealed event assigns an index range to them; execution only reads the
+-- "input" table. A row is removed here when it is projected into "input".
+CREATE TABLE "observed_input"
+(
+    "application_id" int4 NOT NULL,
+    "index" uint64 NOT NULL,
+    "block_number" uint64 NOT NULL,
+    "transaction_hash" hash NOT NULL,
+    "log_index" uint64 NOT NULL,
+    "raw_data" BYTEA NOT NULL,
+    CONSTRAINT "observed_input_pkey" PRIMARY KEY ("application_id", "index"),
+    CONSTRAINT "observed_input_application_id_tx_hash_log_index_unique"
+        UNIQUE ("application_id", "transaction_hash", "log_index"),
+    CONSTRAINT "observed_input_application_id_fkey"
+        FOREIGN KEY ("application_id") REFERENCES "application"("id") ON DELETE CASCADE
+);
+
+-- Observation frontier for the L1 input scan. It is committed in the same
+-- transaction as the observed rows, so an interrupted tick resumes without a
+-- gap or duplicate. "next_input_index" is the first index outside the
+-- observed prefix; it may be ahead of the attributed input count while an
+-- epoch's surplus waits for the next seal.
+CREATE TABLE "input_observation"
+(
+    "application_id" int4 NOT NULL,
+    "through_block" uint64 NOT NULL,
+    "next_input_index" uint64 NOT NULL,
+    CONSTRAINT "input_observation_pkey" PRIMARY KEY ("application_id"),
+    CONSTRAINT "input_observation_application_id_fkey"
+        FOREIGN KEY ("application_id") REFERENCES "application"("id") ON DELETE CASCADE
+);
+
 CREATE TABLE "output"
 (
     "input_epoch_application_id" int4 NOT NULL,

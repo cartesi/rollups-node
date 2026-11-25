@@ -55,6 +55,9 @@ DROP INDEX IF EXISTS "output_raw_data_type_idx";
 DROP TABLE IF EXISTS "output";
 DROP FUNCTION IF EXISTS "enforce_output_immutability";
 
+DROP TABLE IF EXISTS "input_observation";
+DROP TABLE IF EXISTS "observed_input";
+
 DROP TRIGGER IF EXISTS "input_set_updated_at" ON "input";
 DROP TRIGGER IF EXISTS "input_completion_immutability_check" ON "input";
 DROP INDEX IF EXISTS "input_sender_idx";
