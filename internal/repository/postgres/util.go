@@ -44,6 +44,20 @@ func hashToBytes(h *common.Hash) any {
 	return (*h)[:]
 }
 
+func byteaOrNull(value []byte) postgres.ByteaExpression {
+	if value == nil {
+		return postgres.ByteaExp(postgres.NULL)
+	}
+	return postgres.Bytea(value)
+}
+
+func hashByteaOrNull(h *common.Hash) postgres.ByteaExpression {
+	if h == nil {
+		return postgres.ByteaExp(postgres.NULL)
+	}
+	return postgres.Bytea(h[:])
+}
+
 // beginReadTx starts a REPEATABLE READ, read-only transaction.
 // This ensures that multiple queries within the transaction see the same snapshot.
 func beginReadTx(ctx context.Context, pool *pgxpool.Pool) (pgx.Tx, error) {

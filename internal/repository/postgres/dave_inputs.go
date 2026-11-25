@@ -166,6 +166,9 @@ func insertInputs(
 			table.Input.BlockNumber,
 			table.Input.RawData,
 			table.Input.Status,
+			table.Input.ExceptionData,
+			table.Input.MachineHash,
+			table.Input.TxBufferDataBlock,
 			table.Input.TransactionHash,
 			table.Input.LogIndex,
 		)
@@ -179,6 +182,9 @@ func insertInputs(
 			uint64Expr(input.BlockNumber),
 			postgres.Bytea(input.RawData),
 			postgres.NewEnumValue(input.Status.String()),
+			byteaOrNull(input.ExceptionData),
+			hashByteaOrNull(input.MachineHash),
+			hashByteaOrNull(input.TxBufferDataBlock),
 			postgres.Bytea(input.TransactionHash.Bytes()),
 			uint64Expr(input.LogIndex),
 		).WHERE(
@@ -209,23 +215,10 @@ func insertInputs(
 
 	// The batch result must be closed before the transaction can run another
 	// query. A row that already existed is benign only when it is the same
-	// input under the same epoch.
-	for _, input := range existingRows {
-		existing, err := getInputIdentityTx(ctx, tx, epoch.ApplicationID,
-			input.Index)
-		if err != nil {
-			return fmt.Errorf("verify existing input %d for epoch %d: %w",
-				input.Index, epoch.Index, err)
-		}
-		if existing == nil ||
-			existing.epochIndex != epoch.Index ||
-			existing.transactionHash != input.TransactionHash ||
-			existing.logIndex != input.LogIndex {
-			return fmt.Errorf("%w: input %d of epoch %d",
-				repository.ErrInputLogIdentityConflict, input.Index, epoch.Index)
-		}
-	}
-	return nil
+	// input under the same epoch. Verify them set-based instead of issuing one
+	// query per existing row; a no-op re-projection must not scale with the
+	// epoch size.
+	return verifyInputIdentitiesTx(ctx, tx, epoch.ApplicationID, epoch.Index, existingRows)
 }
 
 type inputIdentity struct {
@@ -234,33 +227,67 @@ type inputIdentity struct {
 	logIndex        uint64
 }
 
-func getInputIdentityTx(
+// inputIdentityChunkSize keeps the IN list well below the Postgres parameter
+// limit while amortizing the round trips.
+const inputIdentityChunkSize = 500
+
+func verifyInputIdentitiesTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	appID int64,
-	index uint64,
-) (*inputIdentity, error) {
-	stmt := table.Input.SELECT(
-		table.Input.EpochIndex,
-		table.Input.TransactionHash,
-		table.Input.LogIndex,
-	).WHERE(
-		table.Input.EpochApplicationID.EQ(postgres.Int64(appID)).
-			AND(table.Input.Index.EQ(uint64Expr(index))),
-	)
-	sqlStr, args := stmt.Sql()
-	var identity inputIdentity
-	var transactionHash []byte
-	err := tx.QueryRow(ctx, sqlStr, args...).Scan(
-		&identity.epochIndex, &transactionHash, &identity.logIndex)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+	epochIndex uint64,
+	inputs []*model.Input,
+) error {
+	for start := 0; start < len(inputs); start += inputIdentityChunkSize {
+		chunk := inputs[start:min(start+inputIdentityChunkSize, len(inputs))]
+		indices := make([]postgres.Expression, len(chunk))
+		for i, input := range chunk {
+			indices[i] = uint64Expr(input.Index)
+		}
+		stmt := table.Input.SELECT(
+			table.Input.Index,
+			table.Input.EpochIndex,
+			table.Input.TransactionHash,
+			table.Input.LogIndex,
+		).WHERE(
+			table.Input.EpochApplicationID.EQ(postgres.Int64(appID)).
+				AND(table.Input.Index.IN(indices...)),
+		)
+		sqlStr, args := stmt.Sql()
+		rows, err := tx.Query(ctx, sqlStr, args...)
+		if err != nil {
+			return err
+		}
+		found := make(map[uint64]inputIdentity, len(chunk))
+		for rows.Next() {
+			var index uint64
+			var identity inputIdentity
+			var transactionHash []byte
+			if err := rows.Scan(&index, &identity.epochIndex,
+				&transactionHash, &identity.logIndex); err != nil {
+				rows.Close()
+				return err
+			}
+			copy(identity.transactionHash[:], transactionHash)
+			found[index] = identity
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		for _, input := range chunk {
+			existing, ok := found[input.Index]
+			if !ok ||
+				existing.epochIndex != epochIndex ||
+				existing.transactionHash != input.TransactionHash ||
+				existing.logIndex != input.LogIndex {
+				return fmt.Errorf("%w: input %d of epoch %d",
+					repository.ErrInputLogIdentityConflict, input.Index, epochIndex)
+			}
+		}
 	}
-	if err != nil {
-		return nil, err
-	}
-	copy(identity.transactionHash[:], transactionHash)
-	return &identity, nil
+	return nil
 }
 
 func deleteObservedInputs(
@@ -503,39 +530,55 @@ func (r *PostgresRepository) ProjectDaveOpenInputs(
 	if err != nil {
 		return err
 	}
-	if err := upsertEpoch(ctx, tx, whereClause, nameOrAddress, epoch); err != nil {
-		return err
-	}
+
+	// Callers send only the newly observed prefix, so the stored upper bound
+	// read under the application lock is the lower bound of the delta. The
+	// first projection of an epoch has no stored row and starts at the epoch's
+	// lower bound.
 	stored, err := getEpoch(ctx, tx, nameOrAddress, epoch.Index)
 	if err != nil {
 		return err
 	}
-	if stored == nil {
-		return repository.ErrNotFound
+	previousUpper := epoch.InputIndexLowerBound
+	if stored != nil {
+		if stored.Status != model.EpochStatus_Open {
+			return fmt.Errorf("%w: epoch %d is %s, not OPEN",
+				repository.ErrNoUpdate, epoch.Index, stored.Status)
+		}
+		if stored.InputIndexLowerBound != epoch.InputIndexLowerBound {
+			return fmt.Errorf("%w: stored epoch %d lower bound is %d, got %d",
+				repository.ErrEpochInputRangeConflict, epoch.Index,
+				stored.InputIndexLowerBound, epoch.InputIndexLowerBound)
+		}
+		if epoch.InputIndexUpperBound < stored.InputIndexUpperBound {
+			return fmt.Errorf("%w: stored epoch %d upper bound is %d, projection would narrow it to %d",
+				repository.ErrEpochInputRangeConflict, epoch.Index,
+				stored.InputIndexUpperBound, epoch.InputIndexUpperBound)
+		}
+		if stored.LastBlock > throughBlock {
+			return fmt.Errorf("%w: stored epoch %d last block is %d, projection is through %d",
+				repository.ErrEpochInputRangeConflict, epoch.Index,
+				stored.LastBlock, throughBlock)
+		}
+		previousUpper = stored.InputIndexUpperBound
 	}
-	if stored.Status != model.EpochStatus_Open {
-		return fmt.Errorf("%w: epoch %d is %s, not OPEN",
-			repository.ErrNoUpdate, epoch.Index, stored.Status)
+	if err := validateContiguousInputs(previousUpper,
+		epoch.InputIndexUpperBound, throughBlock, inputs); err != nil {
+		return err
 	}
-	if !storedEpochMatchesRange(stored, epoch) {
-		return fmt.Errorf("%w: stored epoch %d has [%d, %d) at block %d, got [%d, %d) at block %d",
-			repository.ErrEpochInputRangeConflict, epoch.Index,
-			stored.InputIndexLowerBound, stored.InputIndexUpperBound, stored.LastBlock,
-			epoch.InputIndexLowerBound, epoch.InputIndexUpperBound, epoch.LastBlock)
-	}
-	if err := validateContiguousInputs(stored.InputIndexLowerBound,
-		stored.InputIndexUpperBound, throughBlock, inputs); err != nil {
+
+	if err := upsertEpoch(ctx, tx, whereClause, nameOrAddress, epoch); err != nil {
 		return err
 	}
 	epoch.ApplicationID = appID
 	if err := insertAttributedInputs(ctx, tx, whereClause, epoch, inputs); err != nil {
 		return err
 	}
-	if err := detachSurplusInputs(ctx, tx, whereClause, appID, stored); err != nil {
+	if err := detachSurplusInputs(ctx, tx, whereClause, appID, epoch); err != nil {
 		return err
 	}
 	if err := deleteObservedInputs(ctx, tx, appID,
-		stored.InputIndexLowerBound, stored.InputIndexUpperBound); err != nil {
+		epoch.InputIndexLowerBound, epoch.InputIndexUpperBound); err != nil {
 		return err
 	}
 	if err := advanceInputCheckBlock(ctx, tx, whereClause, throughBlock); err != nil {
@@ -661,48 +704,64 @@ func insertObservedInputs(
 		return wrapInputLogIdentityConflict(err)
 	}
 
-	for _, input := range existingRows {
-		existing, err := getObservedInputIdentityTx(ctx, tx, appID, input.Index)
-		if err != nil {
-			return fmt.Errorf("verify observed input %d: %w", input.Index, err)
-		}
-		if existing == nil ||
-			existing.transactionHash != input.TransactionHash ||
-			existing.logIndex != input.LogIndex {
-			return fmt.Errorf("%w: observed input %d (tx %s, log %d)",
-				repository.ErrInputLogIdentityConflict,
-				input.Index, input.TransactionHash.Hex(), input.LogIndex)
-		}
-	}
-	return nil
+	return verifyObservedInputIdentitiesTx(ctx, tx, appID, existingRows)
 }
 
-func getObservedInputIdentityTx(
+func verifyObservedInputIdentitiesTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	appID int64,
-	index uint64,
-) (*inputIdentity, error) {
-	stmt := table.ObservedInput.SELECT(
-		table.ObservedInput.TransactionHash,
-		table.ObservedInput.LogIndex,
-	).WHERE(
-		table.ObservedInput.ApplicationID.EQ(postgres.Int64(appID)).
-			AND(table.ObservedInput.Index.EQ(uint64Expr(index))),
-	)
-	sqlStr, args := stmt.Sql()
-	var transactionHash []byte
-	var logIndex uint64
-	err := tx.QueryRow(ctx, sqlStr, args...).Scan(&transactionHash, &logIndex)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+	inputs []*model.Input,
+) error {
+	for start := 0; start < len(inputs); start += inputIdentityChunkSize {
+		chunk := inputs[start:min(start+inputIdentityChunkSize, len(inputs))]
+		indices := make([]postgres.Expression, len(chunk))
+		for i, input := range chunk {
+			indices[i] = uint64Expr(input.Index)
+		}
+		stmt := table.ObservedInput.SELECT(
+			table.ObservedInput.Index,
+			table.ObservedInput.TransactionHash,
+			table.ObservedInput.LogIndex,
+		).WHERE(
+			table.ObservedInput.ApplicationID.EQ(postgres.Int64(appID)).
+				AND(table.ObservedInput.Index.IN(indices...)),
+		)
+		sqlStr, args := stmt.Sql()
+		rows, err := tx.Query(ctx, sqlStr, args...)
+		if err != nil {
+			return err
+		}
+		found := make(map[uint64]inputIdentity, len(chunk))
+		for rows.Next() {
+			var index uint64
+			var identity inputIdentity
+			var transactionHash []byte
+			if err := rows.Scan(&index, &transactionHash,
+				&identity.logIndex); err != nil {
+				rows.Close()
+				return err
+			}
+			copy(identity.transactionHash[:], transactionHash)
+			found[index] = identity
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		for _, input := range chunk {
+			existing, ok := found[input.Index]
+			if !ok ||
+				existing.transactionHash != input.TransactionHash ||
+				existing.logIndex != input.LogIndex {
+				return fmt.Errorf("%w: observed input %d (tx %s, log %d)",
+					repository.ErrInputLogIdentityConflict,
+					input.Index, input.TransactionHash.Hex(), input.LogIndex)
+			}
+		}
 	}
-	if err != nil {
-		return nil, err
-	}
-	identity := &inputIdentity{logIndex: logIndex}
-	copy(identity.transactionHash[:], transactionHash)
-	return identity, nil
+	return nil
 }
 
 func upsertInputObservation(
@@ -841,6 +900,8 @@ func (r *PostgresRepository) ListObservedInputs(
 	return inputs, nil
 }
 
+// CountObservedInputs is retained on the concrete repository for Postgres
+// tests; ListObservedInputs covers production needs.
 func (r *PostgresRepository) CountObservedInputs(
 	ctx context.Context,
 	nameOrAddress string,
