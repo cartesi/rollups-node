@@ -549,7 +549,7 @@ func TestStandingChangesScopeAndPagination(t *testing.T) {
 		positional                             bool
 	}{
 		{epoch: "0x0", logIndex: obsUintMax, logValue: math.MaxUint64, wantLimit: 50},
-		{epoch: obsUintMax, logIndex: "0x0", epochValue: math.MaxUint64, limit: 10001, wantLimit: 10000, positional: true},
+		{epoch: obsUintMax, logIndex: "0x0", epochValue: math.MaxUint64, limit: 10001, wantLimit: 2000, positional: true},
 		{epoch: "0x10", logIndex: "0x1", epochValue: 16, logValue: 1, limit: 7, wantLimit: 7},
 	} {
 		t.Run(test.epoch, func(t *testing.T) {

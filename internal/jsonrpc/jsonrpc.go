@@ -43,8 +43,8 @@ const (
 	// Maximum amount of request in a batch (100)
 	MAX_BATCH_SIZE = 100 //nolint: revive
 	// Maximum amount of items to list (10,000).
-	LIST_ITEM_LIMIT = 10000 //nolint: revive
-	// Default amount of item on a list (50)
+	LIST_ITEM_LIMIT = 2000 //nolint: revive
+	// Default amount f item on a list (50)
 	LIST_ITEM_DEFAULT = 50 //nolint: revive
 	// Maximum number of bytes from an RPC method included in a log record.
 	MAX_LOGGED_METHOD_LEN = 64 //nolint: revive

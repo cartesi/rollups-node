@@ -72,9 +72,9 @@ func TestBatchListItemLimitSupportsNamedAndPositionalParams(t *testing.T) {
 
 	require.False(t, batchExceedsListItemLimit([]json.RawMessage{
 		json.RawMessage(
-			`{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":6000},"id":1}`),
+			`{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":600},"id":1}`),
 		json.RawMessage(
-			`{"jsonrpc":"2.0","method":"cartesi_listOutputs","params":{"limit":4000},"id":2}`),
+			`{"jsonrpc":"2.0","method":"cartesi_listOutputs","params":{"limit":400},"id":2}`),
 	}))
 }
 
@@ -132,8 +132,8 @@ func TestJSONRPCBatchAllowsListWorkAtLimit(t *testing.T) {
 	})
 
 	rr := serveRPC(t, s, []byte(`[
-		{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":6000},"id":1},
-		{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":4000},"id":2}
+		{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":600},"id":1},
+		{"jsonrpc":"2.0","method":"cartesi_listApplications","params":{"limit":400},"id":2}
 	]`))
 
 	require.Equal(t, http.StatusOK, rr.Code)
