@@ -155,7 +155,8 @@ func verifySummary(
 	if actual.Consensus != expected.ConsensusType {
 		return contradiction("consensus", expected.ConsensusType, actual.Consensus)
 	}
-	if actual.ProcessedInputs != expected.ProcessedInputs {
+	// Only a shrink contradicts, since completed inputs are never revoked.
+	if actual.ProcessedInputs < expected.ProcessedInputs {
 		return contradiction(
 			"processed_inputs.count",
 			expected.ProcessedInputs,

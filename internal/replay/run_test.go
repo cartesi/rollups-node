@@ -186,6 +186,51 @@ func TestRunSelectsReplaySummaryByTypedAddress(t *testing.T) {
 	require.Equal(t, []common.Address{opts.Application.IApplicationAddress}, source.summaryApps)
 }
 
+// The caller snapshots the application before the machine is loaded, so the
+// replay summary may already include inputs completed in the meantime. Growth
+// never invalidates a range that the older, smaller count bounded.
+func TestRunAcceptsCompletedPrefixGrowth(t *testing.T) {
+	source := &fakeSource{
+		summary: model.ReplaySummary{
+			ApplicationID: 7, ProcessedInputs: 5, Consensus: model.Consensus_Authority,
+		},
+		records: replayRecords(3),
+	}
+	executor := &fakeExecutor{}
+	opts := replayOptions(model.Consensus_Authority, 0, 3)
+
+	result, err := Run(context.Background(), source, executor, opts)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), result.ReplayedInputs)
+	require.Equal(t, uint64(3), executor.ProcessedInputs())
+	for _, request := range source.pageRequests {
+		require.Equal(t, uint64(3), request.ToInputExclusive,
+			"growth must not widen the range beyond the caller's snapshot")
+	}
+}
+
+// A smaller count means completed evidence disappeared, which is a real
+// contradiction. It must fail before any page is read or input is executed.
+func TestRunRejectsCompletedPrefixRegression(t *testing.T) {
+	source := &fakeSource{
+		summary: model.ReplaySummary{
+			ApplicationID: 7, ProcessedInputs: 3, Consensus: model.Consensus_Authority,
+		},
+	}
+	executor := &fakeExecutor{}
+	opts := replayOptions(model.Consensus_Authority, 0, 5)
+
+	_, err := Run(context.Background(), source, executor, opts)
+	require.ErrorIs(t, err, ErrContradiction)
+	var contradiction *ContradictionError
+	require.ErrorAs(t, err, &contradiction)
+	require.Equal(t, "processed_inputs.count", contradiction.Field)
+	require.Equal(t, "5", contradiction.Expected)
+	require.Equal(t, "3", contradiction.Actual)
+	require.Empty(t, source.pageRequests)
+	require.Empty(t, executor.advanceCalls)
+}
+
 func TestRunFullPRTComputesHashes(t *testing.T) {
 	record := replayRecords(1)[0]
 	record.StateHashes = []model.ReplayStateHash{{
