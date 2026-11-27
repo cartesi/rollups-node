@@ -117,13 +117,17 @@ func (f *fakeMachine) GetProof(context.Context, uint64, int32, int32) (*machine.
 // is inherited from the embedded interface and must not be called in tests.
 type fakeRepo struct {
 	repository.Repository
-	inputs     []*model.Input
-	listReturn []*model.Input // when set, returned verbatim, ignoring the filter
-	listCalls  []repository.InputFilter
-	listLimits []uint64
-	last       *model.Input
-	lastCalls  int
-	epoch      *model.Epoch
+	inputs        []*model.Input
+	listReturn    []*model.Input // when set, returned verbatim, ignoring the filter
+	listCalls     []repository.InputFilter
+	listLimits    []uint64
+	getInputCalls []uint64
+	// latest is returned by GetLastProcessedInput and lastCalls counts its
+	// calls, so tests can prove the tool does not consult the application's
+	// latest input.
+	latest    *model.Input
+	lastCalls int
+	epoch     *model.Epoch
 }
 
 func (f *fakeRepo) ListInputs(
@@ -149,9 +153,19 @@ func (f *fakeRepo) ListInputs(
 	return out, uint64(len(out)), nil
 }
 
+func (f *fakeRepo) GetInput(_ context.Context, _ string, inputIndex uint64) (*model.Input, error) {
+	f.getInputCalls = append(f.getInputCalls, inputIndex)
+	for _, input := range f.inputs {
+		if input.Index == inputIndex {
+			return input, nil
+		}
+	}
+	return nil, nil
+}
+
 func (f *fakeRepo) GetLastProcessedInput(context.Context, string) (*model.Input, error) {
 	f.lastCalls++
-	return f.last, nil
+	return f.latest, nil
 }
 
 func (f *fakeRepo) GetEpoch(context.Context, string, uint64) (*model.Epoch, error) {
@@ -515,7 +529,7 @@ func TestCheckReplayRangeNotTerminal(t *testing.T) {
 
 	t.Run("range ends at terminal last input", func(t *testing.T) {
 		t.Parallel()
-		repo := &fakeRepo{last: &model.Input{Index: 9, Status: model.InputCompletionStatus_MachineHalted}}
+		repo := &fakeRepo{latest: &model.Input{Index: 9, Status: model.InputCompletionStatus_MachineHalted}}
 
 		err := checkReplayRangeNotTerminal(ctx, repo, "app", 10, 10)
 		require.Error(t, err)
@@ -529,16 +543,34 @@ func TestCheckReplayRangeNotTerminal(t *testing.T) {
 			model.InputCompletionStatus_Accepted,
 			model.InputCompletionStatus_Rejected,
 		} {
-			repo := &fakeRepo{last: &model.Input{Index: 9, Status: status}}
+			repo := &fakeRepo{latest: &model.Input{Index: 9, Status: status}}
 
 			require.NoError(t, checkReplayRangeNotTerminal(ctx, repo, "app", 10, 10))
 			require.Equal(t, 1, repo.lastCalls)
 		}
 	})
 
+	t.Run("input committed after the processed count was captured", func(t *testing.T) {
+		t.Parallel()
+		const capturedProcessedInputs uint64 = 5
+		repo := &fakeRepo{
+			inputs: []*model.Input{
+				{Index: 4, Status: model.InputCompletionStatus_Accepted},
+				{Index: 5, Status: model.InputCompletionStatus_MachineHalted},
+			},
+			latest: &model.Input{Index: 5, Status: model.InputCompletionStatus_MachineHalted},
+		}
+
+		// The CLI captured a processed count of 5, then the node committed the
+		// terminal input at index 5. The requested range [0, 5) excludes it.
+		require.NoError(t, checkReplayRangeNotTerminal(ctx, repo, "app", capturedProcessedInputs, capturedProcessedInputs))
+		require.Equal(t, []uint64{4}, repo.getInputCalls)
+		require.Zero(t, repo.lastCalls)
+	})
+
 	t.Run("range ends before last processed input", func(t *testing.T) {
 		t.Parallel()
-		repo := &fakeRepo{last: &model.Input{Index: 9, Status: model.InputCompletionStatus_MachineHalted}}
+		repo := &fakeRepo{latest: &model.Input{Index: 9, Status: model.InputCompletionStatus_MachineHalted}}
 
 		require.NoError(t, checkReplayRangeNotTerminal(ctx, repo, "app", 10, 5))
 		require.Zero(t, repo.lastCalls)
