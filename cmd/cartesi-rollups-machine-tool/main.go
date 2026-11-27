@@ -187,7 +187,7 @@ func runReplay(ctx context.Context, cmd *cobra.Command, opts replayOptions) erro
 			app.ProcessedInputs,
 		)
 	}
-	if err := checkReplayRangeNotTerminal(ctx, repo, app.Name, app.ProcessedInputs, toInputExclusive); err != nil {
+	if err := checkReplayRangeNotTerminal(ctx, repo, app.Name, toInputExclusive); err != nil {
 		return err
 	}
 
@@ -304,26 +304,27 @@ func verifyReplayTargetRoot(epoch *model.Epoch, root machine.Hash) error {
 	return nil
 }
 
-// checkReplayRangeNotTerminal rejects a range that ends on a terminal input.
-// By construction a terminal input can only be the last processed input, so
-// only a range that extends to the end of the application can contain one.
+// checkReplayRangeNotTerminal rejects a range whose last input is terminal.
+// A terminal input can only be the last processed input, but the application's
+// processed-input count may grow after it is read. Looking up the range's own
+// last input avoids rejecting a valid replay because a later terminal input
+// was committed outside the requested range.
 func checkReplayRangeNotTerminal(
 	ctx context.Context,
 	repo repository.Repository,
 	app string,
-	processedInputs uint64,
 	toInputExclusive uint64,
 ) error {
-	if toInputExclusive != processedInputs {
+	if toInputExclusive == 0 {
 		return nil
 	}
-	last, err := repo.GetLastProcessedInput(ctx, app)
+	last, err := repo.GetInput(ctx, app, toInputExclusive-1)
 	if err != nil {
-		return fmt.Errorf("get last processed input: %w", err)
+		return fmt.Errorf("get last input in replay range: %w", err)
 	}
 	if last != nil && last.Status.IsTerminal() {
 		return fmt.Errorf(
-			"last processed input %d has terminal status %s; the machine cannot be snapshotted",
+			"last input %d in replay range has terminal status %s; the machine cannot be snapshotted",
 			last.Index, last.Status,
 		)
 	}

@@ -529,12 +529,14 @@ func TestCheckReplayRangeNotTerminal(t *testing.T) {
 
 	t.Run("range ends at terminal last input", func(t *testing.T) {
 		t.Parallel()
-		repo := &fakeRepo{latest: &model.Input{Index: 9, Status: model.InputCompletionStatus_MachineHalted}}
+		repo := &fakeRepo{inputs: []*model.Input{
+			{Index: 9, Status: model.InputCompletionStatus_MachineHalted},
+		}}
 
-		err := checkReplayRangeNotTerminal(ctx, repo, "app", 10, 10)
+		err := checkReplayRangeNotTerminal(ctx, repo, "app", 10)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "last processed input 9 has terminal status MACHINE_HALTED")
-		require.Equal(t, 1, repo.lastCalls)
+		require.Contains(t, err.Error(), "last input 9 in replay range has terminal status MACHINE_HALTED")
+		require.Equal(t, []uint64{9}, repo.getInputCalls)
 	})
 
 	t.Run("range ends at non-terminal last input", func(t *testing.T) {
@@ -543,10 +545,12 @@ func TestCheckReplayRangeNotTerminal(t *testing.T) {
 			model.InputCompletionStatus_Accepted,
 			model.InputCompletionStatus_Rejected,
 		} {
-			repo := &fakeRepo{latest: &model.Input{Index: 9, Status: status}}
+			repo := &fakeRepo{inputs: []*model.Input{
+				{Index: 9, Status: status},
+			}}
 
-			require.NoError(t, checkReplayRangeNotTerminal(ctx, repo, "app", 10, 10))
-			require.Equal(t, 1, repo.lastCalls)
+			require.NoError(t, checkReplayRangeNotTerminal(ctx, repo, "app", 10))
+			require.Equal(t, []uint64{9}, repo.getInputCalls)
 		}
 	})
 
@@ -562,17 +566,20 @@ func TestCheckReplayRangeNotTerminal(t *testing.T) {
 		}
 
 		// The CLI captured a processed count of 5, then the node committed the
-		// terminal input at index 5. The requested range [0, 5) excludes it.
-		require.NoError(t, checkReplayRangeNotTerminal(ctx, repo, "app", capturedProcessedInputs, capturedProcessedInputs))
+		// terminal input at index 5. The requested range [0, 5) excludes it, so
+		// the terminal input must not be read via GetLastProcessedInput.
+		require.NoError(t, checkReplayRangeNotTerminal(ctx, repo, "app", capturedProcessedInputs))
 		require.Equal(t, []uint64{4}, repo.getInputCalls)
 		require.Zero(t, repo.lastCalls)
 	})
 
-	t.Run("range ends before last processed input", func(t *testing.T) {
+	t.Run("empty range is skipped", func(t *testing.T) {
 		t.Parallel()
-		repo := &fakeRepo{latest: &model.Input{Index: 9, Status: model.InputCompletionStatus_MachineHalted}}
+		repo := &fakeRepo{inputs: []*model.Input{
+			{Index: 0, Status: model.InputCompletionStatus_MachineHalted},
+		}}
 
-		require.NoError(t, checkReplayRangeNotTerminal(ctx, repo, "app", 10, 5))
-		require.Zero(t, repo.lastCalls)
+		require.NoError(t, checkReplayRangeNotTerminal(ctx, repo, "app", 0))
+		require.Empty(t, repo.getInputCalls)
 	})
 }
