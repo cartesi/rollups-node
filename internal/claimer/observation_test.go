@@ -97,7 +97,7 @@ func TestObservedEventWindowRetainsIteratorCloseFailures(t *testing.T) {
 				},
 				func(_ context.Context, block uint64) (*big.Int, error) { return new(big.Int).SetUint64(block), nil },
 				func(*observationIterator) error { return failure.callback })
-			err := onHit(50)
+			err := onHit(50, nil, nil)
 			require.ErrorIs(t, err, closeErr)
 			if failure.callback != nil {
 				require.ErrorIs(t, err, failure.callback)
@@ -127,9 +127,9 @@ func TestCounterWindowRejectsIncompleteLogs(t *testing.T) {
 					return big.NewInt(9), nil
 				}, func(*observationIterator) error { return nil })
 			if count == 2 {
-				require.NoError(t, onHit(50))
+				require.NoError(t, onHit(50, nil, nil))
 			} else {
-				require.ErrorIs(t, onHit(50), txsender.ErrInconclusive)
+				require.ErrorIs(t, onHit(50, nil, nil), txsender.ErrInconclusive)
 			}
 		})
 	}

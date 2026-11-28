@@ -81,6 +81,7 @@ const (
 	BLOCKCHAIN_HTTP_RETRY_MIN_WAIT                    = "CARTESI_BLOCKCHAIN_HTTP_RETRY_MIN_WAIT"
 	BLOCKCHAIN_MAX_BLOCK_RANGE                        = "CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"
 	CLAIMER_POLLING_INTERVAL                          = "CARTESI_CLAIMER_POLLING_INTERVAL"
+	EVM_READER_MAX_INPUTS_PER_STEP                    = "CARTESI_EVM_READER_MAX_INPUTS_PER_STEP"
 	EVM_READER_POLLING_INTERVAL                       = "CARTESI_EVM_READER_POLLING_INTERVAL"
 	EVM_READER_READY_MAX_STALENESS                    = "CARTESI_EVM_READER_READY_MAX_STALENESS"
 	MAX_STARTUP_TIME                                  = "CARTESI_MAX_STARTUP_TIME"
@@ -228,6 +229,8 @@ func DeclaredDefault(name string) (string, bool) {
 		return "2000", true
 	case CLAIMER_POLLING_INTERVAL:
 		return "3", true
+	case EVM_READER_MAX_INPUTS_PER_STEP:
+		return "500", true
 	case EVM_READER_POLLING_INTERVAL:
 		return "12", true
 	case EVM_READER_READY_MAX_STALENESS:
@@ -367,6 +370,8 @@ func SetDefaults() {
 	viper.SetDefault(BLOCKCHAIN_MAX_BLOCK_RANGE, "2000")
 
 	viper.SetDefault(CLAIMER_POLLING_INTERVAL, "3")
+
+	viper.SetDefault(EVM_READER_MAX_INPUTS_PER_STEP, "500")
 
 	viper.SetDefault(EVM_READER_POLLING_INTERVAL, "12")
 
@@ -832,6 +837,14 @@ type EvmreaderConfig struct {
 	// Maximum number of blocks in a single query to the provider. Queries with larger ranges will be broken into multiple smaller queries. Zero for unlimited.
 	BlockchainMaxBlockRange uint64 `mapstructure:"CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE"`
 
+	// Maximum number of new input indices requested by the EVM reader in one service tick,
+	// shared across applications and sealed and open epochs. Failed input queries also consume
+	// their requested allowance. Inputs in the same block can be split across ticks.
+	// Applications take turns receiving priority across ticks. Must be between 1 and 1000,
+	// inclusive, to keep index topic lists within Geth's default limit of 1000 alternatives
+	// per topic position.
+	EvmReaderMaxInputsPerStep uint64 `mapstructure:"CARTESI_EVM_READER_MAX_INPUTS_PER_STEP"`
+
 	// Time in seconds to wait before checking for a new block header. The default (12s) is tuned for mainnet. Reduce for faster chains or devnets.
 	EvmReaderPollingInterval Duration `mapstructure:"CARTESI_EVM_READER_POLLING_INTERVAL"`
 
@@ -942,6 +955,13 @@ func LoadEvmreaderConfig() (*EvmreaderConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_BLOCKCHAIN_MAX_BLOCK_RANGE is required for the evmreader service: %w", err)
+	}
+
+	cfg.EvmReaderMaxInputsPerStep, err = GetEvmReaderMaxInputsPerStep()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_EVM_READER_MAX_INPUTS_PER_STEP: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_EVM_READER_MAX_INPUTS_PER_STEP is required for the evmreader service: %w", err)
 	}
 
 	cfg.EvmReaderPollingInterval, err = GetEvmReaderPollingInterval()
@@ -1208,6 +1228,14 @@ type NodeConfig struct {
 	// How many seconds the node will wait before querying the database for new claims.
 	ClaimerPollingInterval Duration `mapstructure:"CARTESI_CLAIMER_POLLING_INTERVAL"`
 
+	// Maximum number of new input indices requested by the EVM reader in one service tick,
+	// shared across applications and sealed and open epochs. Failed input queries also consume
+	// their requested allowance. Inputs in the same block can be split across ticks.
+	// Applications take turns receiving priority across ticks. Must be between 1 and 1000,
+	// inclusive, to keep index topic lists within Geth's default limit of 1000 alternatives
+	// per topic position.
+	EvmReaderMaxInputsPerStep uint64 `mapstructure:"CARTESI_EVM_READER_MAX_INPUTS_PER_STEP"`
+
 	// Time in seconds to wait before checking for a new block header. The default (12s) is tuned for mainnet. Reduce for faster chains or devnets.
 	EvmReaderPollingInterval Duration `mapstructure:"CARTESI_EVM_READER_POLLING_INTERVAL"`
 
@@ -1439,6 +1467,13 @@ func LoadNodeConfig() (*NodeConfig, error) {
 		return nil, fmt.Errorf("failed to get CARTESI_CLAIMER_POLLING_INTERVAL: %w", err)
 	} else if err == ErrNotDefined {
 		return nil, fmt.Errorf("CARTESI_CLAIMER_POLLING_INTERVAL is required for the node service: %w", err)
+	}
+
+	cfg.EvmReaderMaxInputsPerStep, err = GetEvmReaderMaxInputsPerStep()
+	if err != nil && err != ErrNotDefined {
+		return nil, fmt.Errorf("failed to get CARTESI_EVM_READER_MAX_INPUTS_PER_STEP: %w", err)
+	} else if err == ErrNotDefined {
+		return nil, fmt.Errorf("CARTESI_EVM_READER_MAX_INPUTS_PER_STEP is required for the node service: %w", err)
 	}
 
 	cfg.EvmReaderPollingInterval, err = GetEvmReaderPollingInterval()
@@ -1856,6 +1891,7 @@ func (c *NodeConfig) ToEvmreaderConfig() *EvmreaderConfig {
 		BlockchainHttpRetryMaxWait:   c.BlockchainHttpRetryMaxWait,
 		BlockchainHttpRetryMinWait:   c.BlockchainHttpRetryMinWait,
 		BlockchainMaxBlockRange:      c.BlockchainMaxBlockRange,
+		EvmReaderMaxInputsPerStep:    c.EvmReaderMaxInputsPerStep,
 		EvmReaderPollingInterval:     c.EvmReaderPollingInterval,
 		EvmReaderReadyMaxStaleness:   c.EvmReaderReadyMaxStaleness,
 		MaxStartupTime:               c.MaxStartupTime,
@@ -2743,6 +2779,19 @@ func GetClaimerPollingInterval() (Duration, error) {
 		return v, nil
 	}
 	return notDefinedDuration(), fmt.Errorf("%s: %w", CLAIMER_POLLING_INTERVAL, ErrNotDefined)
+}
+
+// GetEvmReaderMaxInputsPerStep returns the value for the environment variable CARTESI_EVM_READER_MAX_INPUTS_PER_STEP.
+func GetEvmReaderMaxInputsPerStep() (uint64, error) {
+	s := viper.GetString(EVM_READER_MAX_INPUTS_PER_STEP)
+	if s != "" {
+		v, err := toUint64(s)
+		if err != nil {
+			return v, fmt.Errorf("failed to parse %s: %w", EVM_READER_MAX_INPUTS_PER_STEP, err)
+		}
+		return v, nil
+	}
+	return notDefineduint64(), fmt.Errorf("%s: %w", EVM_READER_MAX_INPUTS_PER_STEP, ErrNotDefined)
 }
 
 // GetEvmReaderPollingInterval returns the value for the environment variable CARTESI_EVM_READER_POLLING_INTERVAL.

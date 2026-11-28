@@ -125,20 +125,17 @@ func (m *MockInputBox) SetupDefaultBehavior() *MockInputBox {
 	// RetrieveInputs: matched by Start block, not call order.
 	m.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x11 }),
-		[]common.Address{app1Addr},
-		mock.Anything,
+		[]common.Address{app1Addr}, []*big.Int(nil),
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent0}, nil)
 
 	m.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x12 }),
-		[]common.Address{app1Addr},
-		mock.Anything,
+		[]common.Address{app1Addr}, []*big.Int(nil),
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent1}, nil)
 
 	m.On("RetrieveInputs",
 		mock.MatchedBy(func(opts *bind.FilterOpts) bool { return opts.Start == 0x13 }),
-		[]common.Address{app1Addr},
-		mock.Anything,
+		[]common.Address{app1Addr}, []*big.Int(nil),
 	).Return([]iinputbox.IInputBoxInputAdded{inputAddedEvent2, inputAddedEvent3}, nil)
 
 	// GetNumberOfInputs: block-based matching models the on-chain state.

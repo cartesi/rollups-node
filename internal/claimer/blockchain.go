@@ -177,8 +177,8 @@ func newOnHit[IT eventIterator](
 	filter func(*bind.FilterOpts, []common.Address, []common.Address) (IT, error),
 	oracle func(context.Context, uint64) (*big.Int, error),
 	onEvent func(IT) error,
-) func(block uint64) error {
-	return func(block uint64) (err error) {
+) ethutil.OnHitFn {
+	return func(block uint64, _, _ *big.Int) (err error) {
 		before := new(big.Int)
 		if block > 0 {
 			before, err = oracle(ctx, block-1)
@@ -265,7 +265,7 @@ func (cb *claimerBlockchain) findClaimSubmittedEventAndSucc(
 		return nil, nil, fmt.Errorf("querying number of submitted claims for epoch %v (%v) before block %d: %w",
 			epoch.Index, epoch.VirtualIndex, fromBlock, err)
 	}
-	_, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, prevValue, oracle, onHit)
+	_, _, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, prevValue, nil, oracle, onHit)
 	if err != nil {
 		return nil, nil, fmt.Errorf("walking ClaimSubmitted transitions for application: %v, epoch %v (%v): %w",
 			application.IApplicationAddress, epoch.Index, epoch.VirtualIndex, err)
@@ -327,7 +327,7 @@ func (cb *claimerBlockchain) findClaimStagedEventAndSucc(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("querying number of staged claims before block %d: %w", fromBlock, err)
 	}
-	_, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, prevValue, oracle, onHit)
+	_, _, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, prevValue, nil, oracle, onHit)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("walking ClaimStaged transitions for application: %v, epoch %v (%v): %w",
 			application.IApplicationAddress, epoch.Index, epoch.VirtualIndex, err)
@@ -397,7 +397,7 @@ func (cb *claimerBlockchain) findClaimAcceptedEventAndSucc(
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("querying number of accepted claims before block %d: %w", fromBlock, err)
 	}
-	_, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, prevValue, oracle, onHit)
+	_, _, err = ethutil.FindTransitions(ctx, fromBlock, toBlock, prevValue, nil, oracle, onHit)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("walking ClaimAccepted transitions for application: %v, epoch %v (%v): %w",
 			application.IApplicationAddress, epoch.Index, epoch.VirtualIndex, err)

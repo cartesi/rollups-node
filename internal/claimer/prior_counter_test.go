@@ -142,13 +142,13 @@ func TestFindTransitions_PrevValueRegression(t *testing.T) {
 			"sanity: oracle(currEpoch.LastBlock=90) must observe both transitions")
 
 		hits := []uint64{}
-		onHit := func(block uint64) error {
+		onHit := func(block uint64, _, _ *big.Int) error {
 			hits = append(hits, block)
 			return nil
 		}
 
-		_, err = ethutil.FindTransitions(ctx, fromBlock, currEpochLastBlk,
-			buggyPrevValue, oracle, onHit)
+		_, _, err = ethutil.FindTransitions(ctx, fromBlock, currEpochLastBlk,
+			buggyPrevValue, nil, oracle, onHit)
 		require.Error(t, err, "the buggy prevValue MUST trip the monotonic-assumption check")
 		assert.Contains(t, err.Error(), "monotonic assumption violated",
 			"the specific error string is the reason this bug went undetected for so long; pin it")
@@ -166,13 +166,13 @@ func TestFindTransitions_PrevValueRegression(t *testing.T) {
 			"sanity: priorCounter at fromBlock=70 must read oracle(69)=0 (no transitions yet)")
 
 		hits := []uint64{}
-		onHit := func(block uint64) error {
+		onHit := func(block uint64, _, _ *big.Int) error {
 			hits = append(hits, block)
 			return nil
 		}
 
-		count, err := ethutil.FindTransitions(ctx, fromBlock, currEpochLastBlk,
-			fixedPrevValue, oracle, onHit)
+		count, _, err := ethutil.FindTransitions(ctx, fromBlock, currEpochLastBlk,
+			fixedPrevValue, nil, oracle, onHit)
 		require.NoError(t, err, "priorCounter MUST satisfy FindTransitions' monotonic invariant")
 		assert.Equal(t, uint64(len(transitions)), count)
 		assert.Equal(t, transitions, hits,
